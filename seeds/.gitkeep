@@ -1,0 +1,2 @@
+# Seed dosyaları için yer tutucu.
+# Yeni seed üretmek için: npm run seed:make -- <name>

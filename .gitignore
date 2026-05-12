@@ -1,0 +1,36 @@
+node_modules/
+.npm/
+.nvmrc
+
+# Env
+.env
+.env.*
+!.env.example
+
+# Log
+logs/*
+!logs/.gitkeep
+*.log
+npm-debug.log*
+
+# Test / coverage
+coverage/
+.nyc_output/
+
+# Backups
+backups/mysql/*
+backups/minio/*
+!backups/**/.gitkeep
+
+# OS / IDE
+.DS_Store
+.idea/
+.vscode/
+Thumbs.db
+
+# Build artifacts
+dist/
+build/
+
+# Firebase service account
+firebase-sa.json

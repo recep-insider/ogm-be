@@ -1,0 +1,2233 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "OGM Gönüllü Yönetim Sistemi API",
+    "version": "0.1.0",
+    "description": "T.C. Orman Genel Müdürlüğü Gönüllü Yönetim Sistemi backend API'si. Auth (e-Devlet + Telefon OTP), onboarding, profil, ana sayfa, yangın bildirimi ve referans veri uçlarını içerir.",
+    "contact": {
+      "name": "OGM Gönüllü Backend",
+      "email": "gonullu-sistem@ogm.gov.tr"
+    },
+    "license": {
+      "name": "Proprietary"
+    }
+  },
+  "servers": [
+    {
+      "url": "http://localhost/v1",
+      "description": "API v1"
+    },
+    {
+      "url": "http://localhost",
+      "description": "Kök (health vb.)"
+    }
+  ],
+  "tags": [
+    {
+      "name": "Health",
+      "description": "Liveness/readiness uçları"
+    },
+    {
+      "name": "Auth - Phone",
+      "description": "Telefon + OTP akışı"
+    },
+    {
+      "name": "Auth - e-Devlet",
+      "description": "e-Devlet OAuth akışı"
+    },
+    {
+      "name": "Auth - Token",
+      "description": "Token yenileme & logout"
+    },
+    {
+      "name": "Onboarding",
+      "description": "Gönüllü başvuru formu"
+    },
+    {
+      "name": "Reference",
+      "description": "Sabit listeler (kan grubu vb.)"
+    },
+    {
+      "name": "Users",
+      "description": "Kullanıcı profili & avatar"
+    },
+    {
+      "name": "Home",
+      "description": "Ana sayfa feed"
+    },
+    {
+      "name": "Reports",
+      "description": "Yangın bildirimi"
+    },
+    {
+      "name": "Notifications",
+      "description": "FCM cihaz kaydı"
+    },
+    {
+      "name": "Legal",
+      "description": "KVKK & rıza metinleri"
+    },
+    {
+      "name": "Trainings",
+      "description": "Gönüllü eğitimleri"
+    },
+    {
+      "name": "Blog",
+      "description": "Haber & duyurular"
+    }
+  ],
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT",
+        "description": "Erişim token'ı (`Authorization: Bearer <token>`)"
+      },
+      "registrationToken": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT",
+        "description": "Telefon doğrulama sonrası kayıt formu için kısa süreli token"
+      }
+    },
+    "schemas": {
+      "ErrorResponse": {
+        "type": "object",
+        "required": [
+          "error"
+        ],
+        "properties": {
+          "error": {
+            "type": "object",
+            "required": [
+              "code",
+              "message"
+            ],
+            "properties": {
+              "code": {
+                "type": "string",
+                "example": "VALIDATION_ERROR"
+              },
+              "message": {
+                "type": "string",
+                "example": "Form alanlarında hata var"
+              },
+              "details": {
+                "type": "object",
+                "additionalProperties": true
+              }
+            }
+          }
+        }
+      },
+      "ValidationErrorItem": {
+        "type": "object",
+        "properties": {
+          "field": {
+            "type": "string",
+            "example": "kimlik.tcKimlik"
+          },
+          "message": {
+            "type": "string",
+            "example": "Geçerli bir TC Kimlik numarası giriniz"
+          }
+        }
+      },
+      "KanGrubu": {
+        "type": "string",
+        "enum": [
+          "A+",
+          "A-",
+          "B+",
+          "B-",
+          "AB+",
+          "AB-",
+          "0+",
+          "0-"
+        ]
+      },
+      "Ogrenim": {
+        "type": "string",
+        "enum": [
+          "Lise",
+          "Ön Lisans",
+          "Lisans",
+          "Yüksek Lisans",
+          "Doktora",
+          "Diğer"
+        ]
+      },
+      "Meslek": {
+        "type": "string",
+        "enum": [
+          "Memur",
+          "Öğretmen",
+          "Mühendis",
+          "Öğrenci",
+          "Emekli",
+          "Diğer"
+        ]
+      },
+      "Yakinlik": {
+        "type": "string",
+        "enum": [
+          "Anne",
+          "Baba",
+          "Eş",
+          "Kardeş",
+          "Arkadaş",
+          "Diğer"
+        ]
+      },
+      "ApplicationStatus": {
+        "type": "string",
+        "enum": [
+          "pending",
+          "approved",
+          "rejected",
+          "requires_revision"
+        ]
+      },
+      "AuthTokenPair": {
+        "type": "object",
+        "properties": {
+          "accessToken": {
+            "type": "string"
+          },
+          "refreshToken": {
+            "type": "string"
+          },
+          "expiresIn": {
+            "type": "integer",
+            "example": 900
+          }
+        }
+      },
+      "UserPublic": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "tcKimlik": {
+            "type": "string",
+            "example": "10000000146",
+            "nullable": true
+          },
+          "ad": {
+            "type": "string",
+            "nullable": true
+          },
+          "soyad": {
+            "type": "string",
+            "nullable": true
+          },
+          "dogumTarihi": {
+            "type": "string",
+            "format": "date",
+            "nullable": true
+          },
+          "phone": {
+            "type": "string",
+            "example": "+905321234567",
+            "nullable": true
+          },
+          "eposta": {
+            "type": "string",
+            "format": "email",
+            "nullable": true
+          },
+          "profileComplete": {
+            "type": "boolean"
+          }
+        }
+      },
+      "UserProfile": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/UserPublic"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "adres": {
+                "type": "string",
+                "nullable": true
+              },
+              "kanGrubu": {
+                "$ref": "#/components/schemas/KanGrubu"
+              },
+              "ogrenim": {
+                "$ref": "#/components/schemas/Ogrenim"
+              },
+              "meslek": {
+                "$ref": "#/components/schemas/Meslek"
+              },
+              "meslekDiger": {
+                "type": "string",
+                "nullable": true
+              },
+              "hobiler": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "acil": {
+                "$ref": "#/components/schemas/AcilIletisim"
+              },
+              "applicationStatus": {
+                "$ref": "#/components/schemas/ApplicationStatus"
+              },
+              "volunteerLevel": {
+                "$ref": "#/components/schemas/VolunteerLevel"
+              },
+              "avatarUrl": {
+                "type": "string",
+                "format": "uri",
+                "nullable": true
+              }
+            }
+          }
+        ]
+      },
+      "AcilIletisim": {
+        "type": "object",
+        "properties": {
+          "ad": {
+            "type": "string"
+          },
+          "soyad": {
+            "type": "string"
+          },
+          "telefon": {
+            "type": "string",
+            "example": "+905321112233"
+          },
+          "yakinlik": {
+            "$ref": "#/components/schemas/Yakinlik"
+          }
+        }
+      },
+      "VolunteerLevel": {
+        "type": "object",
+        "properties": {
+          "level": {
+            "type": "integer",
+            "example": 2
+          },
+          "name": {
+            "type": "string",
+            "example": "Aktif Gönüllü"
+          },
+          "progressPercent": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 100,
+            "example": 75
+          },
+          "trainingsRemaining": {
+            "type": "integer",
+            "example": 2
+          }
+        }
+      },
+      "ReferenceItem": {
+        "type": "object",
+        "properties": {
+          "value": {
+            "type": "string",
+            "example": "A+"
+          },
+          "label": {
+            "type": "string",
+            "example": "A+"
+          }
+        }
+      },
+      "EmergencyAction": {
+        "type": "object",
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          },
+          "reportsToday": {
+            "type": "integer"
+          }
+        }
+      },
+      "ActiveTasks": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": true
+            }
+          },
+          "permissionRequired": {
+            "type": "string",
+            "enum": [
+              "location",
+              "notification"
+            ],
+            "nullable": true
+          }
+        }
+      },
+      "Training": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "title": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "durationMin": {
+            "type": "integer"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "not_started",
+              "in_progress",
+              "completed"
+            ]
+          }
+        }
+      },
+      "News": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "haber",
+              "duyuru"
+            ]
+          },
+          "title": {
+            "type": "string"
+          },
+          "imageUrl": {
+            "type": "string",
+            "format": "uri",
+            "nullable": true
+          },
+          "publishedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "url": {
+            "type": "string",
+            "format": "uri",
+            "nullable": true
+          }
+        }
+      },
+      "OnboardingData": {
+        "type": "object",
+        "required": [
+          "kimlik",
+          "iletisim",
+          "kisisel",
+          "acil"
+        ],
+        "properties": {
+          "kimlik": {
+            "type": "object",
+            "required": [
+              "tcKimlik",
+              "ad",
+              "soyad",
+              "dogumTarihi"
+            ],
+            "properties": {
+              "tcKimlik": {
+                "type": "string",
+                "example": "10000000146"
+              },
+              "ad": {
+                "type": "string"
+              },
+              "soyad": {
+                "type": "string"
+              },
+              "dogumTarihi": {
+                "type": "string",
+                "format": "date"
+              }
+            }
+          },
+          "iletisim": {
+            "type": "object",
+            "required": [
+              "eposta",
+              "adres"
+            ],
+            "properties": {
+              "telefon": {
+                "type": "string",
+                "example": "+905321234567",
+                "nullable": true
+              },
+              "eposta": {
+                "type": "string",
+                "format": "email"
+              },
+              "adres": {
+                "type": "string",
+                "minLength": 10,
+                "maxLength": 500
+              }
+            }
+          },
+          "kisisel": {
+            "type": "object",
+            "required": [
+              "kanGrubu",
+              "ogrenim",
+              "meslek",
+              "hobiler"
+            ],
+            "properties": {
+              "kanGrubu": {
+                "$ref": "#/components/schemas/KanGrubu"
+              },
+              "ogrenim": {
+                "$ref": "#/components/schemas/Ogrenim"
+              },
+              "meslek": {
+                "$ref": "#/components/schemas/Meslek"
+              },
+              "meslekDiger": {
+                "type": "string",
+                "nullable": true,
+                "minLength": 2
+              },
+              "hobiler": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "minItems": 1
+              }
+            }
+          },
+          "acil": {
+            "$ref": "#/components/schemas/AcilIletisim"
+          }
+        }
+      }
+    },
+    "responses": {
+      "ValidationError": {
+        "description": "Validation hatası",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            }
+          }
+        }
+      },
+      "Unauthorized": {
+        "description": "Kimlik doğrulanamadı veya token geçersiz",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            }
+          }
+        }
+      },
+      "Forbidden": {
+        "description": "Yetki yok",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            }
+          }
+        }
+      },
+      "NotFound": {
+        "description": "Kaynak bulunamadı",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            }
+          }
+        }
+      },
+      "RateLimited": {
+        "description": "İstek limiti aşıldı",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            }
+          }
+        }
+      }
+    }
+  },
+  "security": [],
+  "paths": {
+    "/auth/edevlet/initiate": {
+      "post": {
+        "tags": [
+          "Auth - e-Devlet"
+        ],
+        "summary": "e-Devlet OAuth akışını başlat",
+        "description": "Mobil app dönen `redirectUrl`'i in-app browser'da açar. Kullanıcı e-Devlet'te\nkimliğini doğrular, custom URL scheme ile app'e döner.\n",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "callbackScheme": {
+                    "type": "string",
+                    "example": "ogmgonullu"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Akış başlatıldı",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "sessionId": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "redirectUrl": {
+                      "type": "string",
+                      "format": "uri"
+                    },
+                    "expiresIn": {
+                      "type": "integer",
+                      "example": 600
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          }
+        }
+      }
+    },
+    "/auth/edevlet/callback": {
+      "post": {
+        "tags": [
+          "Auth - e-Devlet"
+        ],
+        "summary": "e-Devlet'ten dönen code'u işle",
+        "description": "Mevcut kullanıcı: erişim+yenileme token'ları döner.\nYeni kullanıcı: 4 adımlı kayıt formu için kısa süreli token döner; `isExisting=false`.\n",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "sessionId",
+                  "code"
+                ],
+                "properties": {
+                  "sessionId": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "code": {
+                    "type": "string"
+                  },
+                  "state": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Doğrulama başarılı",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "accessToken": {
+                      "type": "string"
+                    },
+                    "refreshToken": {
+                      "type": "string",
+                      "nullable": true
+                    },
+                    "expiresIn": {
+                      "type": "integer"
+                    },
+                    "isExisting": {
+                      "type": "boolean"
+                    },
+                    "user": {
+                      "$ref": "#/components/schemas/UserPublic"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        }
+      }
+    },
+    "/auth/edevlet/mock": {
+      "get": {
+        "tags": [
+          "Auth - e-Devlet"
+        ],
+        "summary": "[DEV] Mock e-Devlet onay sayfası",
+        "description": "`EDEVLET_MOCK_MODE=true` iken aktif. Production'da 404 döner.",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "sessionId",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "query",
+            "name": "state",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Mock kimlik bilgileri"
+          }
+        }
+      }
+    },
+    "/auth/phone/send-otp": {
+      "post": {
+        "tags": [
+          "Auth - Phone"
+        ],
+        "summary": "Telefon numarasına OTP gönder",
+        "description": "E.164 formatında telefon numarasına 6 haneli OTP gönderir. SMS sağlayıcı\n`SMS_PROVIDER` ortam değişkeni ile belirlenir (mock, netgsm).\n",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "phone"
+                ],
+                "properties": {
+                  "phone": {
+                    "type": "string",
+                    "example": "+905321234567"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OTP gönderildi",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "sessionId": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "expiresIn": {
+                      "type": "integer",
+                      "example": 300
+                    },
+                    "cooldownSec": {
+                      "type": "integer",
+                      "example": 30
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/ValidationError"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          }
+        }
+      }
+    },
+    "/auth/phone/verify-otp": {
+      "post": {
+        "tags": [
+          "Auth - Phone"
+        ],
+        "summary": "OTP'yi doğrula",
+        "description": "Mevcut kullanıcı: access + refresh token döner.\nYeni kullanıcı: kayıt formu için kısa süreli `registrationToken` döner.\n",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "sessionId",
+                  "code"
+                ],
+                "properties": {
+                  "sessionId": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "code": {
+                    "type": "string",
+                    "example": "123456"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Doğrulama başarılı",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "ok": {
+                          "type": "boolean"
+                        },
+                        "isExisting": {
+                          "type": "boolean",
+                          "example": true
+                        },
+                        "accessToken": {
+                          "type": "string"
+                        },
+                        "refreshToken": {
+                          "type": "string"
+                        },
+                        "expiresIn": {
+                          "type": "integer"
+                        },
+                        "user": {
+                          "$ref": "#/components/schemas/UserPublic"
+                        }
+                      }
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "ok": {
+                          "type": "boolean"
+                        },
+                        "isExisting": {
+                          "type": "boolean",
+                          "example": false
+                        },
+                        "registrationToken": {
+                          "type": "string"
+                        },
+                        "expiresIn": {
+                          "type": "integer"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Kod hatalı",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/auth/phone/resend-otp": {
+      "post": {
+        "tags": [
+          "Auth - Phone"
+        ],
+        "summary": "OTP'yi yeniden gönder (cooldown sonrası)",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "sessionId"
+                ],
+                "properties": {
+                  "sessionId": {
+                    "type": "string",
+                    "format": "uuid"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Yeni OTP gönderildi",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "cooldownSec": {
+                      "type": "integer"
+                    },
+                    "expiresIn": {
+                      "type": "integer"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Session yok"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          }
+        }
+      }
+    },
+    "/auth/refresh": {
+      "post": {
+        "tags": [
+          "Auth - Token"
+        ],
+        "summary": "Access token'ı yenile (refresh rotation)",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "refreshToken"
+                ],
+                "properties": {
+                  "refreshToken": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Yeni token çifti",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthTokenPair"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        }
+      }
+    },
+    "/auth/logout": {
+      "post": {
+        "tags": [
+          "Auth - Token"
+        ],
+        "summary": "Logout — refresh token'ı iptal et",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "refreshToken"
+                ],
+                "properties": {
+                  "refreshToken": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": {
+            "description": "Logout başarılı"
+          }
+        }
+      }
+    },
+    "/blog": {
+      "get": {
+        "tags": [
+          "Blog"
+        ],
+        "summary": "Paginated blog post listesi",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "page",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 1
+            }
+          },
+          {
+            "in": "query",
+            "name": "pageSize",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 50,
+              "default": 10
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Blog listesi",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "slug": {
+                            "type": "string"
+                          },
+                          "title": {
+                            "type": "string"
+                          },
+                          "excerpt": {
+                            "type": "string"
+                          },
+                          "imageUrl": {
+                            "type": "string",
+                            "format": "uri",
+                            "nullable": true
+                          },
+                          "publishedAt": {
+                            "type": "string",
+                            "format": "date-time"
+                          }
+                        }
+                      }
+                    },
+                    "pagination": {
+                      "type": "object",
+                      "properties": {
+                        "page": {
+                          "type": "integer"
+                        },
+                        "pageSize": {
+                          "type": "integer"
+                        },
+                        "total": {
+                          "type": "integer"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/blog/{slug}": {
+      "get": {
+        "tags": [
+          "Blog"
+        ],
+        "summary": "Blog post detayı",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "slug",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Post detayı"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
+    "/health": {
+      "get": {
+        "tags": [
+          "Health"
+        ],
+        "summary": "Liveness probe",
+        "description": "Servis ayakta mı? Bağımlılıklara dokunmaz.",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "string",
+                      "example": "ok"
+                    },
+                    "uptimeSeconds": {
+                      "type": "integer"
+                    },
+                    "timestamp": {
+                      "type": "string",
+                      "format": "date-time"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/health/live": {
+      "get": {
+        "tags": [
+          "Health"
+        ],
+        "summary": "Liveness probe (alias)",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/health/ready": {
+      "get": {
+        "tags": [
+          "Health"
+        ],
+        "summary": "Readiness probe — MySQL & Redis ping",
+        "description": "MySQL ve Redis bağlantılarına ping atar. Her ikisi de up değilse 503 döner.\n",
+        "responses": {
+          "200": {
+            "description": "Tüm bağımlılıklar up",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "string",
+                      "example": "ok"
+                    },
+                    "checks": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "name": {
+                            "type": "string"
+                          },
+                          "status": {
+                            "type": "string",
+                            "enum": [
+                              "up",
+                              "down"
+                            ]
+                          },
+                          "latencyMs": {
+                            "type": "integer"
+                          },
+                          "error": {
+                            "type": "string",
+                            "nullable": true
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Bağımlılıklar arasında down olan var"
+          }
+        }
+      }
+    },
+    "/home/feed": {
+      "get": {
+        "tags": [
+          "Home"
+        ],
+        "summary": "Ana sayfa için tüm bölümleri tek istekte döner",
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {}
+        ],
+        "responses": {
+          "200": {
+            "description": "Feed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "user": {
+                      "type": "object",
+                      "properties": {
+                        "ad": {
+                          "type": "string",
+                          "nullable": true
+                        },
+                        "avatarUrl": {
+                          "type": "string",
+                          "format": "uri",
+                          "nullable": true
+                        }
+                      }
+                    },
+                    "emergencyAction": {
+                      "$ref": "#/components/schemas/EmergencyAction"
+                    },
+                    "activeTasks": {
+                      "$ref": "#/components/schemas/ActiveTasks"
+                    },
+                    "trainings": {
+                      "type": "object",
+                      "properties": {
+                        "volunteerLevel": {
+                          "$ref": "#/components/schemas/VolunteerLevel"
+                        },
+                        "next": {
+                          "$ref": "#/components/schemas/Training"
+                        }
+                      }
+                    },
+                    "news": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/News"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/legal/{document}": {
+      "get": {
+        "tags": [
+          "Legal"
+        ],
+        "summary": "Yasal metinleri (KVKK, aydınlatma, açık rıza) versiyonlu olarak döner",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "document",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "kvkk",
+                "aydinlatma-metni",
+                "acik-riza"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Metin",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "version": {
+                      "type": "string"
+                    },
+                    "updatedAt": {
+                      "type": "string",
+                      "format": "date"
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "body": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
+    "/notifications/devices": {
+      "post": {
+        "tags": [
+          "Notifications"
+        ],
+        "summary": "FCM cihaz token'ı kaydet",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "token",
+                  "platform"
+                ],
+                "properties": {
+                  "token": {
+                    "type": "string"
+                  },
+                  "platform": {
+                    "type": "string",
+                    "enum": [
+                      "ios",
+                      "android",
+                      "web"
+                    ]
+                  },
+                  "appVersion": {
+                    "type": "string",
+                    "example": "1.0.0"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Kayıt tamam",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "format": "uuid"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/notifications/devices/{tokenId}": {
+      "delete": {
+        "tags": [
+          "Notifications"
+        ],
+        "summary": "Cihaz token'ını kaldır (logout)",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "tokenId",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Kaldırıldı"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
+    "/onboarding/complete": {
+      "post": {
+        "tags": [
+          "Onboarding"
+        ],
+        "summary": "Gönüllü başvurusunu tamamla (multipart upload)",
+        "description": "Tek-shot transactional submit. `data` alanında JSON string olarak tüm form\nalanları, ayrıca `saglikRaporu` ve `sabikaKaydi` dosyaları yüklenir.\nHeader'da `Authorization: Bearer <token>` — access token ya da\nOTP/e-Devlet sonrası alınan kısa süreli registration token kabul edilir.\n",
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "registrationToken": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "data",
+                  "saglikRaporu",
+                  "sabikaKaydi"
+                ],
+                "properties": {
+                  "data": {
+                    "type": "string",
+                    "description": "JSON string (OnboardingData şeması)"
+                  },
+                  "saglikRaporu": {
+                    "type": "string",
+                    "format": "binary"
+                  },
+                  "sabikaKaydi": {
+                    "type": "string",
+                    "format": "binary"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Başvuru oluşturuldu",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "applicationId": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "status": {
+                      "$ref": "#/components/schemas/ApplicationStatus"
+                    },
+                    "submittedAt": {
+                      "type": "string",
+                      "format": "date-time"
+                    },
+                    "user": {
+                      "$ref": "#/components/schemas/UserPublic"
+                    },
+                    "tokens": {
+                      "type": "object",
+                      "nullable": true,
+                      "properties": {
+                        "accessToken": {
+                          "type": "string"
+                        },
+                        "refreshToken": {
+                          "type": "string"
+                        },
+                        "expiresIn": {
+                          "type": "integer"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "409": {
+            "description": "TC kimlik ile mevcut başvuru var"
+          },
+          "422": {
+            "$ref": "#/components/responses/ValidationError"
+          }
+        }
+      }
+    },
+    "/reference/{category}": {
+      "get": {
+        "tags": [
+          "Reference"
+        ],
+        "summary": "Kategori için referans listesini döndürür",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "category",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "kan-grubu",
+                "ogrenim",
+                "meslek",
+                "hobiler",
+                "yakinlik",
+                "ulkeler"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Liste",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/ReferenceItem"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
+    "/reports/fire": {
+      "post": {
+        "tags": [
+          "Reports"
+        ],
+        "summary": "Yangın bildirimi (multipart)",
+        "description": "Giriş yapmış veya guest kullanıcı tarafından yapılabilir.\nRate limit: kullanıcı başına saatte 5, anonim IP başına saatte 3.\n",
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {}
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "latitude",
+                  "longitude"
+                ],
+                "properties": {
+                  "latitude": {
+                    "type": "number",
+                    "format": "float"
+                  },
+                  "longitude": {
+                    "type": "number",
+                    "format": "float"
+                  },
+                  "accuracyM": {
+                    "type": "number",
+                    "format": "float"
+                  },
+                  "description": {
+                    "type": "string",
+                    "maxLength": 500
+                  },
+                  "photos": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "format": "binary"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Bildirim alındı",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "reportId": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "received",
+                        "dispatched",
+                        "closed"
+                      ]
+                    },
+                    "createdAt": {
+                      "type": "string",
+                      "format": "date-time"
+                    },
+                    "etaResponseSec": {
+                      "type": "integer"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "422": {
+            "$ref": "#/components/responses/ValidationError"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          }
+        }
+      }
+    },
+    "/trainings": {
+      "get": {
+        "tags": [
+          "Trainings"
+        ],
+        "summary": "Kullanıcıya açık eğitim listesi",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Eğitim listesi",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Training"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/trainings/{id}": {
+      "get": {
+        "tags": [
+          "Trainings"
+        ],
+        "summary": "Eğitim detayı (içerik, video URL'leri)",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Eğitim detayı"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
+    "/trainings/{id}/start": {
+      "post": {
+        "tags": [
+          "Trainings"
+        ],
+        "summary": "Eğitime başla (status → in_progress)",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Başlatıldı"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
+    "/trainings/{id}/complete": {
+      "post": {
+        "tags": [
+          "Trainings"
+        ],
+        "summary": "Eğitimi tamamla (status → completed)",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Tamamlandı"
+          }
+        }
+      }
+    },
+    "/users/me": {
+      "get": {
+        "tags": [
+          "Users"
+        ],
+        "summary": "Mevcut kullanıcı profilini döndürür",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Profil",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserProfile"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "Users"
+        ],
+        "summary": "Profil alanlarını kısmen günceller",
+        "description": "Telefon değişikliği için bu uç KULLANILMAZ. Telefon için\n`POST /users/me/phone-change/init` ve `/commit` akışı zorunludur.\n",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "eposta": {
+                    "type": "string",
+                    "format": "email"
+                  },
+                  "adres": {
+                    "type": "string"
+                  },
+                  "kanGrubu": {
+                    "$ref": "#/components/schemas/KanGrubu"
+                  },
+                  "ogrenim": {
+                    "$ref": "#/components/schemas/Ogrenim"
+                  },
+                  "meslek": {
+                    "$ref": "#/components/schemas/Meslek"
+                  },
+                  "meslekDiger": {
+                    "type": "string",
+                    "nullable": true
+                  },
+                  "hobiler": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    },
+                    "description": "Her öğe `/v1/reference/hobiler` listesinden olmalı"
+                  },
+                  "acil": {
+                    "$ref": "#/components/schemas/AcilIletisim"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Güncellenmiş profil",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserProfile"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Users"
+        ],
+        "summary": "Hesabı sil (KVKK silme talebi)",
+        "description": "Hesap soft-delete yapılır, refresh token'lar iptal edilir, cihaz kayıtları silinir.\nKişisel veriler 30 gün içinde anonimleştirilir/silinir.\n",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Silme talebi alındı",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": {
+                      "type": "boolean"
+                    },
+                    "deletedAt": {
+                      "type": "string",
+                      "format": "date-time"
+                    },
+                    "purgeAfterDays": {
+                      "type": "integer",
+                      "example": 30
+                    },
+                    "note": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/users/me/avatar": {
+      "post": {
+        "tags": [
+          "Users"
+        ],
+        "summary": "Avatar yükle (JPG/PNG, max 5 MB)",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "file"
+                ],
+                "properties": {
+                  "file": {
+                    "type": "string",
+                    "format": "binary"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Avatar URL",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "avatarUrl": {
+                      "type": "string",
+                      "format": "uri"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/users/me/consents": {
+      "post": {
+        "tags": [
+          "Users"
+        ],
+        "summary": "KVKK / aydınlatma / açık rıza onayı kaydet",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "document",
+                  "version"
+                ],
+                "properties": {
+                  "document": {
+                    "type": "string",
+                    "enum": [
+                      "kvkk",
+                      "aydinlatma",
+                      "acik_riza"
+                    ]
+                  },
+                  "version": {
+                    "type": "string",
+                    "example": "v1"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Onay kaydedildi"
+          }
+        }
+      }
+    },
+    "/users/me/data-export": {
+      "get": {
+        "tags": [
+          "Users"
+        ],
+        "summary": "Tüm kullanıcı verilerini JSON olarak indir (KVKK Madde 11)",
+        "description": "Kullanıcı kendi user kaydı, başvuruları, onayları, cihaz kayıtları ve yangın\nbildirimlerini içeren bir JSON dosya indirir.\n",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Veri export",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "exportedAt": {
+                      "type": "string",
+                      "format": "date-time"
+                    },
+                    "legalReference": {
+                      "type": "string",
+                      "example": "KVKK Madde 11"
+                    },
+                    "user": {
+                      "type": "object",
+                      "additionalProperties": true
+                    },
+                    "applications": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": true
+                      }
+                    },
+                    "consents": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": true
+                      }
+                    },
+                    "devices": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": true
+                      }
+                    },
+                    "fireReports": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": true
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/users/me/phone-change/init": {
+      "post": {
+        "tags": [
+          "Users"
+        ],
+        "summary": "Telefon değiştirme akışı başlat (yeni numaraya OTP gönder)",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "phone"
+                ],
+                "properties": {
+                  "phone": {
+                    "type": "string",
+                    "example": "+905321234567"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OTP gönderildi",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "sessionId": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "expiresIn": {
+                      "type": "integer"
+                    },
+                    "cooldownSec": {
+                      "type": "integer"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Telefon zaten başka kullanıcıda kayıtlı"
+          }
+        }
+      }
+    },
+    "/users/me/phone-change/commit": {
+      "post": {
+        "tags": [
+          "Users"
+        ],
+        "summary": "Telefon değişimini OTP ile onayla",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "sessionId",
+                  "code"
+                ],
+                "properties": {
+                  "sessionId": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "code": {
+                    "type": "string",
+                    "example": "123456"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Telefon güncellendi",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": {
+                      "type": "boolean"
+                    },
+                    "phone": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        }
+      }
+    }
+  }
+}

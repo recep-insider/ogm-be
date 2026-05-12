@@ -1,0 +1,2 @@
+# Migration dosyaları için yer tutucu.
+# Yeni migration üretmek için: npm run migrate:make -- create_<table_name>
