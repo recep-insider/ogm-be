@@ -10,6 +10,9 @@ services:
     volumes:
       - ./docker/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
       - ./docker/nginx/ssl:/etc/nginx/ssl:ro
+      # Let's Encrypt sertifikaları (setup-domain.sh tarafından üretilir)
+      - ./certbot/conf:/etc/letsencrypt:ro
+      - ./certbot/www:/var/www/certbot:ro
     depends_on:
       - backend
     restart: unless-stopped
@@ -40,7 +43,10 @@ services:
       - ogm-net
 
   mysql:
-    image: mysql:8.0
+    # 8.0.33: son Debian-Bookworm tabanlı sürüm. 8.0.34+ Oracle Linux 9'a geçti ve
+    # x86-64-v2 CPU instruction set'i gerektiriyor (SSE4, POPCNT vs.). Eski CPU'lu
+    # sunucularda glibc fatal hatasıyla çıkıyor.
+    image: mysql:8.0.33
     container_name: ogm-mysql
     command:
       - --character-set-server=utf8mb4

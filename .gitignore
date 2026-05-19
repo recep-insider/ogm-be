@@ -38,3 +38,6 @@ firebase-sa.json
 
 # User uploads
 uploads/
+
+# Deploy secrets (never commit)
+PRODUCTION-SECRETS.md
