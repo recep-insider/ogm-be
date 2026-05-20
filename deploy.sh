@@ -61,12 +61,11 @@ export SSHPASS
 
 # SSH wrapper'ları
 SSH_OPTS=(-o StrictHostKeyChecking=accept-new -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -p "$SSH_PORT")
-SCP_OPTS=(-o StrictHostKeyChecking=accept-new -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -P "$SSH_PORT")
 
 run_ssh()   { sshpass -e ssh  "${SSH_OPTS[@]}" "$TARGET" "$@"; }
-run_scp()   { sshpass -e scp  "${SCP_OPTS[@]}" "$@"; }
-# rsync için: rsync child olarak ssh spawn ettiğinden sshpass'i ssh çağrısının
-# kendisine sarmak gerekiyor (dış sshpass child'a env vermiyor).
+# Dosya transferi için scp KULLANILMIYOR: sshpass scp'nin fork ettiği alt-ssh'in
+# parola promptunu (özellikle macOS'ta) yakalayamıyor. rsync ise sshpass'i doğrudan
+# ssh'e sardığından auth çalışıyor — tek dosya transferleri de rsync üzerinden gider.
 run_rsync() { rsync -e "sshpass -e ssh ${SSH_OPTS[*]}" "$@"; }
 
 # ─── Bağlantı testi ──────────────────────────────────────────────
@@ -328,7 +327,7 @@ ok "Transfer tamam"
 
 # ─── .env gönder ──────────────────────────────────────────────
 log ".env transfer"
-run_scp "$TMPDIR/.env" "$TARGET:$DEPLOY_DIR/.env"
+run_rsync -az "$TMPDIR/.env" "$TARGET:$DEPLOY_DIR/.env"
 run_ssh "chmod 600 $DEPLOY_DIR/.env"
 ok ".env yerinde"
 
