@@ -238,6 +238,9 @@ SMS_OTP_MAX_ATTEMPTS=5
 SMS_OTP_LOCKOUT_DURATION=1800
 SMS_DAILY_LIMIT_PER_USER=10
 SMS_RESEND_COOLDOWN=30
+# Dummy OTP — bu numaralar SMS göndermez, OTP_DUMMY_CODE ile doğrulanır (app store review / QA).
+OTP_DUMMY_PHONES=+905555555555
+OTP_DUMMY_CODE=123456
 
 # ── e-Devlet (mock) ────────────────────────────────
 EDEVLET_ENABLED=true
