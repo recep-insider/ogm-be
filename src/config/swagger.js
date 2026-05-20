@@ -150,6 +150,7 @@ const definition = {
               applicationStatus: { $ref: '#/components/schemas/ApplicationStatus' },
               volunteerLevel: { $ref: '#/components/schemas/VolunteerLevel' },
               avatarUrl: { type: 'string', format: 'uri', nullable: true },
+              hasProtectiveEquipment: { type: 'boolean' },
             },
           },
         ],
