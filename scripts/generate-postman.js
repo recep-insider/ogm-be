@@ -174,7 +174,7 @@ const collection = {
   },
   auth: { type: 'bearer', bearer: [{ key: 'token', value: '{{accessToken}}', type: 'string' }] },
   variable: [
-    { key: 'baseUrl', value: 'http://localhost:3000', type: 'string' },
+    { key: 'baseUrl', value: 'https://recepbiyikli.com', type: 'string' },
     { key: 'phone', value: '+905555555555', type: 'string' },
     { key: 'otpCode', value: '123456', type: 'string' },
     { key: 'sessionId', value: '', type: 'string' },
