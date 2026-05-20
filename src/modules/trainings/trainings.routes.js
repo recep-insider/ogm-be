@@ -3,145 +3,83 @@
 const { Router } = require('express');
 const asyncHandler = require('../../shared/async-handler');
 const { requireAuth } = require('../../middlewares/auth');
-const { errors } = require('../../shared/errors');
+const service = require('./trainings.service');
 
 const router = Router();
 
-// Placeholder in-memory data — DB tabloları eklenince genişler.
-const TRAININGS = [
-  {
-    id: '00000000-0000-0000-0000-000000000001',
-    title: 'İlkyardım Eğitimi',
-    description: 'Doğa koşullarında temel müdahale yöntemleri',
-    durationMin: 120,
-    contentUrl: null,
-    videoUrls: [],
-  },
-  {
-    id: '00000000-0000-0000-0000-000000000002',
-    title: 'Yangın Söndürme Temelleri',
-    description: 'Orman yangınlarında ekipman kullanımı ve güvenlik',
-    durationMin: 90,
-    contentUrl: null,
-    videoUrls: [],
-  },
-];
-
-// Kullanıcı durum kayıtları (gerçek DB'ye geçilecek)
-const USER_PROGRESS = new Map(); // userId -> Map<trainingId, status>
-
 router.use(requireAuth);
-
-function statusFor(userId, trainingId) {
-  return USER_PROGRESS.get(userId)?.get(trainingId) || 'not_started';
-}
-
-function setStatus(userId, trainingId, status) {
-  if (!USER_PROGRESS.has(userId)) USER_PROGRESS.set(userId, new Map());
-  USER_PROGRESS.get(userId).set(trainingId, status);
-}
 
 /**
  * @openapi
- * /trainings:
+ * /trainings/online:
  *   get:
  *     tags: [Trainings]
- *     summary: Kullanıcıya açık eğitim listesi
+ *     summary: Online eğitim listesi (kullanıcı bazlı progress)
  *     security: [ { bearerAuth: [] } ]
  *     responses:
  *       200:
- *         description: Eğitim listesi
+ *         description: Online eğitimler
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: array
+ *               items: { $ref: '#/components/schemas/OnlineTraining' }
+ */
+router.get('/online', asyncHandler(async (req, res) => {
+  res.status(200).json(await service.listOnline(req.user.id));
+}));
+
+/**
+ * @openapi
+ * /trainings/saha:
+ *   get:
+ *     tags: [Trainings]
+ *     summary: Saha eğitim listesi
+ *     security: [ { bearerAuth: [] } ]
+ *     responses:
+ *       200:
+ *         description: Saha eğitimleri
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: array
+ *               items: { $ref: '#/components/schemas/SahaTraining' }
+ */
+router.get('/saha', asyncHandler(async (req, res) => {
+  res.status(200).json(await service.listSaha(req.user.id));
+}));
+
+/**
+ * @openapi
+ * /trainings/{id}/applications:
+ *   post:
+ *     tags: [Trainings]
+ *     summary: Saha eğitimine başvur
+ *     security: [ { bearerAuth: [] } ]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string }
+ *     responses:
+ *       200:
+ *         description: Başvuru alındı
  *         content:
  *           application/json:
  *             schema:
  *               type: object
  *               properties:
- *                 items:
- *                   type: array
- *                   items: { $ref: '#/components/schemas/Training' }
+ *                 applicationId: { type: string }
+ *                 status: { type: string, example: pending }
+ *       409: { description: 'already_applied' }
+ *       410: { description: 'training_full | training_closed' }
  */
-router.get('/', asyncHandler(async (req, res) => {
-  const items = TRAININGS.map((t) => ({
-    id: t.id,
-    title: t.title,
-    description: t.description,
-    durationMin: t.durationMin,
-    status: statusFor(req.user.id, t.id),
-  }));
-  res.status(200).json({ items });
-}));
-
-/**
- * @openapi
- * /trainings/{id}:
- *   get:
- *     tags: [Trainings]
- *     summary: Eğitim detayı (içerik, video URL'leri)
- *     security: [ { bearerAuth: [] } ]
- *     parameters:
- *       - in: path
- *         name: id
- *         required: true
- *         schema: { type: string, format: uuid }
- *     responses:
- *       200:
- *         description: Eğitim detayı
- *       404: { $ref: '#/components/responses/NotFound' }
- */
-router.get('/:id', asyncHandler(async (req, res) => {
-  const t = TRAININGS.find((x) => x.id === req.params.id);
-  if (!t) throw errors.notFound('Eğitim bulunamadı');
-  res.status(200).json({
-    ...t,
-    status: statusFor(req.user.id, t.id),
+router.post('/:id/applications', asyncHandler(async (req, res) => {
+  const result = await service.applySaha(req.user.id, req.params.id, {
+    ip: req.ip,
+    userAgent: req.headers['user-agent'],
   });
-}));
-
-/**
- * @openapi
- * /trainings/{id}/start:
- *   post:
- *     tags: [Trainings]
- *     summary: Eğitime başla (status → in_progress)
- *     security: [ { bearerAuth: [] } ]
- *     parameters:
- *       - in: path
- *         name: id
- *         required: true
- *         schema: { type: string, format: uuid }
- *     responses:
- *       200:
- *         description: Başlatıldı
- *       404: { $ref: '#/components/responses/NotFound' }
- */
-router.post('/:id/start', asyncHandler(async (req, res) => {
-  const t = TRAININGS.find((x) => x.id === req.params.id);
-  if (!t) throw errors.notFound('Eğitim bulunamadı');
-  setStatus(req.user.id, t.id, 'in_progress');
-  res.status(200).json({ id: t.id, status: 'in_progress' });
-}));
-
-/**
- * @openapi
- * /trainings/{id}/complete:
- *   post:
- *     tags: [Trainings]
- *     summary: Eğitimi tamamla (status → completed)
- *     security: [ { bearerAuth: [] } ]
- *     parameters:
- *       - in: path
- *         name: id
- *         required: true
- *         schema: { type: string, format: uuid }
- *     responses:
- *       200:
- *         description: Tamamlandı
- */
-router.post('/:id/complete', asyncHandler(async (req, res) => {
-  const t = TRAININGS.find((x) => x.id === req.params.id);
-  if (!t) throw errors.notFound('Eğitim bulunamadı');
-  setStatus(req.user.id, t.id, 'completed');
-  res.status(200).json({ id: t.id, status: 'completed' });
+  res.status(200).json(result);
 }));
 
 module.exports = router;

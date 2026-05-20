@@ -7,6 +7,9 @@ const { db } = require('../../config/db');
 const env = require('../../config/env');
 const { errors } = require('../../shared/errors');
 const { writeAudit } = require('../../shared/audit');
+const { assetUrl } = require('../../shared/asset-url');
+const { toDateOnly } = require('../../shared/dates');
+const { hasProtectiveEquipment } = require('../equipment/equipment.service');
 
 function safeJson(value, fallback) {
   if (value == null) return fallback;
@@ -18,29 +21,36 @@ function safeJson(value, fallback) {
   }
 }
 
-function buildAvatarUrl(rel) {
-  if (!rel) return null;
-  if (env.upload.publicBaseUrl) {
-    return `${env.upload.publicBaseUrl.replace(/\/$/, '')}/${rel.replace(/^\//, '')}`;
-  }
-  return `${env.api.baseUrl}/v1/users/me/avatar/${path.basename(rel)}`;
+// VolunteerLevel tamamlanan eğitim sayısından türetilir (B.10 — kesin ürün kuralı netleşince güncellenir).
+const TRAININGS_PER_LEVEL = 2;
+const LEVEL_NAMES = { 1: 'Yeni Gönüllü', 2: 'Aktif Gönüllü', 3: 'Kıdemli Gönüllü' };
+function computeVolunteerLevel(completedCount) {
+  const level = 1 + Math.floor(completedCount / TRAININGS_PER_LEVEL);
+  const intoLevel = completedCount % TRAININGS_PER_LEVEL;
+  return {
+    level,
+    name: LEVEL_NAMES[level] || 'Uzman Gönüllü',
+    progressPercent: Math.round((intoLevel / TRAININGS_PER_LEVEL) * 100),
+    trainingsRemaining: TRAININGS_PER_LEVEL - intoLevel,
+  };
 }
 
 async function getMe(userId) {
   const user = await db('users').where({ id: userId, is_active: true }).first();
   if (!user) throw errors.notFound('Kullanıcı bulunamadı');
 
-  const application = await db('applications')
-    .where({ user_id: userId })
-    .orderBy('submitted_at', 'desc')
-    .first();
+  const [application, completed, hasEquipment] = await Promise.all([
+    db('applications').where({ user_id: userId }).orderBy('submitted_at', 'desc').first(),
+    db('user_trainings').where({ user_id: userId, status: 'completed' }).count({ c: '*' }).first(),
+    hasProtectiveEquipment(userId),
+  ]);
 
   return {
     id: user.id,
     tcKimlik: user.tc_kimlik,
     ad: user.ad,
     soyad: user.soyad,
-    dogumTarihi: user.dogum_tarihi,
+    dogumTarihi: toDateOnly(user.dogum_tarihi),
     phone: user.phone,
     eposta: user.eposta,
     adres: user.adres,
@@ -57,17 +67,14 @@ async function getMe(userId) {
     },
     profileComplete: !!user.profile_complete,
     applicationStatus: application ? application.status : null,
-    volunteerLevel: {
-      level: 1,
-      name: 'Yeni Gönüllü',
-      progressPercent: 0,
-      trainingsRemaining: 4,
-    },
-    avatarUrl: buildAvatarUrl(user.avatar_path),
+    volunteerLevel: computeVolunteerLevel(Number(completed?.c || 0)),
+    avatarUrl: assetUrl(user.avatar_path),
+    hasProtectiveEquipment: hasEquipment,
   };
 }
 
 const PATCH_KEYS = {
+  phone: 'phone',
   eposta: 'eposta',
   adres: 'adres',
   kanGrubu: 'kan_grubu',
@@ -78,10 +85,6 @@ const PATCH_KEYS = {
 };
 
 async function patchMe(userId, body, audit = {}) {
-  if (Object.prototype.hasOwnProperty.call(body, 'phone')) {
-    throw errors.validation('Telefon değişikliği için /users/me/phone-change uçlarını kullanın');
-  }
-
   // hobiler reference-data validasyonu
   if (Array.isArray(body.hobiler)) {
     const allowed = await db('reference_data')
@@ -91,6 +94,24 @@ async function patchMe(userId, body, audit = {}) {
     if (invalid.length > 0) {
       throw errors.validation('Geçersiz hobi değeri', { invalid });
     }
+  }
+
+  // Telefon/eposta benzersizlik kontrolü (kontrat 4.1 → 409 phone_taken / email_taken).
+  // NOT: PATCH ile doğrudan telefon değişimi destekleniyor; OTP doğrulamalı güvenli akış için
+  // /users/me/phone-change/init + /commit uçları korunuyor.
+  if (body.phone !== undefined) {
+    const taken = await db('users')
+      .where({ phone: body.phone, is_active: true })
+      .whereNot({ id: userId })
+      .first();
+    if (taken) throw errors.conflict('Bu telefon başka bir kullanıcıda kayıtlı', undefined, 'phone_taken');
+  }
+  if (body.eposta !== undefined) {
+    const taken = await db('users')
+      .where({ eposta: body.eposta, is_active: true })
+      .whereNot({ id: userId })
+      .first();
+    if (taken) throw errors.conflict('Bu e-posta başka bir kullanıcıda kayıtlı', undefined, 'email_taken');
   }
 
   const update = {};
@@ -105,6 +126,7 @@ async function patchMe(userId, body, audit = {}) {
     update.acil_telefon = body.acil.telefon;
     update.acil_yakinlik = body.acil.yakinlik;
   }
+  // avatarUrl kontratta kabul ediliyor ama avatar yalnızca POST /users/me/avatar ile değişir; no-op.
 
   if (Object.keys(update).length === 0) {
     throw errors.validation('Güncellenecek alan yok');
@@ -120,6 +142,26 @@ async function patchMe(userId, body, audit = {}) {
     ip: audit.ip,
     userAgent: audit.userAgent,
     payload: { fields: Object.keys(update).filter((k) => k !== 'updated_at') },
+  });
+  return getMe(userId);
+}
+
+/** PUT /users/me/acil — acil iletişim bilgisini tamamen değiştirir (kontrat 4.2). */
+async function updateAcil(userId, body, audit = {}) {
+  await db('users').where({ id: userId }).update({
+    acil_ad: body.ad,
+    acil_soyad: body.soyad,
+    acil_telefon: body.telefon,
+    acil_yakinlik: body.yakinlik,
+    updated_at: new Date(),
+  });
+  await writeAudit({
+    userId,
+    action: 'users.acil',
+    entity: 'user',
+    entityId: userId,
+    ip: audit.ip,
+    userAgent: audit.userAgent,
   });
   return getMe(userId);
 }
@@ -151,7 +193,7 @@ async function setAvatar(userId, file, audit = {}) {
     ip: audit.ip,
     userAgent: audit.userAgent,
   });
-  return { avatarUrl: buildAvatarUrl(rel) };
+  return getMe(userId);
 }
 
 async function recordConsent(userId, { document, version, ip, userAgent }) {
@@ -262,4 +304,4 @@ async function softDelete(userId, audit = {}) {
   };
 }
 
-module.exports = { getMe, patchMe, setAvatar, recordConsent, dataExport, softDelete };
+module.exports = { getMe, patchMe, updateAcil, setAvatar, recordConsent, dataExport, softDelete };

@@ -14,11 +14,11 @@
   },
   "servers": [
     {
-      "url": "http://localhost/v1",
+      "url": "https://surfaces-acer-munich-completed.trycloudflare.com/v1",
       "description": "API v1"
     },
     {
-      "url": "http://localhost",
+      "url": "https://surfaces-acer-munich-completed.trycloudflare.com",
       "description": "Kök (health vb.)"
     }
   ],
@@ -56,24 +56,40 @@
       "description": "Ana sayfa feed"
     },
     {
-      "name": "Reports",
-      "description": "Yangın bildirimi"
+      "name": "Missions",
+      "description": "Aktif görevler & görev geçmişi"
+    },
+    {
+      "name": "Trainings",
+      "description": "Online/saha eğitimleri & aldığım eğitimler"
+    },
+    {
+      "name": "Equipment",
+      "description": "Zimmetli ekipmanlar"
+    },
+    {
+      "name": "Fire Reports",
+      "description": "Yangın ihbarı"
+    },
+    {
+      "name": "Emergency",
+      "description": "Acil durum bildirimi"
     },
     {
       "name": "Notifications",
-      "description": "FCM cihaz kaydı"
+      "description": "FCM cihaz kaydı & bildirim tercihleri"
     },
     {
       "name": "Legal",
       "description": "KVKK & rıza metinleri"
     },
     {
-      "name": "Trainings",
-      "description": "Gönüllü eğitimleri"
-    },
-    {
       "name": "Blog",
       "description": "Haber & duyurular"
+    },
+    {
+      "name": "Admin",
+      "description": "Panel/saha amiri uçları (mobil çağırmaz)"
     }
   ],
   "components": {
@@ -89,6 +105,18 @@
         "scheme": "bearer",
         "bearerFormat": "JWT",
         "description": "Telefon doğrulama sonrası kayıt formu için kısa süreli token"
+      },
+      "adminApiKey": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "x-api-key",
+        "description": "Panel admin anahtarı (ADMIN_API_KEY)"
+      },
+      "officerApiKey": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "x-api-key",
+        "description": "Saha amiri anahtarı (OFFICER_API_KEY)"
       }
     },
     "schemas": {
@@ -107,7 +135,7 @@
             "properties": {
               "code": {
                 "type": "string",
-                "example": "VALIDATION_ERROR"
+                "example": "validation_error"
               },
               "message": {
                 "type": "string",
@@ -530,6 +558,528 @@
             "$ref": "#/components/schemas/AcilIletisim"
           }
         }
+      },
+      "ActiveMissionSummary": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "category": {
+            "type": "string",
+            "example": "LOJİSTİK DESTEK"
+          },
+          "title": {
+            "type": "string"
+          },
+          "shortLocation": {
+            "type": "string",
+            "example": "Muğla / Marmaris"
+          },
+          "iconName": {
+            "type": "string",
+            "enum": [
+              "water",
+              "helmet",
+              "tool",
+              "first-aid"
+            ]
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "active",
+              "staffed"
+            ]
+          },
+          "userStatus": {
+            "type": "string",
+            "enum": [
+              "not_joined",
+              "accepted",
+              "on_site"
+            ]
+          }
+        }
+      },
+      "ActiveMissionDetail": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/ActiveMissionSummary"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "regionLabel": {
+                "type": "string"
+              },
+              "fullTitle": {
+                "type": "string"
+              },
+              "description": {
+                "type": "string"
+              },
+              "gallery": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "format": "uri"
+                }
+              },
+              "needs": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "stats": {
+                "type": "object",
+                "properties": {
+                  "volunteers": {
+                    "type": "integer"
+                  },
+                  "hectares": {
+                    "type": "number"
+                  }
+                }
+              },
+              "locationLabel": {
+                "type": "string"
+              },
+              "startedAt": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "coordinates": {
+                "type": "object",
+                "properties": {
+                  "lat": {
+                    "type": "number"
+                  },
+                  "lng": {
+                    "type": "number"
+                  }
+                }
+              },
+              "coverageRadiusKm": {
+                "type": "number"
+              },
+              "operational": {
+                "type": "object",
+                "properties": {
+                  "meetingPoint": {
+                    "type": "string"
+                  },
+                  "requiredEquipment": {
+                    "type": "string"
+                  }
+                }
+              },
+              "announcements": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "publishedAt": {
+                      "type": "string",
+                      "format": "date-time"
+                    },
+                    "severity": {
+                      "type": "string",
+                      "enum": [
+                        "info",
+                        "alert"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          }
+        ]
+      },
+      "FireMissionSummary": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "location": {
+            "type": "string"
+          },
+          "startDate": {
+            "type": "string",
+            "format": "date"
+          },
+          "endDate": {
+            "type": "string",
+            "format": "date"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "active",
+              "completed"
+            ]
+          },
+          "cover": {
+            "type": "string",
+            "format": "uri",
+            "nullable": true
+          }
+        }
+      },
+      "FireMissionDetail": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/FireMissionSummary"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "subtitle": {
+                "type": "string",
+                "nullable": true
+              },
+              "gallery": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "format": "uri"
+                }
+              },
+              "summary": {
+                "type": "string"
+              },
+              "stats": {
+                "type": "object",
+                "properties": {
+                  "hectares": {
+                    "type": "number"
+                  },
+                  "volunteers": {
+                    "type": "integer"
+                  }
+                }
+              }
+            }
+          }
+        ]
+      },
+      "OnlineTraining": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "durationMin": {
+            "type": "integer"
+          },
+          "iconTone": {
+            "type": "string",
+            "enum": [
+              "primary",
+              "tertiary"
+            ]
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "not_started",
+              "in_progress",
+              "completed"
+            ]
+          },
+          "progressPercent": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 100
+          }
+        }
+      },
+      "SahaTraining": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "location": {
+            "type": "string"
+          },
+          "startDate": {
+            "type": "string",
+            "format": "date"
+          },
+          "startTime": {
+            "type": "string",
+            "example": "09:00"
+          },
+          "endTime": {
+            "type": "string",
+            "example": "17:00"
+          },
+          "instructorName": {
+            "type": "string"
+          },
+          "instructorAvatar": {
+            "type": "string",
+            "format": "uri",
+            "nullable": true
+          },
+          "cover": {
+            "type": "string",
+            "format": "uri",
+            "nullable": true
+          },
+          "availableSeats": {
+            "type": "integer"
+          },
+          "seatStatus": {
+            "type": "string",
+            "enum": [
+              "available",
+              "last_seats"
+            ]
+          },
+          "applied": {
+            "type": "boolean"
+          }
+        }
+      },
+      "CompletedTraining": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "durationMin": {
+            "type": "integer"
+          },
+          "completedAt": {
+            "type": "string",
+            "format": "date",
+            "nullable": true
+          },
+          "instructorName": {
+            "type": "string",
+            "nullable": true
+          },
+          "progressPercent": {
+            "type": "integer"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "completed",
+              "in_progress"
+            ]
+          },
+          "certificateUrl": {
+            "type": "string",
+            "format": "uri",
+            "nullable": true
+          }
+        }
+      },
+      "EquipmentItem": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string"
+          },
+          "assignedAt": {
+            "type": "string",
+            "format": "date"
+          },
+          "expiresAt": {
+            "type": "string",
+            "format": "date",
+            "nullable": true
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "active",
+              "expiring_soon",
+              "expired"
+            ]
+          },
+          "iconName": {
+            "type": "string"
+          }
+        }
+      },
+      "BlogPost": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "cover": {
+            "type": "string",
+            "format": "uri",
+            "nullable": true
+          },
+          "publishedAt": {
+            "type": "string",
+            "format": "date"
+          },
+          "readTimeMin": {
+            "type": "integer"
+          },
+          "themes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "author": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "role": {
+                "type": "string"
+              },
+              "avatar": {
+                "type": "string",
+                "format": "uri",
+                "nullable": true
+              }
+            }
+          },
+          "content": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "type": "string",
+                  "enum": [
+                    "paragraph",
+                    "heading",
+                    "image"
+                  ]
+                },
+                "text": {
+                  "type": "string"
+                },
+                "source": {
+                  "type": "string",
+                  "format": "uri"
+                }
+              }
+            }
+          }
+        }
+      },
+      "NotificationPreferences": {
+        "type": "object",
+        "properties": {
+          "taskCalls": {
+            "type": "boolean"
+          },
+          "trainings": {
+            "type": "boolean"
+          },
+          "announcements": {
+            "type": "boolean"
+          },
+          "distance": {
+            "type": "object",
+            "properties": {
+              "km": {
+                "type": "integer"
+              },
+              "min": {
+                "type": "integer"
+              },
+              "max": {
+                "type": "integer"
+              }
+            }
+          }
+        }
+      },
+      "FireReportSummary": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "locationName": {
+            "type": "string"
+          },
+          "regionLabel": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "reviewing",
+              "confirmed",
+              "rejected"
+            ]
+          },
+          "submittedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "coordinates": {
+            "type": "object",
+            "properties": {
+              "lat": {
+                "type": "number"
+              },
+              "lng": {
+                "type": "number"
+              }
+            }
+          },
+          "needs": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
       }
     },
     "responses": {
@@ -587,6 +1137,118 @@
   },
   "security": [],
   "paths": {
+    "/admin/fire-reports/{id}": {
+      "put": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "Yangın bildirimi statü geçişi (panel)",
+        "description": "Mobil uygulamadan ÇAĞRILMAZ. x-api-key (admin) gerektirir.",
+        "security": [
+          {
+            "adminApiKey": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "status"
+                ],
+                "properties": {
+                  "status": {
+                    "type": "string",
+                    "enum": [
+                      "confirmed",
+                      "rejected"
+                    ]
+                  },
+                  "note": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Güncellendi"
+          }
+        }
+      }
+    },
+    "/admin/missions/{id}/photos/{submissionId}": {
+      "put": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "Görev fotoğrafı moderasyonu (panel)",
+        "security": [
+          {
+            "adminApiKey": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "submissionId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "status"
+                ],
+                "properties": {
+                  "status": {
+                    "type": "string",
+                    "enum": [
+                      "approved",
+                      "rejected"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Güncellendi"
+          }
+        }
+      }
+    },
     "/auth/edevlet/initiate": {
       "post": {
         "tags": [
@@ -1023,81 +1685,26 @@
         }
       }
     },
-    "/blog": {
+    "/blog/posts": {
       "get": {
         "tags": [
           "Blog"
         ],
-        "summary": "Paginated blog post listesi",
-        "parameters": [
+        "summary": "Blog yazıları",
+        "security": [
           {
-            "in": "query",
-            "name": "page",
-            "schema": {
-              "type": "integer",
-              "minimum": 1,
-              "default": 1
-            }
-          },
-          {
-            "in": "query",
-            "name": "pageSize",
-            "schema": {
-              "type": "integer",
-              "minimum": 1,
-              "maximum": 50,
-              "default": 10
-            }
+            "bearerAuth": []
           }
         ],
         "responses": {
           "200": {
-            "description": "Blog listesi",
+            "description": "Yazı listesi",
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "items": {
-                      "type": "array",
-                      "items": {
-                        "type": "object",
-                        "properties": {
-                          "slug": {
-                            "type": "string"
-                          },
-                          "title": {
-                            "type": "string"
-                          },
-                          "excerpt": {
-                            "type": "string"
-                          },
-                          "imageUrl": {
-                            "type": "string",
-                            "format": "uri",
-                            "nullable": true
-                          },
-                          "publishedAt": {
-                            "type": "string",
-                            "format": "date-time"
-                          }
-                        }
-                      }
-                    },
-                    "pagination": {
-                      "type": "object",
-                      "properties": {
-                        "page": {
-                          "type": "integer"
-                        },
-                        "pageSize": {
-                          "type": "integer"
-                        },
-                        "total": {
-                          "type": "integer"
-                        }
-                      }
-                    }
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/BlogPost"
                   }
                 }
               }
@@ -1106,16 +1713,21 @@
         }
       }
     },
-    "/blog/{slug}": {
+    "/blog/posts/{id}": {
       "get": {
         "tags": [
           "Blog"
         ],
-        "summary": "Blog post detayı",
+        "summary": "Blog yazısı detayı",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
         "parameters": [
           {
             "in": "path",
-            "name": "slug",
+            "name": "id",
             "required": true,
             "schema": {
               "type": "string"
@@ -1124,10 +1736,212 @@
         ],
         "responses": {
           "200": {
-            "description": "Post detayı"
+            "description": "Yazı",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BlogPost"
+                }
+              }
+            }
           },
           "404": {
-            "$ref": "#/components/responses/NotFound"
+            "description": "post_not_found"
+          }
+        }
+      }
+    },
+    "/emergency": {
+      "post": {
+        "tags": [
+          "Emergency"
+        ],
+        "summary": "Acil durum bildirimi",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "missionId": {
+                    "type": "string",
+                    "nullable": true
+                  },
+                  "coordinates": {
+                    "type": "object",
+                    "properties": {
+                      "lat": {
+                        "type": "number"
+                      },
+                      "lng": {
+                        "type": "number"
+                      }
+                    }
+                  },
+                  "message": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Acil bildirim alındı",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": {
+                      "type": "boolean"
+                    },
+                    "reportId": {
+                      "type": "string"
+                    },
+                    "submittedAt": {
+                      "type": "string",
+                      "format": "date-time"
+                    },
+                    "dispatchedTo": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          }
+        }
+      }
+    },
+    "/users/me/equipment": {
+      "get": {
+        "tags": [
+          "Equipment"
+        ],
+        "summary": "Zimmetli ekipman listesi",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Ekipman listesi",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/EquipmentItem"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/fire-reports": {
+      "post": {
+        "tags": [
+          "Fire Reports"
+        ],
+        "summary": "Yangın ihbarı (multipart, media[] min 1)",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "data",
+                  "media"
+                ],
+                "properties": {
+                  "data": {
+                    "type": "string",
+                    "description": "JSON: { coordinates, needs[], description }"
+                  },
+                  "media": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "format": "binary"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Bildirim alındı",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": {
+                      "type": "boolean"
+                    },
+                    "report": {
+                      "$ref": "#/components/schemas/FireReportSummary"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/ValidationError"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          }
+        }
+      }
+    },
+    "/users/me/fire-reports": {
+      "get": {
+        "tags": [
+          "Fire Reports"
+        ],
+        "summary": "Kendi yangın bildirimlerim",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Bildirim listesi",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/FireReportSummary"
+                  }
+                }
+              }
+            }
           }
         }
       }
@@ -1352,6 +2166,351 @@
         }
       }
     },
+    "/missions/active": {
+      "get": {
+        "tags": [
+          "Missions"
+        ],
+        "summary": "Aktif görev listesi (Anasayfa)",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "query",
+            "name": "lat",
+            "schema": {
+              "type": "number"
+            }
+          },
+          {
+            "in": "query",
+            "name": "lng",
+            "schema": {
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Aktif görevler",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ActiveMissionSummary"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/missions/active/{id}": {
+      "get": {
+        "tags": [
+          "Missions"
+        ],
+        "summary": "Aktif görev detayı",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Görev detayı",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ActiveMissionDetail"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
+    "/missions/active/{id}/join": {
+      "post": {
+        "tags": [
+          "Missions"
+        ],
+        "summary": "Göreve katıl (userStatus → accepted)",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Katılım onaylandı",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": {
+                      "type": "boolean"
+                    },
+                    "userStatus": {
+                      "type": "string",
+                      "example": "accepted"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "equipment_required"
+          },
+          "409": {
+            "description": "mission_full | already_joined"
+          }
+        }
+      }
+    },
+    "/missions/active/{id}/scan": {
+      "post": {
+        "tags": [
+          "Missions"
+        ],
+        "summary": "Saha amiri QR tarama (userStatus → on_site)",
+        "description": "Mobil uygulamadan ÇAĞRILMAZ. Saha amiri (officer) `x-api-key` veya\n`role=officer` token ile çağırır. Opsiyonel `token` HMAC imzasıdır (B.1).\n",
+        "security": [
+          {
+            "officerApiKey": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "userId"
+                ],
+                "properties": {
+                  "userId": {
+                    "type": "string"
+                  },
+                  "scannedAt": {
+                    "type": "string",
+                    "format": "date-time"
+                  },
+                  "token": {
+                    "type": "string",
+                    "description": "opsiyonel HMAC imzası"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "on_site'a geçildi",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": {
+                      "type": "boolean"
+                    },
+                    "userStatus": {
+                      "type": "string",
+                      "example": "on_site"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/missions/active/{id}/photos": {
+      "post": {
+        "tags": [
+          "Missions"
+        ],
+        "summary": "Görev fotoğrafı yükle (yalnızca on_site)",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "file"
+                ],
+                "properties": {
+                  "file": {
+                    "type": "string",
+                    "format": "binary"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Submission alındı",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": {
+                      "type": "boolean"
+                    },
+                    "submissionId": {
+                      "type": "string"
+                    },
+                    "status": {
+                      "type": "string",
+                      "example": "pending"
+                    },
+                    "submittedAt": {
+                      "type": "string",
+                      "format": "date-time"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "not_on_site"
+          }
+        }
+      }
+    },
+    "/users/me/missions": {
+      "get": {
+        "tags": [
+          "Missions"
+        ],
+        "summary": "Görev aldığım yangınlar (geçmiş)",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Görev geçmişi",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/FireMissionSummary"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/users/me/missions/{id}": {
+      "get": {
+        "tags": [
+          "Missions"
+        ],
+        "summary": "Geçmiş görev detayı",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Görev detayı",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FireMissionDetail"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "not_participated"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
     "/notifications/devices": {
       "post": {
         "tags": [
@@ -1442,6 +2601,82 @@
           },
           "404": {
             "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
+    "/users/me/notifications": {
+      "get": {
+        "tags": [
+          "Notifications"
+        ],
+        "summary": "Bildirim tercihleri",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Tercihler",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationPreferences"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "Notifications"
+        ],
+        "summary": "Bildirim tercihlerini güncelle",
+        "description": "Request `distanceKm` (flat) gönderilir; response `distance:{km,min,max}` (nested) döner.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "taskCalls": {
+                    "type": "boolean"
+                  },
+                  "trainings": {
+                    "type": "boolean"
+                  },
+                  "announcements": {
+                    "type": "boolean"
+                  },
+                  "distanceKm": {
+                    "type": "integer"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Güncellenmiş tercihler",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationPreferences"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/ValidationError"
           }
         }
       }
@@ -1593,105 +2828,118 @@
         }
       }
     },
-    "/reports/fire": {
-      "post": {
+    "/trainings/online": {
+      "get": {
         "tags": [
-          "Reports"
+          "Trainings"
         ],
-        "summary": "Yangın bildirimi (multipart)",
-        "description": "Giriş yapmış veya guest kullanıcı tarafından yapılabilir.\nRate limit: kullanıcı başına saatte 5, anonim IP başına saatte 3.\n",
+        "summary": "Online eğitim listesi (kullanıcı bazlı progress)",
         "security": [
           {
             "bearerAuth": []
-          },
-          {}
+          }
         ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "multipart/form-data": {
-              "schema": {
-                "type": "object",
-                "required": [
-                  "latitude",
-                  "longitude"
-                ],
-                "properties": {
-                  "latitude": {
-                    "type": "number",
-                    "format": "float"
-                  },
-                  "longitude": {
-                    "type": "number",
-                    "format": "float"
-                  },
-                  "accuracyM": {
-                    "type": "number",
-                    "format": "float"
-                  },
-                  "description": {
-                    "type": "string",
-                    "maxLength": 500
-                  },
-                  "photos": {
-                    "type": "array",
-                    "items": {
-                      "type": "string",
-                      "format": "binary"
-                    }
+        "responses": {
+          "200": {
+            "description": "Online eğitimler",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/OnlineTraining"
                   }
                 }
               }
             }
           }
-        },
+        }
+      }
+    },
+    "/trainings/saha": {
+      "get": {
+        "tags": [
+          "Trainings"
+        ],
+        "summary": "Saha eğitim listesi",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
         "responses": {
-          "201": {
-            "description": "Bildirim alındı",
+          "200": {
+            "description": "Saha eğitimleri",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/SahaTraining"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/trainings/{id}/applications": {
+      "post": {
+        "tags": [
+          "Trainings"
+        ],
+        "summary": "Saha eğitimine başvur",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Başvuru alındı",
             "content": {
               "application/json": {
                 "schema": {
                   "type": "object",
                   "properties": {
-                    "reportId": {
-                      "type": "string",
-                      "format": "uuid"
+                    "applicationId": {
+                      "type": "string"
                     },
                     "status": {
                       "type": "string",
-                      "enum": [
-                        "received",
-                        "dispatched",
-                        "closed"
-                      ]
-                    },
-                    "createdAt": {
-                      "type": "string",
-                      "format": "date-time"
-                    },
-                    "etaResponseSec": {
-                      "type": "integer"
+                      "example": "pending"
                     }
                   }
                 }
               }
             }
           },
-          "422": {
-            "$ref": "#/components/responses/ValidationError"
+          "409": {
+            "description": "already_applied"
           },
-          "429": {
-            "$ref": "#/components/responses/RateLimited"
+          "410": {
+            "description": "training_full | training_closed"
           }
         }
       }
     },
-    "/trainings": {
+    "/users/me/trainings": {
       "get": {
         "tags": [
           "Trainings"
         ],
-        "summary": "Kullanıcıya açık eğitim listesi",
+        "summary": "Aldığım eğitimler",
         "security": [
           {
             "bearerAuth": []
@@ -1699,115 +2947,61 @@
         ],
         "responses": {
           "200": {
-            "description": "Eğitim listesi",
+            "description": "Tamamlanan/sürdürülen eğitimler",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/CompletedTraining"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/users/me/trainings/{id}/certificate": {
+      "get": {
+        "tags": [
+          "Trainings"
+        ],
+        "summary": "Eğitim sertifika indirme linki",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Sertifika URL",
             "content": {
               "application/json": {
                 "schema": {
                   "type": "object",
                   "properties": {
-                    "items": {
-                      "type": "array",
-                      "items": {
-                        "$ref": "#/components/schemas/Training"
-                      }
+                    "url": {
+                      "type": "string",
+                      "format": "uri"
                     }
                   }
                 }
               }
             }
-          }
-        }
-      }
-    },
-    "/trainings/{id}": {
-      "get": {
-        "tags": [
-          "Trainings"
-        ],
-        "summary": "Eğitim detayı (içerik, video URL'leri)",
-        "security": [
-          {
-            "bearerAuth": []
-          }
-        ],
-        "parameters": [
-          {
-            "in": "path",
-            "name": "id",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Eğitim detayı"
           },
           "404": {
-            "$ref": "#/components/responses/NotFound"
-          }
-        }
-      }
-    },
-    "/trainings/{id}/start": {
-      "post": {
-        "tags": [
-          "Trainings"
-        ],
-        "summary": "Eğitime başla (status → in_progress)",
-        "security": [
-          {
-            "bearerAuth": []
-          }
-        ],
-        "parameters": [
-          {
-            "in": "path",
-            "name": "id",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Başlatıldı"
-          },
-          "404": {
-            "$ref": "#/components/responses/NotFound"
-          }
-        }
-      }
-    },
-    "/trainings/{id}/complete": {
-      "post": {
-        "tags": [
-          "Trainings"
-        ],
-        "summary": "Eğitimi tamamla (status → completed)",
-        "security": [
-          {
-            "bearerAuth": []
-          }
-        ],
-        "parameters": [
-          {
-            "in": "path",
-            "name": "id",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Tamamlandı"
+            "description": "certificate_not_issued"
           }
         }
       }
@@ -1844,7 +3038,7 @@
           "Users"
         ],
         "summary": "Profil alanlarını kısmen günceller",
-        "description": "Telefon değişikliği için bu uç KULLANILMAZ. Telefon için\n`POST /users/me/phone-change/init` ve `/commit` akışı zorunludur.\n",
+        "description": "Tüm alanlar opsiyonel (partial update). Telefon için OTP doğrulamalı güvenli akış\n(`POST /users/me/phone-change/init` + `/commit`) de mevcuttur.\n",
         "security": [
           {
             "bearerAuth": []
@@ -1857,9 +3051,18 @@
               "schema": {
                 "type": "object",
                 "properties": {
+                  "phone": {
+                    "type": "string",
+                    "example": "+905557654321"
+                  },
                   "eposta": {
                     "type": "string",
                     "format": "email"
+                  },
+                  "avatarUrl": {
+                    "type": "string",
+                    "format": "uri",
+                    "nullable": true
                   },
                   "adres": {
                     "type": "string"
@@ -1946,6 +3149,41 @@
         }
       }
     },
+    "/users/me/acil": {
+      "put": {
+        "tags": [
+          "Users"
+        ],
+        "summary": "Acil iletişim bilgisini tamamen değiştir",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AcilIletisim"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Güncellenmiş profil",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserProfile"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/users/me/avatar": {
       "post": {
         "tags": [
@@ -1964,10 +3202,10 @@
               "schema": {
                 "type": "object",
                 "required": [
-                  "file"
+                  "avatar"
                 ],
                 "properties": {
-                  "file": {
+                  "avatar": {
                     "type": "string",
                     "format": "binary"
                   }
@@ -1978,17 +3216,11 @@
         },
         "responses": {
           "200": {
-            "description": "Avatar URL",
+            "description": "Güncellenmiş profil",
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "avatarUrl": {
-                      "type": "string",
-                      "format": "uri"
-                    }
-                  }
+                  "$ref": "#/components/schemas/UserProfile"
                 }
               }
             }

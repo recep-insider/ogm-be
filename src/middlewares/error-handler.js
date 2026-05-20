@@ -6,7 +6,7 @@ const { AppError } = require('../shared/errors');
 function notFoundHandler(req, res, _next) {
   res.status(404).json({
     error: {
-      code: 'NOT_FOUND',
+      code: 'not_found',
       message: `Endpoint bulunamadı: ${req.method} ${req.originalUrl}`,
     },
   });
@@ -15,7 +15,7 @@ function notFoundHandler(req, res, _next) {
 function errorHandler(err, req, res, _next) {
   const isAppError = err instanceof AppError;
   const status = isAppError ? err.status : 500;
-  const code = isAppError ? err.code : 'INTERNAL_ERROR';
+  const code = isAppError ? err.code : 'internal_error';
   const message = isAppError ? err.message : 'Sunucu hatası';
 
   if (status >= 500) {

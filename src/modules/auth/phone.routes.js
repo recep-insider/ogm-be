@@ -15,7 +15,7 @@ const sendOtpLimiter = rateLimit({
   limit: 50,
   standardHeaders: 'draft-7',
   legacyHeaders: false,
-  message: { error: { code: 'RATE_LIMIT', message: 'IP başına OTP isteği limiti aşıldı' } },
+  message: { error: { code: 'rate_limited', message: 'IP başına OTP isteği limiti aşıldı' } },
 });
 
 const verifyLimiter = rateLimit({
@@ -23,7 +23,7 @@ const verifyLimiter = rateLimit({
   limit: 60,
   standardHeaders: 'draft-7',
   legacyHeaders: false,
-  message: { error: { code: 'RATE_LIMIT', message: 'OTP doğrulama limiti aşıldı' } },
+  message: { error: { code: 'rate_limited', message: 'OTP doğrulama limiti aşıldı' } },
 });
 
 /**

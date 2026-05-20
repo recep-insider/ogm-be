@@ -17,6 +17,7 @@ function ensureDir(dir) {
 
 const ALLOWED_DOC_MIME = ['image/jpeg', 'image/png', 'application/pdf'];
 const ALLOWED_AVATAR_MIME = ['image/jpeg', 'image/png'];
+const ALLOWED_MEDIA_MIME = ['image/jpeg', 'image/png', 'video/mp4'];
 
 function diskStorage(subdir) {
   const target = path.join(env.upload.dir, subdir);
@@ -33,7 +34,9 @@ function diskStorage(subdir) {
 function mimeFilter(allowed) {
   return (_req, file, cb) => {
     if (allowed.includes(file.mimetype)) return cb(null, true);
-    cb(errors.validation('Dosya formatı desteklenmiyor', { mimetype: file.mimetype }));
+    cb(errors.make(415, 'unsupported_media_type', 'Dosya formatı desteklenmiyor', {
+      mimetype: file.mimetype,
+    }));
   };
 }
 
@@ -50,13 +53,21 @@ const avatarUpload = multer({
   storage: diskStorage('avatars'),
   limits: { fileSize: env.upload.maxAvatarBytes },
   fileFilter: mimeFilter(ALLOWED_AVATAR_MIME),
-}).single('file');
+}).single('avatar');
 
-const reportUpload = multer({
+// Yangın ihbarı — `media[]` (min 1, kontrat 9.1). Çoklu image/video.
+const fireReportUpload = multer({
   storage: diskStorage('reports'),
   limits: { fileSize: env.upload.maxDocBytes },
-  fileFilter: mimeFilter(ALLOWED_DOC_MIME),
-}).array('photos', env.upload.maxReportPhotos);
+  fileFilter: mimeFilter(ALLOWED_MEDIA_MIME),
+}).array('media', env.upload.maxReportPhotos);
+
+// Aktif görev fotoğrafı — tek `file` (kontrat 7.5).
+const missionPhotoUpload = multer({
+  storage: diskStorage('missions'),
+  limits: { fileSize: env.upload.maxDocBytes },
+  fileFilter: mimeFilter(ALLOWED_MEDIA_MIME),
+}).single('file');
 
 /** Multer hatalarını AppError'a çevirip pipeline'da sürdürür. */
 function wrapMulter(handler) {
@@ -65,7 +76,9 @@ function wrapMulter(handler) {
       if (!err) return next();
       if (err.code === 'LIMIT_FILE_SIZE') {
         return next(
-          errors.validation('Dosya boyutu sınırı aşıldı', { limitBytes: err.limit }),
+          errors.make(413, 'file_too_large', 'Dosya boyutu sınırı aşıldı', {
+            limitBytes: err.limit,
+          }),
         );
       }
       if (err.code === 'LIMIT_UNEXPECTED_FILE') {
@@ -79,5 +92,6 @@ function wrapMulter(handler) {
 module.exports = {
   onboardingUpload: wrapMulter(onboardingUpload),
   avatarUpload: wrapMulter(avatarUpload),
-  reportUpload: wrapMulter(reportUpload),
+  fireReportUpload: wrapMulter(fireReportUpload),
+  missionPhotoUpload: wrapMulter(missionPhotoUpload),
 };

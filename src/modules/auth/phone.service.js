@@ -9,6 +9,7 @@ const { errors } = require('../../shared/errors');
 const { generateOtp, hashOtp, verifyOtp } = require('../../shared/otp');
 const { sendOtp } = require('../../shared/sms-provider');
 const { writeAudit } = require('../../shared/audit');
+const { toDateOnly } = require('../../shared/dates');
 const {
   signAccessToken,
   signRefreshToken,
@@ -82,7 +83,7 @@ async function sendOtpFlow({ phone, ip }) {
 
 async function resendOtpFlow({ sessionId, ip }) {
   const raw = await redis.get(sessionKey(sessionId));
-  if (!raw) throw errors.notFound('Oturum bulunamadı veya süresi dolmuş');
+  if (!raw) throw errors.notFound('Oturum bulunamadı veya süresi dolmuş', 'session_not_found');
   const session = JSON.parse(raw);
 
   // cooldown kontrolü
@@ -114,7 +115,7 @@ async function resendOtpFlow({ sessionId, ip }) {
 
 async function verifyOtpFlow({ sessionId, code, ip, userAgent }) {
   const raw = await redis.get(sessionKey(sessionId));
-  if (!raw) throw errors.unauthorized('Doğrulama kodu hatalı');
+  if (!raw) throw errors.gone('Doğrulama kodunun süresi doldu', undefined, 'otp_expired');
   const session = JSON.parse(raw);
 
   session.attempts = (session.attempts || 0) + 1;
@@ -128,7 +129,7 @@ async function verifyOtpFlow({ sessionId, code, ip, userAgent }) {
   const ok = await verifyOtp(code, session.codeHash);
   if (!ok) {
     await redis.set(sessionKey(sessionId), JSON.stringify(session), 'KEEPTTL');
-    throw errors.unauthorized('Doğrulama kodu hatalı');
+    throw errors.make(400, 'invalid_otp', 'Geçersiz doğrulama kodu. Lütfen tekrar deneyin.');
   }
 
   await redis.del(sessionKey(sessionId));
@@ -182,7 +183,12 @@ async function finalizeExistingUser(user, ip, userAgent) {
     expiresIn: accessTokenSeconds(),
     user: {
       id: user.id,
+      tcKimlik: user.tc_kimlik,
+      ad: user.ad,
+      soyad: user.soyad,
+      dogumTarihi: toDateOnly(user.dogum_tarihi),
       phone: user.phone,
+      eposta: user.eposta,
       profileComplete: !!user.profile_complete,
     },
   };

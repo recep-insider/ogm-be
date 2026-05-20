@@ -106,6 +106,22 @@ const env = {
     credentialsPath: process.env.FIREBASE_CREDENTIALS_PATH || '',
   },
 
+  push: {
+    provider: process.env.PUSH_PROVIDER || 'mock',
+  },
+
+  admin: {
+    apiKey: process.env.ADMIN_API_KEY || '',
+    // Saha amiri (officer) scan endpoint'i için ayrı anahtar; boşsa adminApiKey kullanılır.
+    officerApiKey: process.env.OFFICER_API_KEY || '',
+    // QR imzalı token doğrulaması için opsiyonel HMAC secret (B.1).
+    scanHmacSecret: process.env.SCAN_HMAC_SECRET || '',
+  },
+
+  geo: {
+    nominatimUrl: process.env.NOMINATIM_URL || '',
+  },
+
   logging: {
     level: process.env.LOG_LEVEL || 'info',
     dir: process.env.LOG_DIR || '/app/logs',

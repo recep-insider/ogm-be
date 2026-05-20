@@ -12,6 +12,7 @@ const {
   signRefreshToken,
   accessTokenSeconds,
 } = require('../../shared/jwt');
+const { toIso, toDateOnly } = require('../../shared/dates');
 
 async function unlinkSafe(file) {
   if (!file) return;
@@ -153,9 +154,18 @@ async function complete({ user, registration, data, files, ip, userAgent }) {
   return {
     applicationId: application.id,
     status: application.status,
-    submittedAt: application.submitted_at,
-    user: { id: userRecord.id, profileComplete: !!userRecord.profile_complete },
-    ...(tokens ? { tokens } : {}),
+    submittedAt: toIso(application.submitted_at),
+    user: {
+      id: userRecord.id,
+      tcKimlik: userRecord.tc_kimlik,
+      ad: userRecord.ad,
+      soyad: userRecord.soyad,
+      dogumTarihi: toDateOnly(userRecord.dogum_tarihi),
+      phone: userRecord.phone,
+      eposta: userRecord.eposta,
+      profileComplete: !!userRecord.profile_complete,
+    },
+    tokens: tokens || null,
   };
 }
 

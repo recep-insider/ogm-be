@@ -8,6 +8,7 @@ const { avatarUpload } = require('../../middlewares/upload');
 const controller = require('./users.controller');
 const {
   patchMeSchema,
+  acilSchema,
   consentSchema,
   phoneChangeInitSchema,
   phoneChangeCommitSchema,
@@ -35,8 +36,8 @@ router.use(requireAuth);
  *     tags: [Users]
  *     summary: Profil alanlarını kısmen günceller
  *     description: |
- *       Telefon değişikliği için bu uç KULLANILMAZ. Telefon için
- *       `POST /users/me/phone-change/init` ve `/commit` akışı zorunludur.
+ *       Tüm alanlar opsiyonel (partial update). Telefon için OTP doğrulamalı güvenli akış
+ *       (`POST /users/me/phone-change/init` + `/commit`) de mevcuttur.
  *     security: [ { bearerAuth: [] } ]
  *     requestBody:
  *       required: true
@@ -45,7 +46,9 @@ router.use(requireAuth);
  *           schema:
  *             type: object
  *             properties:
+ *               phone: { type: string, example: '+905557654321' }
  *               eposta: { type: string, format: email }
+ *               avatarUrl: { type: string, format: uri, nullable: true }
  *               adres: { type: string }
  *               kanGrubu: { $ref: '#/components/schemas/KanGrubu' }
  *               ogrenim: { $ref: '#/components/schemas/Ogrenim' }
@@ -88,6 +91,27 @@ router.delete('/me', asyncHandler(controller.softDelete));
 
 /**
  * @openapi
+ * /users/me/acil:
+ *   put:
+ *     tags: [Users]
+ *     summary: Acil iletişim bilgisini tamamen değiştir
+ *     security: [ { bearerAuth: [] } ]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema: { $ref: '#/components/schemas/AcilIletisim' }
+ *     responses:
+ *       200:
+ *         description: Güncellenmiş profil
+ *         content:
+ *           application/json:
+ *             schema: { $ref: '#/components/schemas/UserProfile' }
+ */
+router.put('/me/acil', validate({ body: acilSchema }), asyncHandler(controller.updateAcil));
+
+/**
+ * @openapi
  * /users/me/avatar:
  *   post:
  *     tags: [Users]
@@ -99,18 +123,15 @@ router.delete('/me', asyncHandler(controller.softDelete));
  *         multipart/form-data:
  *           schema:
  *             type: object
- *             required: [file]
+ *             required: [avatar]
  *             properties:
- *               file: { type: string, format: binary }
+ *               avatar: { type: string, format: binary }
  *     responses:
  *       200:
- *         description: Avatar URL
+ *         description: Güncellenmiş profil
  *         content:
  *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 avatarUrl: { type: string, format: uri }
+ *             schema: { $ref: '#/components/schemas/UserProfile' }
  */
 router.post('/me/avatar', avatarUpload, asyncHandler(controller.setAvatar));
 

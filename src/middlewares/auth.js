@@ -3,6 +3,7 @@
 const { errors } = require('../shared/errors');
 const { verifyAccessToken, verifyRegistrationToken } = require('../shared/jwt');
 const { redis } = require('../config/redis');
+const env = require('../config/env');
 
 function extractBearer(req) {
   const header = req.headers.authorization || '';
@@ -99,10 +100,47 @@ async function isRefreshBlacklisted(jti) {
   }
 }
 
+/**
+ * API anahtarı ya da access token'daki `role` claim'i ile yetki kontrolü.
+ * Saha amiri (officer) / admin uçları mobil uygulamadan değil ayrı panel/cihazdan çağrılır.
+ */
+function apiKeyOrRole(roleNames, getKeys) {
+  return (req, _res, next) => {
+    const provided = req.headers['x-api-key'];
+    const validKeys = getKeys().filter(Boolean);
+    if (provided && validKeys.includes(provided)) {
+      req.actor = { type: 'api_key', role: roleNames[0] };
+      return next();
+    }
+    const token = extractBearer(req);
+    if (token) {
+      try {
+        const payload = verifyAccessToken(token);
+        if (roleNames.includes(payload.role)) {
+          req.user = { id: payload.sub, ...payload };
+          req.actor = { type: 'token', role: payload.role };
+          return next();
+        }
+      } catch {
+        // düş — yetki yok
+      }
+    }
+    return next(errors.forbidden('Bu işlem için yetkiniz yok'));
+  };
+}
+
+const requireAdmin = apiKeyOrRole(['admin'], () => [env.admin.apiKey]);
+const requireOfficer = apiKeyOrRole(
+  ['officer', 'admin'],
+  () => [env.admin.officerApiKey, env.admin.apiKey],
+);
+
 module.exports = {
   requireAuth,
   optionalAuth,
   requireRegistrationToken,
   requireAuthOrRegistration,
+  requireAdmin,
+  requireOfficer,
   isRefreshBlacklisted,
 };

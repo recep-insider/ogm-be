@@ -17,6 +17,11 @@ async function patchMe(req, res) {
   res.status(200).json(profile);
 }
 
+async function updateAcil(req, res) {
+  const profile = await usersService.updateAcil(req.user.id, req.body, audit(req));
+  res.status(200).json(profile);
+}
+
 async function setAvatar(req, res) {
   const result = await usersService.setAvatar(req.user.id, req.file, audit(req));
   res.status(200).json(result);
@@ -65,6 +70,7 @@ async function phoneChangeCommit(req, res) {
 module.exports = {
   getMe,
   patchMe,
+  updateAcil,
   setAvatar,
   recordConsent,
   dataExport,

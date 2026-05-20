@@ -20,11 +20,19 @@ const onboardingRoutes = require('./modules/onboarding/onboarding.routes');
 const referenceRoutes = require('./modules/reference/reference.routes');
 const usersRoutes = require('./modules/users/users.routes');
 const homeRoutes = require('./modules/home/home.routes');
-const reportsRoutes = require('./modules/reports/reports.routes');
 const notificationsRoutes = require('./modules/notifications/notifications.routes');
+const notificationPreferencesRoutes = require('./modules/notifications/preferences.routes');
 const legalRoutes = require('./modules/legal/legal.routes');
 const trainingsRoutes = require('./modules/trainings/trainings.routes');
+const userTrainingsRoutes = require('./modules/trainings/userTrainings.routes');
 const blogRoutes = require('./modules/blog/blog.routes');
+const missionsRoutes = require('./modules/missions/missions.routes');
+const userMissionsRoutes = require('./modules/missions/userMissions.routes');
+const equipmentRoutes = require('./modules/equipment/equipment.routes');
+const fireReportsRoutes = require('./modules/fireReports/fireReports.routes');
+const userFireReportsRoutes = require('./modules/fireReports/userFireReports.routes');
+const emergencyRoutes = require('./modules/emergency/emergency.routes');
+const adminRoutes = require('./modules/admin/admin.routes');
 
 const app = express();
 
@@ -51,7 +59,7 @@ const generalLimiter = rateLimit({
   limit: 100,
   standardHeaders: 'draft-7',
   legacyHeaders: false,
-  message: { error: { code: 'RATE_LIMIT', message: 'İstek limiti aşıldı' } },
+  message: { error: { code: 'rate_limited', message: 'İstek limiti aşıldı' } },
 });
 
 app.use('/v1', generalLimiter);
@@ -81,13 +89,24 @@ app.use('/v1/auth/edevlet', edevletAuthRoutes);
 app.use('/v1/auth', tokenRoutes);
 app.use('/v1/onboarding', onboardingRoutes);
 app.use('/v1/reference', referenceRoutes);
+
+// Kullanıcı-kapsamlı (spesifik) uçlar — genel /v1/users mount'undan ÖNCE eşleşmeli.
+app.use('/v1/users/me/missions', userMissionsRoutes);
+app.use('/v1/users/me/trainings', userTrainingsRoutes);
+app.use('/v1/users/me/equipment', equipmentRoutes);
+app.use('/v1/users/me/fire-reports', userFireReportsRoutes);
+app.use('/v1/users/me/notifications', notificationPreferencesRoutes);
 app.use('/v1/users', usersRoutes);
+
 app.use('/v1/home', homeRoutes);
-app.use('/v1/reports', reportsRoutes);
+app.use('/v1/missions', missionsRoutes);
+app.use('/v1/trainings', trainingsRoutes);
+app.use('/v1/fire-reports', fireReportsRoutes);
+app.use('/v1/emergency', emergencyRoutes);
 app.use('/v1/notifications', notificationsRoutes);
 app.use('/v1/legal', legalRoutes);
-app.use('/v1/trainings', trainingsRoutes);
 app.use('/v1/blog', blogRoutes);
+app.use('/v1/admin', adminRoutes);
 
 app.use(notFoundHandler);
 app.use(errorHandler);

@@ -9,6 +9,7 @@ const env = require('../../config/env');
 const logger = require('../../config/logger');
 const { errors } = require('../../shared/errors');
 const { writeAudit } = require('../../shared/audit');
+const { toDateOnly } = require('../../shared/dates');
 const {
   signAccessToken,
   signRefreshToken,
@@ -24,6 +25,9 @@ function sessionKey(id) {
 }
 
 async function initiate({ callbackScheme }) {
+  if (!env.edevlet.enabled) {
+    throw errors.make(503, 'edevlet_unavailable', 'e-Devlet girişi şu anda kullanılamıyor');
+  }
   const sessionId = uuidv4();
   const state = crypto.randomBytes(16).toString('hex');
   const ttl = env.edevlet.sessionTtl;
@@ -83,11 +87,11 @@ function buildMockKimlik() {
 
 async function callback({ sessionId, code, state, ip, userAgent }) {
   const raw = await redis.get(sessionKey(sessionId));
-  if (!raw) throw errors.unauthorized('Oturum bulunamadı veya süresi dolmuş');
+  if (!raw) throw errors.gone('Oturum bulunamadı veya süresi dolmuş', undefined, 'session_expired');
   const session = JSON.parse(raw);
 
   if (state && session.state !== state) {
-    throw errors.unauthorized('State eşleşmiyor');
+    throw errors.make(400, 'invalid_oauth_code', 'State eşleşmiyor');
   }
 
   let kimlik;
@@ -104,7 +108,7 @@ async function callback({ sessionId, code, state, ip, userAgent }) {
       };
     } catch (err) {
       logger.error('e-Devlet user-info hata', { error: err.message });
-      throw errors.unauthorized('e-Devlet kimlik bilgileri alınamadı');
+      throw errors.make(400, 'invalid_oauth_code', 'e-Devlet kimlik bilgileri alınamadı');
     }
   }
 
@@ -134,13 +138,18 @@ async function callback({ sessionId, code, state, ip, userAgent }) {
   });
 
   return {
-    accessToken: registrationToken, // FE shape uyumu için
+    accessToken: registrationToken, // FE shape uyumu için (onboarding tamamlanana kadar)
     refreshToken: null,
     expiresIn: registrationTokenSeconds(),
     isExisting: false,
     user: {
       id: null,
-      ...kimlik,
+      tcKimlik: kimlik.tcKimlik,
+      ad: kimlik.ad,
+      soyad: kimlik.soyad,
+      dogumTarihi: toDateOnly(kimlik.dogumTarihi),
+      phone: null,
+      eposta: null,
       profileComplete: false,
     },
   };
@@ -172,7 +181,9 @@ async function finalizeExistingUser(user, kimlik, ip, userAgent) {
       tcKimlik: user.tc_kimlik,
       ad: user.ad,
       soyad: user.soyad,
-      dogumTarihi: user.dogum_tarihi,
+      dogumTarihi: toDateOnly(user.dogum_tarihi),
+      phone: user.phone,
+      eposta: user.eposta,
       profileComplete: !!user.profile_complete,
     },
   };

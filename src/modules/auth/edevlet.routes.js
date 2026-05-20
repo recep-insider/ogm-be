@@ -15,7 +15,7 @@ const initiateLimiter = rateLimit({
   limit: 10,
   standardHeaders: 'draft-7',
   legacyHeaders: false,
-  message: { error: { code: 'RATE_LIMIT', message: 'IP başına e-Devlet başlatma limiti aşıldı' } },
+  message: { error: { code: 'rate_limited', message: 'IP başına e-Devlet başlatma limiti aşıldı' } },
 });
 
 /**

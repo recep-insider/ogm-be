@@ -65,7 +65,7 @@ router.get('/:document', (req, res) => {
   const doc = DOCUMENTS[req.params.document];
   if (!doc) {
     return res.status(404).json({
-      error: { code: 'NOT_FOUND', message: 'Belge bulunamadı' },
+      error: { code: 'not_found', message: 'Belge bulunamadı' },
     });
   }
   res.status(200).json(doc);

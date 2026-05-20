@@ -33,11 +33,15 @@ const definition = {
     { name: 'Reference', description: 'Sabit listeler (kan grubu vb.)' },
     { name: 'Users', description: 'Kullanıcı profili & avatar' },
     { name: 'Home', description: 'Ana sayfa feed' },
-    { name: 'Reports', description: 'Yangın bildirimi' },
-    { name: 'Notifications', description: 'FCM cihaz kaydı' },
+    { name: 'Missions', description: 'Aktif görevler & görev geçmişi' },
+    { name: 'Trainings', description: 'Online/saha eğitimleri & aldığım eğitimler' },
+    { name: 'Equipment', description: 'Zimmetli ekipmanlar' },
+    { name: 'Fire Reports', description: 'Yangın ihbarı' },
+    { name: 'Emergency', description: 'Acil durum bildirimi' },
+    { name: 'Notifications', description: 'FCM cihaz kaydı & bildirim tercihleri' },
     { name: 'Legal', description: 'KVKK & rıza metinleri' },
-    { name: 'Trainings', description: 'Gönüllü eğitimleri' },
     { name: 'Blog', description: 'Haber & duyurular' },
+    { name: 'Admin', description: 'Panel/saha amiri uçları (mobil çağırmaz)' },
   ],
   components: {
     securitySchemes: {
@@ -53,6 +57,18 @@ const definition = {
         bearerFormat: 'JWT',
         description: 'Telefon doğrulama sonrası kayıt formu için kısa süreli token',
       },
+      adminApiKey: {
+        type: 'apiKey',
+        in: 'header',
+        name: 'x-api-key',
+        description: 'Panel admin anahtarı (ADMIN_API_KEY)',
+      },
+      officerApiKey: {
+        type: 'apiKey',
+        in: 'header',
+        name: 'x-api-key',
+        description: 'Saha amiri anahtarı (OFFICER_API_KEY)',
+      },
     },
     schemas: {
       ErrorResponse: {
@@ -63,7 +79,7 @@ const definition = {
             type: 'object',
             required: ['code', 'message'],
             properties: {
-              code: { type: 'string', example: 'VALIDATION_ERROR' },
+              code: { type: 'string', example: 'validation_error' },
               message: { type: 'string', example: 'Form alanlarında hata var' },
               details: { type: 'object', additionalProperties: true },
             },
@@ -240,6 +256,209 @@ const definition = {
             },
           },
           acil: { $ref: '#/components/schemas/AcilIletisim' },
+        },
+      },
+      ActiveMissionSummary: {
+        type: 'object',
+        properties: {
+          id: { type: 'string' },
+          category: { type: 'string', example: 'LOJİSTİK DESTEK' },
+          title: { type: 'string' },
+          shortLocation: { type: 'string', example: 'Muğla / Marmaris' },
+          iconName: { type: 'string', enum: ['water', 'helmet', 'tool', 'first-aid'] },
+          status: { type: 'string', enum: ['active', 'staffed'] },
+          userStatus: { type: 'string', enum: ['not_joined', 'accepted', 'on_site'] },
+        },
+      },
+      ActiveMissionDetail: {
+        allOf: [
+          { $ref: '#/components/schemas/ActiveMissionSummary' },
+          {
+            type: 'object',
+            properties: {
+              regionLabel: { type: 'string' },
+              fullTitle: { type: 'string' },
+              description: { type: 'string' },
+              gallery: { type: 'array', items: { type: 'string', format: 'uri' } },
+              needs: { type: 'array', items: { type: 'string' } },
+              stats: {
+                type: 'object',
+                properties: { volunteers: { type: 'integer' }, hectares: { type: 'number' } },
+              },
+              locationLabel: { type: 'string' },
+              startedAt: { type: 'string', format: 'date-time' },
+              coordinates: {
+                type: 'object',
+                properties: { lat: { type: 'number' }, lng: { type: 'number' } },
+              },
+              coverageRadiusKm: { type: 'number' },
+              operational: {
+                type: 'object',
+                properties: {
+                  meetingPoint: { type: 'string' },
+                  requiredEquipment: { type: 'string' },
+                },
+              },
+              announcements: {
+                type: 'array',
+                items: {
+                  type: 'object',
+                  properties: {
+                    id: { type: 'string' },
+                    message: { type: 'string' },
+                    publishedAt: { type: 'string', format: 'date-time' },
+                    severity: { type: 'string', enum: ['info', 'alert'] },
+                  },
+                },
+              },
+            },
+          },
+        ],
+      },
+      FireMissionSummary: {
+        type: 'object',
+        properties: {
+          id: { type: 'string' },
+          title: { type: 'string' },
+          location: { type: 'string' },
+          startDate: { type: 'string', format: 'date' },
+          endDate: { type: 'string', format: 'date' },
+          status: { type: 'string', enum: ['active', 'completed'] },
+          cover: { type: 'string', format: 'uri', nullable: true },
+        },
+      },
+      FireMissionDetail: {
+        allOf: [
+          { $ref: '#/components/schemas/FireMissionSummary' },
+          {
+            type: 'object',
+            properties: {
+              subtitle: { type: 'string', nullable: true },
+              gallery: { type: 'array', items: { type: 'string', format: 'uri' } },
+              summary: { type: 'string' },
+              stats: {
+                type: 'object',
+                properties: { hectares: { type: 'number' }, volunteers: { type: 'integer' } },
+              },
+            },
+          },
+        ],
+      },
+      OnlineTraining: {
+        type: 'object',
+        properties: {
+          id: { type: 'string' },
+          title: { type: 'string' },
+          description: { type: 'string' },
+          durationMin: { type: 'integer' },
+          iconTone: { type: 'string', enum: ['primary', 'tertiary'] },
+          status: { type: 'string', enum: ['not_started', 'in_progress', 'completed'] },
+          progressPercent: { type: 'integer', minimum: 0, maximum: 100 },
+        },
+      },
+      SahaTraining: {
+        type: 'object',
+        properties: {
+          id: { type: 'string' },
+          title: { type: 'string' },
+          location: { type: 'string' },
+          startDate: { type: 'string', format: 'date' },
+          startTime: { type: 'string', example: '09:00' },
+          endTime: { type: 'string', example: '17:00' },
+          instructorName: { type: 'string' },
+          instructorAvatar: { type: 'string', format: 'uri', nullable: true },
+          cover: { type: 'string', format: 'uri', nullable: true },
+          availableSeats: { type: 'integer' },
+          seatStatus: { type: 'string', enum: ['available', 'last_seats'] },
+          applied: { type: 'boolean' },
+        },
+      },
+      CompletedTraining: {
+        type: 'object',
+        properties: {
+          id: { type: 'string' },
+          title: { type: 'string' },
+          description: { type: 'string' },
+          durationMin: { type: 'integer' },
+          completedAt: { type: 'string', format: 'date', nullable: true },
+          instructorName: { type: 'string', nullable: true },
+          progressPercent: { type: 'integer' },
+          status: { type: 'string', enum: ['completed', 'in_progress'] },
+          certificateUrl: { type: 'string', format: 'uri', nullable: true },
+        },
+      },
+      EquipmentItem: {
+        type: 'object',
+        properties: {
+          id: { type: 'string' },
+          name: { type: 'string' },
+          type: { type: 'string' },
+          assignedAt: { type: 'string', format: 'date' },
+          expiresAt: { type: 'string', format: 'date', nullable: true },
+          status: { type: 'string', enum: ['active', 'expiring_soon', 'expired'] },
+          iconName: { type: 'string' },
+        },
+      },
+      BlogPost: {
+        type: 'object',
+        properties: {
+          id: { type: 'string' },
+          title: { type: 'string' },
+          description: { type: 'string' },
+          cover: { type: 'string', format: 'uri', nullable: true },
+          publishedAt: { type: 'string', format: 'date' },
+          readTimeMin: { type: 'integer' },
+          themes: { type: 'array', items: { type: 'string' } },
+          author: {
+            type: 'object',
+            properties: {
+              name: { type: 'string' },
+              role: { type: 'string' },
+              avatar: { type: 'string', format: 'uri', nullable: true },
+            },
+          },
+          content: {
+            type: 'array',
+            items: {
+              type: 'object',
+              properties: {
+                type: { type: 'string', enum: ['paragraph', 'heading', 'image'] },
+                text: { type: 'string' },
+                source: { type: 'string', format: 'uri' },
+              },
+            },
+          },
+        },
+      },
+      NotificationPreferences: {
+        type: 'object',
+        properties: {
+          taskCalls: { type: 'boolean' },
+          trainings: { type: 'boolean' },
+          announcements: { type: 'boolean' },
+          distance: {
+            type: 'object',
+            properties: {
+              km: { type: 'integer' },
+              min: { type: 'integer' },
+              max: { type: 'integer' },
+            },
+          },
+        },
+      },
+      FireReportSummary: {
+        type: 'object',
+        properties: {
+          id: { type: 'string' },
+          locationName: { type: 'string' },
+          regionLabel: { type: 'string' },
+          status: { type: 'string', enum: ['reviewing', 'confirmed', 'rejected'] },
+          submittedAt: { type: 'string', format: 'date-time' },
+          coordinates: {
+            type: 'object',
+            properties: { lat: { type: 'number' }, lng: { type: 'number' } },
+          },
+          needs: { type: 'array', items: { type: 'string' } },
         },
       },
     },
