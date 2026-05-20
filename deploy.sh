@@ -166,6 +166,9 @@ DB_PW=$(gen_pw)
 REDIS_PW=$(gen_pw)
 JWT_ACCESS=$(gen_hex)
 JWT_REFRESH=$(gen_hex)
+ADMIN_API_KEY=$(gen_hex)
+OFFICER_API_KEY=$(gen_hex)
+SCAN_HMAC_SECRET=$(gen_hex)
 ok "Secret'lar hazır (ekrana basılmayacak)"
 
 # ─── Yerel npm install (linux/amd64 platformu için) ──────────────────────────────
@@ -267,9 +270,21 @@ API_URL=http://$SSH_HOST
 # ── Swagger ───────────────────────────
 SWAGGER_ENABLED=true
 
+# ── Push Notification (mock — gerçek FCM için firebase) ────
+PUSH_PROVIDER=mock
+
 # ── Firebase (devre dışı) ────
 FIREBASE_PROJECT_ID=
 FIREBASE_CREDENTIALS_PATH=
+
+# ── Admin / Officer (panel & saha amiri uçları; mobil çağırmaz) ──
+# Scan ve admin uçları x-api-key ile korunur. Boş bırakılırsa bu uçlar 403 döner.
+ADMIN_API_KEY=$ADMIN_API_KEY
+OFFICER_API_KEY=$OFFICER_API_KEY
+SCAN_HMAC_SECRET=$SCAN_HMAC_SECRET
+
+# ── Reverse geocode (opsiyonel; boşsa fire-report locationName placeholder) ──
+NOMINATIM_URL=
 
 # ── Logging ─────────────────────────────────────
 LOG_LEVEL=info
@@ -386,7 +401,12 @@ DB_PASSWORD=$DB_PW
 REDIS_PASSWORD=$REDIS_PW
 JWT_ACCESS_SECRET=$JWT_ACCESS
 JWT_REFRESH_SECRET=$JWT_REFRESH
+ADMIN_API_KEY=$ADMIN_API_KEY
+OFFICER_API_KEY=$OFFICER_API_KEY
+SCAN_HMAC_SECRET=$SCAN_HMAC_SECRET
 \`\`\`
+
+> **Admin paneli** \`x-api-key: <ADMIN_API_KEY>\`, **saha amiri** \`x-api-key: <OFFICER_API_KEY>\` header'ı ile çağırır.
 
 ## Devre dışı entegrasyonlar (mock/empty mode)
 

@@ -39,9 +39,10 @@ const POSTS = [
 ];
 
 exports.seed = async function seed(knex) {
-  await knex('blog_posts').del();
-  await knex('blog_posts').insert(
-    POSTS.map((p) => ({
+  // Idempotent: var olan kayıtları silme/ezme (admin panel düzenlemeleri korunur). Yalnızca eksikleri ekle.
+  await knex('blog_posts')
+    .insert(
+      POSTS.map((p) => ({
       id: p.id,
       title: p.title,
       description: p.description,
@@ -54,6 +55,8 @@ exports.seed = async function seed(knex) {
       author_avatar_path: p.author_avatar_path,
       content: JSON.stringify(p.content),
       is_active: true,
-    })),
-  );
+      })),
+    )
+    .onConflict('id')
+    .ignore();
 };

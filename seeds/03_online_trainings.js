@@ -28,6 +28,9 @@ const TRAININGS = [
 ];
 
 exports.seed = async function seed(knex) {
-  await knex('online_trainings').del();
-  await knex('online_trainings').insert(TRAININGS.map((t) => ({ ...t, is_active: true })));
+  // Idempotent: var olanı koru, yalnızca eksikleri ekle (kullanıcı progress'i korunur).
+  await knex('online_trainings')
+    .insert(TRAININGS.map((t) => ({ ...t, is_active: true })))
+    .onConflict('id')
+    .ignore();
 };

@@ -94,20 +94,23 @@ const ANNOUNCEMENTS = [
 ];
 
 exports.seed = async function seed(knex) {
-  await knex('mission_announcements').del();
-  await knex('missions').del();
+  // Idempotent: missions'ı silme (FK CASCADE ile mission_participants/photos/announcements GİTMESİN).
+  // Yalnızca eksik kayıtları ekle.
+  await knex('missions')
+    .insert(
+      MISSIONS.map((m) => ({
+        ...m,
+        started_at: m.started_at ? new Date(m.started_at) : null,
+        gallery: JSON.stringify(m.gallery),
+        needs: JSON.stringify(m.needs),
+        is_active: true,
+      })),
+    )
+    .onConflict('id')
+    .ignore();
 
-  await knex('missions').insert(
-    MISSIONS.map((m) => ({
-      ...m,
-      started_at: m.started_at ? new Date(m.started_at) : null,
-      gallery: JSON.stringify(m.gallery),
-      needs: JSON.stringify(m.needs),
-      is_active: true,
-    })),
-  );
-
-  await knex('mission_announcements').insert(
-    ANNOUNCEMENTS.map((a) => ({ ...a, published_at: new Date(a.published_at) })),
-  );
+  await knex('mission_announcements')
+    .insert(ANNOUNCEMENTS.map((a) => ({ ...a, published_at: new Date(a.published_at) })))
+    .onConflict('id')
+    .ignore();
 };

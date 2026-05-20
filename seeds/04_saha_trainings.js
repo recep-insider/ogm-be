@@ -28,7 +28,9 @@ const TRAININGS = [
 ];
 
 exports.seed = async function seed(knex) {
-  await knex('saha_training_applications').del();
-  await knex('saha_trainings').del();
-  await knex('saha_trainings').insert(TRAININGS.map((t) => ({ ...t, is_active: true })));
+  // Idempotent: başvuruları (saha_training_applications) ve var olan eğitimleri silme; yalnızca eksikleri ekle.
+  await knex('saha_trainings')
+    .insert(TRAININGS.map((t) => ({ ...t, is_active: true })))
+    .onConflict('id')
+    .ignore();
 };
