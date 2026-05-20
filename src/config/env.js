@@ -56,6 +56,11 @@ const env = {
     otpLockoutDuration: toInt(process.env.SMS_OTP_LOCKOUT_DURATION, 1800),
     dailyLimitPerUser: toInt(process.env.SMS_DAILY_LIMIT_PER_USER, 10),
     resendCooldown: toInt(process.env.SMS_RESEND_COOLDOWN, 30),
+    dummyPhones: (process.env.OTP_DUMMY_PHONES || '')
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean),
+    dummyCode: process.env.OTP_DUMMY_CODE || '123456',
   },
 
   edevlet: {

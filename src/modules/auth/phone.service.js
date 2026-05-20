@@ -26,6 +26,15 @@ function sessionKey(sessionId) {
   return `${PREFIX}${sessionId}`;
 }
 
+function isDummyPhone(phone) {
+  return env.sms.dummyPhones.includes(phone);
+}
+
+function getOtpForPhone(phone) {
+  if (isDummyPhone(phone)) return env.sms.dummyCode;
+  return generateOtp();
+}
+
 async function checkRateLimits(phone, ip) {
   const banned = await redis.get(`${BAN_PREFIX}${phone}`);
   if (banned) throw errors.rateLimit('Çok fazla başarısız deneme, lütfen sonra tekrar deneyin');
@@ -44,7 +53,7 @@ async function checkRateLimits(phone, ip) {
 async function sendOtpFlow({ phone, ip }) {
   await checkRateLimits(phone, ip);
 
-  const code = generateOtp();
+  const code = getOtpForPhone(phone);
   const codeHash = await hashOtp(code);
   const sessionId = uuidv4();
   const ttl = env.sms.otpExpiresIn;
@@ -84,7 +93,7 @@ async function resendOtpFlow({ sessionId, ip }) {
 
   await checkRateLimits(session.phone, ip);
 
-  const code = generateOtp();
+  const code = getOtpForPhone(session.phone);
   const codeHash = await hashOtp(code);
   session.codeHash = codeHash;
   session.attempts = 0;
@@ -179,4 +188,4 @@ async function finalizeExistingUser(user, ip, userAgent) {
   };
 }
 
-module.exports = { sendOtpFlow, resendOtpFlow, verifyOtpFlow };
+module.exports = { sendOtpFlow, resendOtpFlow, verifyOtpFlow, isDummyPhone, getOtpForPhone };

@@ -35,6 +35,11 @@ async function sendOtpNetgsm(phone, code) {
 }
 
 async function sendOtp(phone, code) {
+  if (env.sms.dummyPhones.includes(phone)) {
+    logger.info('SMS atlandı (dummy phone)', { phone });
+    return { providerMessageId: `dummy-${Date.now()}`, dummy: true };
+  }
+
   const provider = env.sms.provider.toLowerCase();
   switch (provider) {
     case 'mock':
