@@ -257,7 +257,9 @@ EDEVLET_SESSION_TTL=600
 
 # ── Upload / Storage ────────────────────────────
 UPLOAD_DIR=/app/uploads
-UPLOAD_PUBLIC_BASE_URL=
+# assetUrl() çıktısı bu base + /<path>. express.static mount'u /uploads olduğu için
+# base /uploads ile bitmeli; aksi halde /seed/... gibi URL'ler 404 olur.
+UPLOAD_PUBLIC_BASE_URL=http://$SSH_HOST/uploads
 UPLOAD_MAX_DOC_BYTES=10485760
 UPLOAD_MAX_AVATAR_BYTES=5242880
 UPLOAD_MAX_REPORT_PHOTOS=5
