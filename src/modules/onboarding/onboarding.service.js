@@ -164,6 +164,7 @@ async function complete({ user, registration, data, files, ip, userAgent }) {
       phone: userRecord.phone,
       eposta: userRecord.eposta,
       profileComplete: !!userRecord.profile_complete,
+      applicationStatus: application ? application.status : null,
     },
     tokens: tokens || null,
   };

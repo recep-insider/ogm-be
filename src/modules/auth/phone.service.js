@@ -10,6 +10,7 @@ const { generateOtp, hashOtp, verifyOtp } = require('../../shared/otp');
 const { sendOtp } = require('../../shared/sms-provider');
 const { writeAudit } = require('../../shared/audit');
 const { toDateOnly } = require('../../shared/dates');
+const { getApplicationStatus } = require('../users/users.service');
 const {
   signAccessToken,
   signRefreshToken,
@@ -175,6 +176,8 @@ async function finalizeExistingUser(user, ip, userAgent) {
     expires_at: new Date(Date.now() + 7 * 86400 * 1000),
   });
 
+  const applicationStatus = await getApplicationStatus(user.id);
+
   return {
     ok: true,
     isExisting: true,
@@ -190,6 +193,7 @@ async function finalizeExistingUser(user, ip, userAgent) {
       phone: user.phone,
       eposta: user.eposta,
       profileComplete: !!user.profile_complete,
+      applicationStatus,
     },
   };
 }

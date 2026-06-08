@@ -132,6 +132,7 @@ const definition = {
           phone: { type: 'string', example: '+905321234567', nullable: true },
           eposta: { type: 'string', format: 'email', nullable: true },
           profileComplete: { type: 'boolean' },
+          applicationStatus: { $ref: '#/components/schemas/ApplicationStatus' },
         },
       },
       UserProfile: {
@@ -147,7 +148,6 @@ const definition = {
               meslekDiger: { type: 'string', nullable: true },
               hobiler: { type: 'array', items: { type: 'string' } },
               acil: { $ref: '#/components/schemas/AcilIletisim' },
-              applicationStatus: { $ref: '#/components/schemas/ApplicationStatus' },
               volunteerLevel: { $ref: '#/components/schemas/VolunteerLevel' },
               avatarUrl: { type: 'string', format: 'uri', nullable: true },
               hasProtectiveEquipment: { type: 'boolean' },
@@ -353,6 +353,7 @@ const definition = {
           description: { type: 'string' },
           durationMin: { type: 'integer' },
           iconTone: { type: 'string', enum: ['primary', 'tertiary'] },
+          videoUrl: { type: 'string', format: 'uri', nullable: true },
           status: { type: 'string', enum: ['not_started', 'in_progress', 'completed'] },
           progressPercent: { type: 'integer', minimum: 0, maximum: 100 },
         },

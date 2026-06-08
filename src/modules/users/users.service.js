@@ -35,12 +35,25 @@ function computeVolunteerLevel(completedCount) {
   };
 }
 
+/**
+ * Kullanıcının en güncel başvuru durumunu döner (yoksa null).
+ * Değerler: pending | approved | rejected | requires_revision (applications.status).
+ * Auth/onboarding cevaplarında FE'nin ekstra /me round-trip'i atmaması için paylaşılır.
+ */
+async function getApplicationStatus(userId) {
+  const application = await db('applications')
+    .where({ user_id: userId })
+    .orderBy('submitted_at', 'desc')
+    .first('status');
+  return application ? application.status : null;
+}
+
 async function getMe(userId) {
   const user = await db('users').where({ id: userId, is_active: true }).first();
   if (!user) throw errors.notFound('Kullanıcı bulunamadı');
 
-  const [application, completed, hasEquipment] = await Promise.all([
-    db('applications').where({ user_id: userId }).orderBy('submitted_at', 'desc').first(),
+  const [applicationStatus, completed, hasEquipment] = await Promise.all([
+    getApplicationStatus(userId),
     db('user_trainings').where({ user_id: userId, status: 'completed' }).count({ c: '*' }).first(),
     hasProtectiveEquipment(userId),
   ]);
@@ -66,7 +79,7 @@ async function getMe(userId) {
       yakinlik: user.acil_yakinlik,
     },
     profileComplete: !!user.profile_complete,
-    applicationStatus: application ? application.status : null,
+    applicationStatus,
     volunteerLevel: computeVolunteerLevel(Number(completed?.c || 0)),
     avatarUrl: assetUrl(user.avatar_path),
     hasProtectiveEquipment: hasEquipment,
@@ -304,4 +317,13 @@ async function softDelete(userId, audit = {}) {
   };
 }
 
-module.exports = { getMe, patchMe, updateAcil, setAvatar, recordConsent, dataExport, softDelete };
+module.exports = {
+  getMe,
+  getApplicationStatus,
+  patchMe,
+  updateAcil,
+  setAvatar,
+  recordConsent,
+  dataExport,
+  softDelete,
+};

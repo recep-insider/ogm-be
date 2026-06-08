@@ -25,6 +25,7 @@ async function listOnline(userId) {
       description: t.description || '',
       durationMin: t.duration_min,
       iconTone: t.icon_tone,
+      videoUrl: assetUrl(t.video_path),
       status: p ? p.status : 'not_started',
       progressPercent: p ? p.progress_percent : 0,
     };

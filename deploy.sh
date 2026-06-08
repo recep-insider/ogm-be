@@ -337,6 +337,23 @@ log "Volume dizinleri hazırlanıyor"
 run_ssh "cd $DEPLOY_DIR && mkdir -p logs uploads backups/mysql && chown -R 1000:1000 logs uploads"
 ok "Volume dizinleri hazır"
 
+# ─── Seed statik varlıkları (uploads/seed + örnek eğitim videosu) ─────────────
+# Ana rsync uploads/'ı tamamen hariç tutuyor (--delete kullanıcı içeriğini ezmesin diye).
+# Seed görselleri ve örnek video'yu --delete OLMADAN ayrıca gönder: kullanıcı yüklemelerine
+# (avatars/missions/reports) dokunmadan blog/yazar/eğitim placeholder'larını yerine koyar.
+# NOT: Bunlar PLACEHOLDER; gerçek varlıklar sunucudaki uploads/seed ve uploads/trainings
+# altına ayrıca konulduğunda bu adım onları EZMEZ çünkü --delete yok ve aynı isimde dosya
+# varsa üzerine yazar — gerçek içerik koyulduysa deploy'da bu adımı atlayın/parametreleyin.
+if [ -d "$LOCAL_REPO/uploads/seed" ] || [ -d "$LOCAL_REPO/uploads/trainings" ]; then
+  log "Seed statik varlıkları transfer ediliyor (uploads/seed, uploads/trainings)"
+  [ -d "$LOCAL_REPO/uploads/seed" ] && \
+    run_rsync -az "$LOCAL_REPO/uploads/seed/" "$TARGET:$DEPLOY_DIR/uploads/seed/"
+  [ -d "$LOCAL_REPO/uploads/trainings" ] && \
+    run_rsync -az "$LOCAL_REPO/uploads/trainings/" "$TARGET:$DEPLOY_DIR/uploads/trainings/"
+  run_ssh "cd $DEPLOY_DIR && chown -R 1000:1000 uploads/seed uploads/trainings 2>/dev/null || true"
+  ok "Seed statik varlıkları yerinde"
+fi
+
 # ─── docker compose up (build + start) ──────────────────────────────────────────────
 # Dockerfile artık npm ci yapmıyor; sadece COPY ediyor. Build hızlı (~30sn).
 log "docker compose up -d --build"

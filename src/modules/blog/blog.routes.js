@@ -2,12 +2,14 @@
 
 const { Router } = require('express');
 const asyncHandler = require('../../shared/async-handler');
-const { requireAuth } = require('../../middlewares/auth');
+const { optionalAuth } = require('../../middlewares/auth');
 const service = require('./blog.service');
 
 const router = Router();
 
-router.use(requireAuth);
+// Blog içeriği public; misafir ve onay-bekleyen kullanıcı da görebilmeli.
+// Token varsa req.user dolar, yoksa null — servis req.user kullanmıyor (davranış değişmez).
+router.use(optionalAuth);
 
 /**
  * @openapi
@@ -15,7 +17,7 @@ router.use(requireAuth);
  *   get:
  *     tags: [Blog]
  *     summary: Blog yazıları
- *     security: [ { bearerAuth: [] } ]
+ *     security: [ {}, { bearerAuth: [] } ]
  *     responses:
  *       200:
  *         description: Yazı listesi
@@ -35,7 +37,7 @@ router.get('/posts', asyncHandler(async (_req, res) => {
  *   get:
  *     tags: [Blog]
  *     summary: Blog yazısı detayı
- *     security: [ { bearerAuth: [] } ]
+ *     security: [ {}, { bearerAuth: [] } ]
  *     parameters:
  *       - in: path
  *         name: id

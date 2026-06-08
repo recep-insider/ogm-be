@@ -5,7 +5,7 @@
 // Bu test, destructive del()+insert desenine geri dönüşü engeller.
 
 function makeMockKnex() {
-  const calls = { tables: [], del: 0, insert: 0, onConflictCols: [], ignore: 0, merge: 0 };
+  const calls = { tables: [], del: 0, insert: 0, onConflictCols: [], ignore: 0, merge: 0, update: 0 };
 
   function chain() {
     const c = {
@@ -14,6 +14,11 @@ function makeMockKnex() {
       ignore() { calls.ignore += 1; return Promise.resolve(0); },
       merge() { calls.merge += 1; return Promise.resolve(0); },
       del() { calls.del += 1; return Promise.resolve(0); },
+      // Idempotent backfill desteği (ör. 03_online_trainings video_path):
+      // where(...).whereNull(...).update(...) — non-destructive, .del() değil.
+      where() { return c; },
+      whereNull() { return c; },
+      update() { calls.update += 1; return Promise.resolve(0); },
       // Zincir doğrudan await edilirse (örn. .insert(...) sonu) çözülebilsin.
       then(resolve) { return resolve(0); },
     };
