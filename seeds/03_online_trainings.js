@@ -8,6 +8,8 @@ const TRAININGS = [
     duration_min: 45,
     icon_tone: 'primary',
     sort_order: 0,
+    // assetUrl() çalışma anında tam HTTPS adrese çevirir; placeholder mp4 (B2 uçtan uca test).
+    video_path: 'trainings/sample-10s.mp4',
   },
   {
     id: 'ot_2',
@@ -33,4 +35,10 @@ exports.seed = async function seed(knex) {
     .insert(TRAININGS.map((t) => ({ ...t, is_active: true })))
     .onConflict('id')
     .ignore();
+
+  // Daha önce seed'lenmiş kurulumlarda video_path'i bağla (yalnızca boşsa — içeriği ezmez).
+  await knex('online_trainings')
+    .where({ id: 'ot_1' })
+    .whereNull('video_path')
+    .update({ video_path: 'trainings/sample-10s.mp4' });
 };

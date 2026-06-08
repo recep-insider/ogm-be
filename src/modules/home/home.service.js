@@ -1,6 +1,7 @@
 'use strict';
 
 const { db } = require('../../config/db');
+const { assetUrl } = require('../../shared/asset-url');
 
 async function getFeed(userId) {
   let userRow = null;
@@ -15,7 +16,7 @@ async function getFeed(userId) {
 
   return {
     user: userRow
-      ? { ad: userRow.ad, avatarUrl: userRow.avatar_path ? `/uploads/${userRow.avatar_path}` : null }
+      ? { ad: userRow.ad, avatarUrl: assetUrl(userRow.avatar_path) }
       : { ad: null, avatarUrl: null },
     emergencyAction: {
       enabled: true,

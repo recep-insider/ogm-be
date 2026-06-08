@@ -269,6 +269,9 @@
           },
           "profileComplete": {
             "type": "boolean"
+          },
+          "applicationStatus": {
+            "$ref": "#/components/schemas/ApplicationStatus"
           }
         }
       },
@@ -305,9 +308,6 @@
               },
               "acil": {
                 "$ref": "#/components/schemas/AcilIletisim"
-              },
-              "applicationStatus": {
-                "$ref": "#/components/schemas/ApplicationStatus"
               },
               "volunteerLevel": {
                 "$ref": "#/components/schemas/VolunteerLevel"
@@ -799,6 +799,11 @@
               "primary",
               "tertiary"
             ]
+          },
+          "videoUrl": {
+            "type": "string",
+            "format": "uri",
+            "nullable": true
           },
           "status": {
             "type": "string",
@@ -1695,6 +1700,7 @@
         ],
         "summary": "Blog yazıları",
         "security": [
+          {},
           {
             "bearerAuth": []
           }
@@ -1723,6 +1729,7 @@
         ],
         "summary": "Blog yazısı detayı",
         "security": [
+          {},
           {
             "bearerAuth": []
           }

@@ -10,6 +10,7 @@ const logger = require('../../config/logger');
 const { errors } = require('../../shared/errors');
 const { writeAudit } = require('../../shared/audit');
 const { toDateOnly } = require('../../shared/dates');
+const { getApplicationStatus } = require('../users/users.service');
 const {
   signAccessToken,
   signRefreshToken,
@@ -151,6 +152,7 @@ async function callback({ sessionId, code, state, ip, userAgent }) {
       phone: null,
       eposta: null,
       profileComplete: false,
+      applicationStatus: null,
     },
   };
 }
@@ -171,6 +173,8 @@ async function finalizeExistingUser(user, kimlik, ip, userAgent) {
     expires_at: new Date(Date.now() + 7 * 86400 * 1000),
   });
 
+  const applicationStatus = await getApplicationStatus(user.id);
+
   return {
     accessToken,
     refreshToken,
@@ -185,6 +189,7 @@ async function finalizeExistingUser(user, kimlik, ip, userAgent) {
       phone: user.phone,
       eposta: user.eposta,
       profileComplete: !!user.profile_complete,
+      applicationStatus,
     },
   };
 }
