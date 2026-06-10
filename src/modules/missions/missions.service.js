@@ -265,6 +265,87 @@ async function getHistory(userId, id) {
   return mapHistoryDetail(m);
 }
 
+// Admin (panel) görünümü — tüm alanlar camelCase + cover URL + bekleyen foto sayısı.
+function mapAdminMission(m) {
+  return {
+    id: m.id,
+    category: m.category,
+    title: m.title,
+    fullTitle: m.full_title || m.title,
+    shortLocation: m.short_location,
+    regionLabel: m.region_label || '',
+    locationLabel: m.location_label || m.short_location,
+    description: m.description || '',
+    iconName: m.icon_name,
+    status: m.status,
+    isActive: !!m.is_active,
+    startDate: toDateOnly(m.start_date),
+    endDate: toDateOnly(m.end_date),
+    startedAt: toIso(m.started_at),
+    endedAt: toIso(m.ended_at),
+    coordinates: m.lat != null && m.lng != null ? { lat: Number(m.lat), lng: Number(m.lng) } : null,
+    coverageRadiusKm: m.coverage_radius_km,
+    needs: safeJson(m.needs, []),
+    stats: { volunteers: m.stat_volunteers, hectares: m.stat_hectares },
+    meetingPoint: m.meeting_point || '',
+    requiredEquipment: m.required_equipment || '',
+    cover: assetUrl(m.cover_path),
+    pendingPhotos: Number(m.pending_photos || 0),
+    createdAt: toIso(m.created_at),
+  };
+}
+
+/** Admin (panel) — görev listesi. @param {{status?:string, isActive?:boolean, page?:number, pageSize?:number}} params */
+async function adminList({ status, isActive, page = 1, pageSize = 20 } = {}) {
+  const base = db('missions as m');
+  if (status) base.where('m.status', status);
+  if (isActive !== undefined) base.where('m.is_active', isActive);
+
+  const [{ total }] = await base.clone().count({ total: 'm.id' });
+  const rows = await base
+    .clone()
+    .select(
+      'm.*',
+      db.raw("(select count(*) from mission_photos mp where mp.mission_id = m.id and mp.status = 'pending') as pending_photos"),
+    )
+    .orderBy([
+      { column: 'm.created_at', order: 'desc' },
+      { column: 'm.id', order: 'desc' }, // unique tie-breaker
+    ])
+    .limit(pageSize)
+    .offset((page - 1) * pageSize);
+
+  return { items: rows.map(mapAdminMission), total: Number(total), page, pageSize };
+}
+
+/** Admin (panel) — görev fotoğraf/moderasyon kuyruğu. @param {{status?:string}} params */
+async function adminListPhotos(missionId, { status } = {}) {
+  const mission = await db('missions').where({ id: missionId }).first('id', 'title');
+  if (!mission) throw errors.notFound('Görev bulunamadı', 'mission_not_found');
+
+  const query = db('mission_photos as mp')
+    .leftJoin('users as u', 'u.id', 'mp.user_id')
+    .where('mp.mission_id', missionId)
+    .select('mp.*', 'u.ad as user_ad', 'u.soyad as user_soyad')
+    .orderBy('mp.submitted_at', 'desc');
+  if (status) query.where('mp.status', status);
+
+  const rows = await query;
+  return {
+    mission: { id: mission.id, title: mission.title },
+    items: rows.map((p) => ({
+      submissionId: p.id,
+      kind: p.kind,
+      status: p.status,
+      url: assetUrl(p.file_path),
+      submittedAt: toIso(p.submitted_at),
+      reviewedAt: toIso(p.reviewed_at),
+      user: p.user_id ? { userId: p.user_id, ad: p.user_ad, soyad: p.user_soyad } : null,
+    })),
+    total: rows.length,
+  };
+}
+
 module.exports = {
   listActive,
   getActive,
@@ -274,4 +355,7 @@ module.exports = {
   moderatePhoto,
   listHistory,
   getHistory,
+  adminList,
+  adminListPhotos,
+  mapAdminMission,
 };

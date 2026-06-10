@@ -49,4 +49,38 @@ async function create({ userId, body, ip, userAgent }) {
   };
 }
 
-module.exports = { create };
+/** Admin (panel) — SOS listesi/geçmişi. @param {{missionId?:string, page?:number, pageSize?:number}} params */
+async function adminList({ missionId, page = 1, pageSize = 20 } = {}) {
+  const base = db('emergency_reports as er');
+  if (missionId) base.where('er.mission_id', missionId);
+
+  const [{ total }] = await base.clone().count({ total: 'er.id' });
+  const rows = await base
+    .clone()
+    .leftJoin('users as u', 'u.id', 'er.user_id')
+    .leftJoin('missions as m', 'm.id', 'er.mission_id')
+    .select('er.*', 'u.ad as user_ad', 'u.soyad as user_soyad', 'u.phone as user_phone', 'm.title as mission_title')
+    .orderBy([
+      { column: 'er.created_at', order: 'desc' },
+      { column: 'er.id', order: 'desc' }, // unique tie-breaker
+    ])
+    .limit(pageSize)
+    .offset((page - 1) * pageSize);
+
+  return {
+    items: rows.map((r) => ({
+      id: r.id,
+      message: r.message || '',
+      coordinates: r.lat != null && r.lng != null ? { lat: Number(r.lat), lng: Number(r.lng) } : null,
+      dispatchedTo: r.dispatched_to,
+      createdAt: toIso(r.created_at),
+      user: r.user_id ? { userId: r.user_id, ad: r.user_ad, soyad: r.user_soyad, phone: r.user_phone } : null,
+      mission: r.mission_id ? { id: r.mission_id, title: r.mission_title } : null,
+    })),
+    total: Number(total),
+    page,
+    pageSize,
+  };
+}
+
+module.exports = { create, adminList };
