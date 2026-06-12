@@ -17,7 +17,9 @@ function ensureDir(dir) {
 
 const ALLOWED_DOC_MIME = ['image/jpeg', 'image/png', 'application/pdf'];
 const ALLOWED_AVATAR_MIME = ['image/jpeg', 'image/png'];
-const ALLOWED_MEDIA_MIME = ['image/jpeg', 'image/png', 'video/mp4'];
+// video/quicktime: iOS kamera/galeri varsayılan çıktısı (.mov) — mp4'e remux
+// etmeyen eski uygulama build'leri bunu gönderiyor; reddetmek ihbar kaybettirir.
+const ALLOWED_MEDIA_MIME = ['image/jpeg', 'image/png', 'video/mp4', 'video/quicktime'];
 
 function diskStorage(subdir) {
   const target = path.join(env.upload.dir, subdir);
@@ -94,4 +96,6 @@ module.exports = {
   avatarUpload: wrapMulter(avatarUpload),
   fireReportUpload: wrapMulter(fireReportUpload),
   missionPhotoUpload: wrapMulter(missionPhotoUpload),
+  // Test-only: mimeFilter ve allowlist sabitlerinin doğrudan birim testi için.
+  __testables: { mimeFilter, ALLOWED_DOC_MIME, ALLOWED_AVATAR_MIME, ALLOWED_MEDIA_MIME },
 };
