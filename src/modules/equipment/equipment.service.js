@@ -41,4 +41,4 @@ async function hasProtectiveEquipment(userId) {
   return rows.some((r) => computeStatus(r.expires_at) !== 'expired');
 }
 
-module.exports = { listForUser, hasProtectiveEquipment, computeStatus, mapEquipment };
+module.exports = { listForUser, hasProtectiveEquipment, computeStatus, mapEquipment, PROTECTIVE_TYPE };

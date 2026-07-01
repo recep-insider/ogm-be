@@ -14,11 +14,11 @@
   },
   "servers": [
     {
-      "url": "https://surfaces-acer-munich-completed.trycloudflare.com/v1",
+      "url": "http://localhost:3000/v1",
       "description": "API v1"
     },
     {
-      "url": "https://surfaces-acer-munich-completed.trycloudflare.com",
+      "url": "http://localhost:3000",
       "description": "Kök (health vb.)"
     }
   ],
@@ -1279,6 +1279,36 @@
             "description": "Güncellendi"
           }
         }
+      },
+      "get": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "Yangın ihbarı detayı (panel)",
+        "description": "Liste alanları + ip. x-api-key (admin).",
+        "security": [
+          {
+            "adminApiKey": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "İhbar detayı"
+          },
+          "404": {
+            "description": "not_found"
+          }
+        }
       }
     },
     "/admin/missions/{id}/photos/{submissionId}": {
@@ -1335,6 +1365,1092 @@
         "responses": {
           "200": {
             "description": "Güncellendi"
+          }
+        }
+      }
+    },
+    "/admin/volunteers": {
+      "get": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "Gönüllü listesi (panel)",
+        "description": "Mobil uygulamadan ÇAĞRILMAZ. x-api-key (admin) gerektirir. Misafir/silinmiş kullanıcılar hariç; her kullanıcı en güncel başvurusuyla döner. PII gözetimi: tcKimlik bu listede dönmez (detay ucunda döner).",
+        "security": [
+          {
+            "adminApiKey": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "query",
+            "name": "status",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "pending",
+                "approved",
+                "rejected",
+                "requires_revision"
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "q",
+            "schema": {
+              "type": "string"
+            },
+            "description": "ad/soyad/telefon/eposta araması"
+          },
+          {
+            "in": "query",
+            "name": "page",
+            "schema": {
+              "type": "integer",
+              "default": 1
+            }
+          },
+          {
+            "in": "query",
+            "name": "pageSize",
+            "schema": {
+              "type": "integer",
+              "default": 20,
+              "maximum": 100
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Gönüllü listesi",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "userId": {
+                            "type": "string"
+                          },
+                          "ad": {
+                            "type": "string"
+                          },
+                          "soyad": {
+                            "type": "string"
+                          },
+                          "phone": {
+                            "type": "string"
+                          },
+                          "eposta": {
+                            "type": "string"
+                          },
+                          "profileComplete": {
+                            "type": "boolean"
+                          },
+                          "isActive": {
+                            "type": "boolean"
+                          },
+                          "applicationStatus": {
+                            "type": "string",
+                            "nullable": true
+                          },
+                          "submittedAt": {
+                            "type": "string",
+                            "format": "date-time",
+                            "nullable": true
+                          },
+                          "egitim": {
+                            "type": "boolean",
+                            "description": "En az bir tamamlanmış eğitim"
+                          },
+                          "donanim": {
+                            "type": "boolean",
+                            "description": "Geçerli koruyucu ekipman"
+                          }
+                        }
+                      }
+                    },
+                    "total": {
+                      "type": "integer"
+                    },
+                    "page": {
+                      "type": "integer"
+                    },
+                    "pageSize": {
+                      "type": "integer"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/volunteers/{userId}": {
+      "get": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "Gönüllü detayı (panel)",
+        "description": "PII (tcKimlik, adres, acil kişi, belgeler) yalnızca bu uçta döner. x-api-key (admin).",
+        "security": [
+          {
+            "adminApiKey": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "userId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "user + application (yoksa null)"
+          },
+          "404": {
+            "description": "user_not_found"
+          }
+        }
+      }
+    },
+    "/admin/fire-reports": {
+      "get": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "Yangın ihbarı listesi (panel)",
+        "description": "Mobil uygulamadan ÇAĞRILMAZ. x-api-key (admin) gerektirir.",
+        "security": [
+          {
+            "adminApiKey": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "query",
+            "name": "status",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "reviewing",
+                "confirmed",
+                "rejected"
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "page",
+            "schema": {
+              "type": "integer",
+              "default": 1
+            }
+          },
+          {
+            "in": "query",
+            "name": "pageSize",
+            "schema": {
+              "type": "integer",
+              "default": 20,
+              "maximum": 100
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "items: ihbar + photoUrls + reporter (anonim değilse), total/page/pageSize"
+          }
+        }
+      }
+    },
+    "/admin/missions": {
+      "get": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "Görev listesi (panel)",
+        "description": "Tüm görevler (is_active filtresi opsiyonel) + pendingPhotos sayacı. x-api-key (admin).",
+        "security": [
+          {
+            "adminApiKey": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "query",
+            "name": "status",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "active",
+                "staffed",
+                "completed"
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "isActive",
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "in": "query",
+            "name": "page",
+            "schema": {
+              "type": "integer",
+              "default": 1
+            }
+          },
+          {
+            "in": "query",
+            "name": "pageSize",
+            "schema": {
+              "type": "integer",
+              "default": 20,
+              "maximum": 100
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "items: görev (camelCase, cover URL, pendingPhotos), total/page/pageSize"
+          }
+        }
+      }
+    },
+    "/admin/missions/{id}/photos": {
+      "get": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "Görev fotoğraf/moderasyon kuyruğu (panel)",
+        "description": "status=pending ile bekleyen kuyruk. PUT /admin/missions/{id}/photos/{submissionId} ile moderasyon. x-api-key (admin).",
+        "security": [
+          {
+            "adminApiKey": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "pending",
+                "approved",
+                "rejected"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "mission {id,title} + items[{submissionId,kind,status,url,user}] + total"
+          },
+          "404": {
+            "description": "mission_not_found"
+          }
+        }
+      }
+    },
+    "/admin/trainings/online": {
+      "get": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "Online eğitim listesi (panel, aggregate)",
+        "description": "Mobil /trainings/online'dan farklı olarak kullanıcıdan bağımsızdır; enrolled/completed sayaçları döner. x-api-key (admin) gerektirir.",
+        "security": [
+          {
+            "adminApiKey": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "query",
+            "name": "isActive",
+            "schema": {
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "items[{id,title,description,durationMin,videoUrl,isActive,enrolled,completed}] + total"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "Online eğitim oluştur (panel)",
+        "security": [
+          {
+            "adminApiKey": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "title",
+                  "durationMin"
+                ],
+                "properties": {
+                  "title": {
+                    "type": "string"
+                  },
+                  "description": {
+                    "type": "string"
+                  },
+                  "durationMin": {
+                    "type": "integer"
+                  },
+                  "iconTone": {
+                    "type": "string",
+                    "enum": [
+                      "primary",
+                      "tertiary"
+                    ]
+                  },
+                  "sortOrder": {
+                    "type": "integer"
+                  },
+                  "videoPath": {
+                    "type": "string",
+                    "description": "POST /admin/content/media yanıtındaki path"
+                  },
+                  "isActive": {
+                    "type": "boolean"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Oluşturulan eğitim (admin görünümü, enrolled/completed dahil)"
+          }
+        }
+      }
+    },
+    "/admin/trainings/saha": {
+      "get": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "Saha eğitim listesi (panel, aggregate)",
+        "description": "Başvuru sayaçları (pending/approved/rejected) ve koltuk durumuyla döner. x-api-key (admin) gerektirir.",
+        "security": [
+          {
+            "adminApiKey": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "query",
+            "name": "isActive",
+            "schema": {
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "items[{id,title,location,startDate,instructorName,totalSeats,availableSeats,applications{},isActive}] + total"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "Saha eğitimi oluştur (panel)",
+        "security": [
+          {
+            "adminApiKey": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "title",
+                  "location",
+                  "startDate",
+                  "startTime",
+                  "endTime",
+                  "instructorName"
+                ],
+                "properties": {
+                  "title": {
+                    "type": "string"
+                  },
+                  "location": {
+                    "type": "string"
+                  },
+                  "startDate": {
+                    "type": "string",
+                    "format": "date"
+                  },
+                  "startTime": {
+                    "type": "string",
+                    "example": "09:00"
+                  },
+                  "endTime": {
+                    "type": "string",
+                    "example": "17:00"
+                  },
+                  "instructorName": {
+                    "type": "string"
+                  },
+                  "instructorAvatarPath": {
+                    "type": "string"
+                  },
+                  "coverPath": {
+                    "type": "string"
+                  },
+                  "totalSeats": {
+                    "type": "integer"
+                  },
+                  "isActive": {
+                    "type": "boolean"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Oluşturulan eğitim (admin görünümü, başvuru sayaçlarıyla)"
+          }
+        }
+      }
+    },
+    "/admin/emergency-reports": {
+      "get": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "Acil durum (SOS) listesi (panel)",
+        "description": "Mobil uygulamadan ÇAĞRILMAZ. x-api-key (admin) gerektirir.",
+        "security": [
+          {
+            "adminApiKey": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "query",
+            "name": "missionId",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "page",
+            "schema": {
+              "type": "integer",
+              "default": 1
+            }
+          },
+          {
+            "in": "query",
+            "name": "pageSize",
+            "schema": {
+              "type": "integer",
+              "default": 20,
+              "maximum": 100
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "items: SOS + user + mission, total/page/pageSize"
+          }
+        }
+      }
+    },
+    "/admin/dashboard/summary": {
+      "get": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "Operasyon Merkezi / sidebar sayaçları (panel)",
+        "description": "Tek istekte tüm özet sayaçlar. x-api-key (admin).",
+        "security": [
+          {
+            "adminApiKey": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "volunteers{total,pending,approved,rejected,requiresRevision}, fireReports{reviewing,confirmed,rejected,today}, missions{active,staffed,completed}, pendingPhotos, sahaApplications{pending}, emergency{total,today}, blog{published,draft}"
+          }
+        }
+      }
+    },
+    "/admin/reports/summary": {
+      "get": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "Raporlar KPI'ları (panel)",
+        "description": "[from,to) penceresi + bir önceki eşit uzunlukta pencereyle kıyas döner. \"fires\" = onaylanmış ihbar sayısı (FIRES domaini netleşene dek vekil metrik); volunteersTotal = pencere sonu itibarıyla kümülatif; activeVolunteers = pencere içinde göreve katılan tekil gönüllü; reportAccuracy = confirmed/(confirmed+rejected)%.",
+        "security": [
+          {
+            "adminApiKey": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "query",
+            "name": "from",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          },
+          {
+            "in": "query",
+            "name": "to",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "range + kpis{fires,volunteersTotal,activeVolunteers,reportAccuracy}{current,previous}"
+          }
+        }
+      }
+    },
+    "/admin/reports/series": {
+      "get": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "Raporlar zaman serisi (panel grafiği)",
+        "security": [
+          {
+            "adminApiKey": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "query",
+            "name": "metric",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "fireReports",
+                "confirmedFireReports",
+                "emergency",
+                "newUsers"
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "interval",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "day",
+                "week",
+                "month"
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "from",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          },
+          {
+            "in": "query",
+            "name": "to",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "{ metric, interval, series: [{bucket, count}] } — boş kovalar dönmez, istemci sıfır doldurur"
+          }
+        }
+      }
+    },
+    "/admin/content/blog": {
+      "get": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "Blog yazıları — admin listesi (taslaklar dahil)",
+        "description": "Public /blog/posts'tan farkı: is_active=false kayıtlar da döner; isActive/coverPath/ham content source alanları içerir. x-api-key (admin).",
+        "security": [
+          {
+            "adminApiKey": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "query",
+            "name": "isActive",
+            "schema": {
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "items[BlogPost + isActive + coverPath] + total"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "Blog yazısı oluştur",
+        "security": [
+          {
+            "adminApiKey": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "title"
+                ],
+                "properties": {
+                  "title": {
+                    "type": "string"
+                  },
+                  "description": {
+                    "type": "string"
+                  },
+                  "coverPath": {
+                    "type": "string",
+                    "description": "POST /admin/content/media yanıtındaki path"
+                  },
+                  "publishedAt": {
+                    "type": "string",
+                    "format": "date"
+                  },
+                  "readTimeMin": {
+                    "type": "integer"
+                  },
+                  "themes": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    },
+                    "maxItems": 2
+                  },
+                  "authorName": {
+                    "type": "string"
+                  },
+                  "authorRole": {
+                    "type": "string"
+                  },
+                  "content": {
+                    "type": "array",
+                    "items": {
+                      "type": "object"
+                    }
+                  },
+                  "isActive": {
+                    "type": "boolean"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Oluşturulan yazı (admin görünümü)"
+          }
+        }
+      }
+    },
+    "/admin/content/blog/{id}": {
+      "put": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "Blog yazısı güncelle (kısmi — isActive:false = yayından kaldır)",
+        "security": [
+          {
+            "adminApiKey": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Güncellenen yazı"
+          },
+          "404": {
+            "description": "post_not_found"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "Blog yazısını KALICI sil",
+        "security": [
+          {
+            "adminApiKey": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Silindi"
+          },
+          "404": {
+            "description": "post_not_found"
+          }
+        }
+      }
+    },
+    "/admin/content/media": {
+      "post": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "İçerik medyası yükle (blog görseli/kapak, eğitim videosu)",
+        "description": "multipart/form-data, alan adı `file`. jpeg/png/webp/mp4. Dönen `path` blog/eğitim body'lerinde kullanılır.",
+        "security": [
+          {
+            "adminApiKey": []
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "file": {
+                    "type": "string",
+                    "format": "binary"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Yüklendi",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "path": {
+                      "type": "string",
+                      "example": "content/1718000000-uuid.jpg"
+                    },
+                    "url": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "unsupported_media_type"
+          }
+        }
+      }
+    },
+    "/admin/trainings/online/{id}": {
+      "put": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "Online eğitim güncelle (kısmi)",
+        "security": [
+          {
+            "adminApiKey": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Güncellenen eğitim"
+          },
+          "404": {
+            "description": "training_not_found"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "Online eğitimi KALICI sil (progress kayıtları CASCADE silinir)",
+        "security": [
+          {
+            "adminApiKey": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Silindi"
+          },
+          "404": {
+            "description": "training_not_found"
+          }
+        }
+      }
+    },
+    "/admin/trainings/saha/{id}": {
+      "put": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "Saha eğitimi güncelle (kısmi)",
+        "security": [
+          {
+            "adminApiKey": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Güncellenen eğitim"
+          },
+          "404": {
+            "description": "training_not_found"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "Saha eğitimini KALICI sil (başvurular CASCADE silinir)",
+        "security": [
+          {
+            "adminApiKey": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Silindi"
+          },
+          "404": {
+            "description": "training_not_found"
+          }
+        }
+      }
+    },
+    "/admin/trainings/saha/{id}/applications": {
+      "get": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "Saha eğitimi başvuru listesi (panel)",
+        "security": [
+          {
+            "adminApiKey": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "pending",
+                "approved",
+                "rejected"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "training {id,title} + items[{applicationId,status,user}] + total"
+          },
+          "404": {
+            "description": "training_not_found"
+          }
+        }
+      }
+    },
+    "/admin/trainings/saha/applications/{applicationId}": {
+      "put": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "Saha eğitimi başvurusu onay/red (panel)",
+        "description": "Bildirim göndermez. x-api-key (admin).",
+        "security": [
+          {
+            "adminApiKey": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "applicationId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "status"
+                ],
+                "properties": {
+                  "status": {
+                    "type": "string",
+                    "enum": [
+                      "pending",
+                      "approved",
+                      "rejected"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "{applicationId, status}"
+          },
+          "404": {
+            "description": "application_not_found"
           }
         }
       }

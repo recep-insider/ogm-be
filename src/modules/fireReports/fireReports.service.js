@@ -11,6 +11,7 @@ const { errors } = require('../../shared/errors');
 const { toIso } = require('../../shared/dates');
 const { writeAudit } = require('../../shared/audit');
 const { sendPushToUser } = require('../../shared/push-provider');
+const { assetUrl } = require('../../shared/asset-url');
 
 function safeJson(value, fallback) {
   if (value == null) return fallback;
@@ -138,4 +139,59 @@ async function adminSetStatus(id, { status, note }, actor = {}) {
   return { ok: true, report: mapReport(updated) };
 }
 
-module.exports = { create, listMine, adminSetStatus, mapReport };
+// Admin (panel) liste/detay görünümü — mapReport + medya, ihbarcı ve açıklama.
+// İhbarcı bilgisi yalnızca anonim DEĞİLSE döner; ip sadece detayda (includeIp).
+function mapAdminReport(row, { includeIp = false } = {}) {
+  const report = {
+    ...mapReport(row),
+    description: row.description || '',
+    anonymous: !!row.anonymous,
+    photoUrls: safeJson(row.photo_paths, []).map(assetUrl),
+    reporter:
+      !row.anonymous && row.user_id
+        ? {
+            userId: row.user_id,
+            ad: row.reporter_ad || null,
+            soyad: row.reporter_soyad || null,
+            phone: row.reporter_phone || null,
+          }
+        : null,
+  };
+  if (includeIp) report.ip = row.ip || null;
+  return report;
+}
+
+const REPORTER_COLUMNS = ['u.ad as reporter_ad', 'u.soyad as reporter_soyad', 'u.phone as reporter_phone'];
+
+/** Admin (panel) — ihbar listesi. @param {{status?:string, page?:number, pageSize?:number}} params */
+async function adminList({ status, page = 1, pageSize = 20 } = {}) {
+  const base = db('fire_reports as fr');
+  if (status) base.where('fr.status', status);
+
+  const [{ total }] = await base.clone().count({ total: 'fr.id' });
+  const rows = await base
+    .clone()
+    .leftJoin('users as u', 'u.id', 'fr.user_id')
+    .select('fr.*', ...REPORTER_COLUMNS)
+    .orderBy([
+      { column: 'fr.created_at', order: 'desc' },
+      { column: 'fr.id', order: 'desc' }, // unique tie-breaker
+    ])
+    .limit(pageSize)
+    .offset((page - 1) * pageSize);
+
+  return { items: rows.map((r) => mapAdminReport(r)), total: Number(total), page, pageSize };
+}
+
+/** Admin (panel) — ihbar detayı (+ip). */
+async function adminGetById(id) {
+  const row = await db('fire_reports as fr')
+    .leftJoin('users as u', 'u.id', 'fr.user_id')
+    .select('fr.*', ...REPORTER_COLUMNS)
+    .where('fr.id', id)
+    .first();
+  if (!row) throw errors.notFound('Bildirim bulunamadı', 'not_found');
+  return mapAdminReport(row, { includeIp: true });
+}
+
+module.exports = { create, listMine, adminSetStatus, adminList, adminGetById, mapReport, mapAdminReport };

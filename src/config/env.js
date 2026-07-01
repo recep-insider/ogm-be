@@ -122,6 +122,11 @@ const env = {
     nominatimUrl: process.env.NOMINATIM_URL || '',
   },
 
+  reports: {
+    // Rapor zaman serisi kovalarının saat dilimi (panel kullanıcılarının yereli; TR'de DST yok).
+    tzOffset: process.env.REPORT_TZ_OFFSET || '+03:00',
+  },
+
   logging: {
     level: process.env.LOG_LEVEL || 'info',
     dir: process.env.LOG_DIR || '/app/logs',

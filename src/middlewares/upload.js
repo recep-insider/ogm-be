@@ -21,13 +21,24 @@ const ALLOWED_AVATAR_MIME = ['image/jpeg', 'image/png'];
 // don't remux to mp4 send this; rejecting it loses fire reports.
 const ALLOWED_MEDIA_MIME = ['image/jpeg', 'image/png', 'video/mp4', 'video/quicktime'];
 
+// Uzantıyı SUNUCU belirler — istemci dosya adı .html/.svg taşısa bile diske
+// yalnızca güvenli uzantı yazılır (uploads origin'inde stored-XSS'i engeller).
+const MIME_TO_EXT = {
+  'image/jpeg': '.jpg',
+  'image/png': '.png',
+  'image/webp': '.webp',
+  'application/pdf': '.pdf',
+  'video/mp4': '.mp4',
+};
+
 function diskStorage(subdir) {
   const target = path.join(env.upload.dir, subdir);
   ensureDir(target);
   return multer.diskStorage({
     destination: (_req, _file, cb) => cb(null, target),
     filename: (_req, file, cb) => {
-      const ext = path.extname(file.originalname || '').toLowerCase();
+      // mimetype fileFilter'da zaten whitelist'lendi; eşleşmezse uzantısız yaz.
+      const ext = MIME_TO_EXT[file.mimetype] || '';
       cb(null, `${Date.now()}-${uuidv4()}${ext}`);
     },
   });
@@ -91,11 +102,20 @@ function wrapMulter(handler) {
   };
 }
 
+// Admin içerik medyası (blog kapak/görsel, eğitim video) — tek `file`.
+const ALLOWED_CONTENT_MIME = ['image/jpeg', 'image/png', 'image/webp', 'video/mp4'];
+const contentUpload = multer({
+  storage: diskStorage('content'),
+  limits: { fileSize: env.upload.maxDocBytes },
+  fileFilter: mimeFilter(ALLOWED_CONTENT_MIME),
+}).single('file');
+
 module.exports = {
   onboardingUpload: wrapMulter(onboardingUpload),
   avatarUpload: wrapMulter(avatarUpload),
   fireReportUpload: wrapMulter(fireReportUpload),
   missionPhotoUpload: wrapMulter(missionPhotoUpload),
+  contentUpload: wrapMulter(contentUpload),
   // Test-only: exposes mimeFilter and the allowlist constants for unit tests.
   __testables: { mimeFilter, ALLOWED_DOC_MIME, ALLOWED_AVATAR_MIME, ALLOWED_MEDIA_MIME },
 };
