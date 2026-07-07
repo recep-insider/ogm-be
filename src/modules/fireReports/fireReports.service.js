@@ -61,8 +61,8 @@ async function create({ userId, data, files, ip, userAgent }) {
     throw errors.validation('En az bir medya dosyası zorunludur', { field: 'media' });
   }
 
-  // Kullanıcı başına saatte 5 (kontrat 9.1 → 429 rate_limited).
-  const key = `rl:fire:${userId}`;
+  // Saatte 5 (kontrat 9.1 → 429 rate_limited) — üye için userId, guest için IP.
+  const key = userId ? `rl:fire:${userId}` : `rl:fire:ip:${ip || 'unknown'}`;
   const count = await redis.incr(key);
   if (count === 1) await redis.expire(key, 3600);
   if (count > 5) throw errors.rateLimit('Saatlik yangın bildirim limiti aşıldı');
@@ -76,7 +76,7 @@ async function create({ userId, data, files, ip, userAgent }) {
   await db('fire_reports').insert({
     id,
     user_id: userId,
-    anonymous: false,
+    anonymous: !userId,
     latitude: lat,
     longitude: lng,
     description: data.description || null,

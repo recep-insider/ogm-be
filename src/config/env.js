@@ -87,6 +87,9 @@ const env = {
     dir: process.env.UPLOAD_DIR || '/app/uploads',
     publicBaseUrl: process.env.UPLOAD_PUBLIC_BASE_URL || '',
     maxDocBytes: toInt(process.env.UPLOAD_MAX_DOC_BYTES, 10 * 1024 * 1024),
+    // Video için ayrı limit — maxDocBytes (10MB) ~15sn üzeri 1080p galeri
+    // videosunu kesiyordu; FE videoyu resize etmediği için sunucu limiti geniş.
+    maxVideoBytes: toInt(process.env.UPLOAD_MAX_VIDEO_BYTES, 100 * 1024 * 1024),
     maxAvatarBytes: toInt(process.env.UPLOAD_MAX_AVATAR_BYTES, 5 * 1024 * 1024),
     maxReportPhotos: toInt(process.env.UPLOAD_MAX_REPORT_PHOTOS, 5),
   },

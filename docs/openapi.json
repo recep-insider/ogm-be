@@ -14,11 +14,11 @@
   },
   "servers": [
     {
-      "url": "http://localhost:3000/v1",
+      "url": "https://surfaces-acer-munich-completed.trycloudflare.com/v1",
       "description": "API v1"
     },
     {
-      "url": "http://localhost:3000",
+      "url": "https://surfaces-acer-munich-completed.trycloudflare.com",
       "description": "Kök (health vb.)"
     }
   ],
@@ -1133,6 +1133,16 @@
       },
       "RateLimited": {
         "description": "İstek limiti aşıldı",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            }
+          }
+        }
+      },
+      "PayloadTooLarge": {
+        "description": "Dosya boyutu sınırı aşıldı",
         "content": {
           "application/json": {
             "schema": {
@@ -3065,8 +3075,9 @@
         "tags": [
           "Fire Reports"
         ],
-        "summary": "Yangın ihbarı (multipart, media[] min 1)",
+        "summary": "Yangın ihbarı (multipart, media[] min 1) — guest (token'sız) da gönderebilir",
         "security": [
+          {},
           {
             "bearerAuth": []
           }
@@ -3088,6 +3099,7 @@
                   },
                   "media": {
                     "type": "array",
+                    "description": "Görsel ≤ maxDocBytes (10MB), video ≤ maxVideoBytes (100MB)",
                     "items": {
                       "type": "string",
                       "format": "binary"
@@ -3119,6 +3131,9 @@
           },
           "400": {
             "$ref": "#/components/responses/ValidationError"
+          },
+          "413": {
+            "$ref": "#/components/responses/PayloadTooLarge"
           },
           "429": {
             "$ref": "#/components/responses/RateLimited"

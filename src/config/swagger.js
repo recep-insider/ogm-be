@@ -505,6 +505,14 @@ const definition = {
           },
         },
       },
+      PayloadTooLarge: {
+        description: 'Dosya boyutu sınırı aşıldı',
+        content: {
+          'application/json': {
+            schema: { $ref: '#/components/schemas/ErrorResponse' },
+          },
+        },
+      },
     },
   },
   security: [],

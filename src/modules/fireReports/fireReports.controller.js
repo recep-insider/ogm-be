@@ -25,7 +25,7 @@ async function create(req, res) {
   }
 
   const result = await service.create({
-    userId: req.user.id,
+    userId: req.user?.id || null,
     data: value,
     files: req.files,
     ip: req.ip,

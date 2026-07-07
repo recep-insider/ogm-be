@@ -1,5 +1,3 @@
-# syntax=docker/dockerfile:1.7
-
 # Notlar:
 # - npm 10.x'in "Exit handler never called!" bug'ı (npm/cli#7657) sunucuda
 #   npm ci'yi tutarsız hâle getiriyor. Çözüm: node_modules'u yerel makinada

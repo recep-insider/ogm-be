@@ -29,6 +29,7 @@ const MIME_TO_EXT = {
   'image/webp': '.webp',
   'application/pdf': '.pdf',
   'video/mp4': '.mp4',
+  'video/quicktime': '.mov',
 };
 
 function diskStorage(subdir) {
@@ -69,11 +70,32 @@ const avatarUpload = multer({
 }).single('avatar');
 
 // Yangın ihbarı — `media[]` (min 1, kontrat 9.1). Çoklu image/video.
+// Multer limiti dosya türüne göre ayrışamadığından üst sınır video limitidir;
+// görseller için maxDocBytes kontrolü upload sonrası imageSizeGuard'da yapılır.
 const fireReportUpload = multer({
   storage: diskStorage('reports'),
-  limits: { fileSize: env.upload.maxDocBytes },
+  limits: { fileSize: env.upload.maxVideoBytes },
   fileFilter: mimeFilter(ALLOWED_MEDIA_MIME),
 }).array('media', env.upload.maxReportPhotos);
+
+/**
+ * Görseller için maxDocBytes sınırını upload sonrası uygular (videolar multer'ın
+ * maxVideoBytes sınırına tabidir). Aşım varsa diske yazılmış tüm dosyalar silinir.
+ */
+function imageSizeGuard(maxBytes) {
+  return (req, _res, next) => {
+    const files = req.files || [];
+    const oversized = files.find((f) => f.mimetype.startsWith('image/') && f.size > maxBytes);
+    if (!oversized) return next();
+    for (const f of files) fs.unlink(f.path, () => {});
+    return next(
+      errors.make(413, 'file_too_large', 'Dosya boyutu sınırı aşıldı', {
+        limitBytes: maxBytes,
+        field: oversized.originalname,
+      }),
+    );
+  };
+}
 
 // Aktif görev fotoğrafı — tek `file` (kontrat 7.5).
 const missionPhotoUpload = multer({
@@ -113,9 +135,9 @@ const contentUpload = multer({
 module.exports = {
   onboardingUpload: wrapMulter(onboardingUpload),
   avatarUpload: wrapMulter(avatarUpload),
-  fireReportUpload: wrapMulter(fireReportUpload),
+  fireReportUpload: [wrapMulter(fireReportUpload), imageSizeGuard(env.upload.maxDocBytes)],
   missionPhotoUpload: wrapMulter(missionPhotoUpload),
   contentUpload: wrapMulter(contentUpload),
   // Test-only: exposes mimeFilter and the allowlist constants for unit tests.
-  __testables: { mimeFilter, ALLOWED_DOC_MIME, ALLOWED_AVATAR_MIME, ALLOWED_MEDIA_MIME },
+  __testables: { mimeFilter, imageSizeGuard, MIME_TO_EXT, ALLOWED_DOC_MIME, ALLOWED_AVATAR_MIME, ALLOWED_MEDIA_MIME },
 };

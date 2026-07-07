@@ -2,7 +2,7 @@
 
 const { Router } = require('express');
 const asyncHandler = require('../../shared/async-handler');
-const { requireAuth } = require('../../middlewares/auth');
+const { optionalAuth } = require('../../middlewares/auth');
 const { fireReportUpload } = require('../../middlewares/upload');
 const controller = require('./fireReports.controller');
 
@@ -13,8 +13,8 @@ const router = Router();
  * /fire-reports:
  *   post:
  *     tags: [Fire Reports]
- *     summary: Yangın ihbarı (multipart, media[] min 1)
- *     security: [ { bearerAuth: [] } ]
+ *     summary: Yangın ihbarı (multipart, media[] min 1) — guest (token'sız) da gönderebilir
+ *     security: [ {}, { bearerAuth: [] } ]
  *     requestBody:
  *       required: true
  *       content:
@@ -28,6 +28,7 @@ const router = Router();
  *                 description: 'JSON: { coordinates, needs[], description }'
  *               media:
  *                 type: array
+ *                 description: 'Görsel ≤ maxDocBytes (10MB), video ≤ maxVideoBytes (100MB)'
  *                 items: { type: string, format: binary }
  *     responses:
  *       200:
@@ -40,8 +41,11 @@ const router = Router();
  *                 ok: { type: boolean }
  *                 report: { $ref: '#/components/schemas/FireReportSummary' }
  *       400: { $ref: '#/components/responses/ValidationError' }
+ *       413: { $ref: '#/components/responses/PayloadTooLarge' }
  *       429: { $ref: '#/components/responses/RateLimited' }
  */
-router.post('/', requireAuth, fireReportUpload, asyncHandler(controller.create));
+// Yangın ihbarı acil akıştır — token'sız (guest) gönderim kabul edilir; token
+// varsa ihbar kullanıcıya bağlanır (üye olmadan devam senaryosu, kontrat 9.1).
+router.post('/', optionalAuth, fireReportUpload, asyncHandler(controller.create));
 
 module.exports = router;
