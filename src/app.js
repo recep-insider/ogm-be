@@ -32,6 +32,7 @@ const equipmentRoutes = require('./modules/equipment/equipment.routes');
 const fireReportsRoutes = require('./modules/fireReports/fireReports.routes');
 const userFireReportsRoutes = require('./modules/fireReports/userFireReports.routes');
 const emergencyRoutes = require('./modules/emergency/emergency.routes');
+const adminAuthRoutes = require('./modules/admin/auth/adminAuth.routes');
 const adminRoutes = require('./modules/admin/admin.routes');
 
 const app = express();
@@ -112,6 +113,8 @@ app.use('/v1/emergency', emergencyRoutes);
 app.use('/v1/notifications', notificationsRoutes);
 app.use('/v1/legal', legalRoutes);
 app.use('/v1/blog', blogRoutes);
+// Admin login/refresh/logout must be public → mount BEFORE the requireAdmin-guarded /v1/admin.
+app.use('/v1/admin/auth', adminAuthRoutes);
 app.use('/v1/admin', adminRoutes);
 
 app.use(notFoundHandler);

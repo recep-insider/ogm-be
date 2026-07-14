@@ -135,6 +135,26 @@ const requireOfficer = apiKeyOrRole(
   () => [env.admin.officerApiKey, env.admin.apiKey],
 );
 
+/**
+ * Bearer-only admin realm guard. Unlike `apiKeyOrRole`, it rejects the x-api-key
+ * path (which carries no principal) and positively requires the `atyp: 'admin'`
+ * claim — so a volunteer access token (no `atyp`) can never reach admin-self
+ * endpoints like `/admin/auth/me`. Sets `req.user` from the token.
+ */
+function requireAdminAuth(req, _res, next) {
+  const token = extractBearer(req);
+  if (!token) return next(errors.unauthorized('Token gerekli'));
+  try {
+    const payload = verifyAccessToken(token);
+    if (payload.atyp !== 'admin') return next(errors.forbidden('Bu işlem için yetkiniz yok'));
+    req.user = { id: payload.sub, ...payload };
+    req.token = token;
+    return next();
+  } catch {
+    return next(errors.unauthorized('Geçersiz veya süresi dolmuş token'));
+  }
+}
+
 module.exports = {
   requireAuth,
   optionalAuth,
@@ -142,5 +162,6 @@ module.exports = {
   requireAuthOrRegistration,
   requireAdmin,
   requireOfficer,
+  requireAdminAuth,
   isRefreshBlacklisted,
 };

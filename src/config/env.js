@@ -119,6 +119,16 @@ const env = {
     officerApiKey: process.env.OFFICER_API_KEY || '',
     // QR imzalı token doğrulaması için opsiyonel HMAC secret (B.1).
     scanHmacSecret: process.env.SCAN_HMAC_SECRET || '',
+    // First admin account seed (idempotent). No-op when both are empty.
+    seedEmail: process.env.ADMIN_SEED_EMAIL || '',
+    seedPassword: process.env.ADMIN_SEED_PASSWORD || '',
+    seedAd: process.env.ADMIN_SEED_AD || 'Sistem',
+    seedSoyad: process.env.ADMIN_SEED_SOYAD || 'Yöneticisi',
+    // Login security: bcrypt cost and IP-based brute-force lockout
+    // (not email-based — to avoid account-lockout DoS).
+    bcryptRounds: toInt(process.env.ADMIN_BCRYPT_ROUNDS, 12),
+    loginMaxAttempts: toInt(process.env.ADMIN_LOGIN_MAX_ATTEMPTS, 10),
+    loginLockoutDuration: toInt(process.env.ADMIN_LOGIN_LOCKOUT_DURATION, 900),
   },
 
   geo: {

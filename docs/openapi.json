@@ -14,11 +14,11 @@
   },
   "servers": [
     {
-      "url": "https://surfaces-acer-munich-completed.trycloudflare.com/v1",
+      "url": "http://localhost:3000/v1",
       "description": "API v1"
     },
     {
-      "url": "https://surfaces-acer-munich-completed.trycloudflare.com",
+      "url": "http://localhost:3000",
       "description": "Kök (health vb.)"
     }
   ],
@@ -2461,6 +2461,249 @@
           },
           "404": {
             "description": "application_not_found"
+          }
+        }
+      }
+    },
+    "/admin/staff": {
+      "get": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "Admin/officer hesaplarını listele (panel)",
+        "description": "Yalnızca role=admin. x-api-key veya admin Bearer token.",
+        "responses": {
+          "200": {
+            "description": "Hesap listesi"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "Yeni admin/officer hesabı oluştur (panel)",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "eposta",
+                  "sifre",
+                  "role"
+                ],
+                "properties": {
+                  "eposta": {
+                    "type": "string",
+                    "format": "email"
+                  },
+                  "ad": {
+                    "type": "string"
+                  },
+                  "soyad": {
+                    "type": "string"
+                  },
+                  "sifre": {
+                    "type": "string",
+                    "format": "password"
+                  },
+                  "role": {
+                    "type": "string",
+                    "enum": [
+                      "admin",
+                      "officer"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Oluşturulan hesap"
+          },
+          "409": {
+            "description": "admin_email_exists"
+          }
+        }
+      }
+    },
+    "/admin/staff/{id}": {
+      "patch": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "Admin/officer hesabını güncelle (aktiflik/rol)",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "isActive": {
+                    "type": "boolean"
+                  },
+                  "role": {
+                    "type": "string",
+                    "enum": [
+                      "admin",
+                      "officer"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Güncellenen hesap"
+          },
+          "404": {
+            "description": "admin_not_found"
+          }
+        }
+      }
+    },
+    "/admin/auth/login": {
+      "post": {
+        "tags": [
+          "Admin - Auth"
+        ],
+        "summary": "Admin/officer girişi (e-posta + şifre)",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "eposta",
+                  "sifre"
+                ],
+                "properties": {
+                  "eposta": {
+                    "type": "string",
+                    "format": "email"
+                  },
+                  "sifre": {
+                    "type": "string",
+                    "format": "password"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Access + refresh token çifti ve admin profili"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "429": {
+            "description": "Çok fazla başarısız deneme"
+          }
+        }
+      }
+    },
+    "/admin/auth/refresh": {
+      "post": {
+        "tags": [
+          "Admin - Auth"
+        ],
+        "summary": "Admin access token'ı yenile (refresh rotation)",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "refreshToken"
+                ],
+                "properties": {
+                  "refreshToken": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Yeni token çifti"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        }
+      }
+    },
+    "/admin/auth/logout": {
+      "post": {
+        "tags": [
+          "Admin - Auth"
+        ],
+        "summary": "Admin logout — refresh token'ı iptal et",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "refreshToken"
+                ],
+                "properties": {
+                  "refreshToken": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": {
+            "description": "Logout başarılı"
+          }
+        }
+      }
+    },
+    "/admin/auth/me": {
+      "get": {
+        "tags": [
+          "Admin - Auth"
+        ],
+        "summary": "Oturumdaki admin/officer profili",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Admin profili"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
           }
         }
       }

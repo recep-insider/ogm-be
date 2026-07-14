@@ -168,6 +168,15 @@ JWT_REFRESH=$(gen_hex)
 ADMIN_API_KEY=$(gen_hex)
 OFFICER_API_KEY=$(gen_hex)
 SCAN_HMAC_SECRET=$(gen_hex)
+# Panel login: ilk admin hesabı. E-posta/şifre deployer env'inden gelebilir
+# (ADMIN_SEED_EMAIL / ADMIN_SEED_PASSWORD); verilmezse üretilir ve
+# PRODUCTION-SECRETS.md'ye yazılır. Seed idempotent (mevcut e-postaya dokunmaz).
+# NOT: Standart deploy DB volume'unu sıfırladığı için (down -v) admin her deploy'da
+# yeniden seed'lenir → yazılan şifre geçerli olur. DB'yi KORUYAN artımlı bir
+# redeploy'da ise mevcut admin'in şifresi DEĞİŞMEZ; o durumda şifreyi elle
+# ADMIN_SEED_PASSWORD ile ver ya da /admin/staff'tan yeni hesap aç.
+ADMIN_SEED_EMAIL="${ADMIN_SEED_EMAIL:-admin@ogm.gov.tr}"
+ADMIN_SEED_PW="${ADMIN_SEED_PASSWORD:-$(gen_pw)}"
 ok "Secret'lar hazır (ekrana basılmayacak)"
 
 # ─── Yerel npm install (linux/amd64 platformu için) ──────────────────────────────
@@ -279,10 +288,19 @@ FIREBASE_PROJECT_ID=
 FIREBASE_CREDENTIALS_PATH=
 
 # ── Admin / Officer (panel & saha amiri uçları; mobil çağırmaz) ──
-# Scan ve admin uçları x-api-key ile korunur. Boş bırakılırsa bu uçlar 403 döner.
+# Panel /admin/auth/login ile Bearer token alır; x-api-key server-to-server/scan fallback.
 ADMIN_API_KEY=$ADMIN_API_KEY
 OFFICER_API_KEY=$OFFICER_API_KEY
 SCAN_HMAC_SECRET=$SCAN_HMAC_SECRET
+
+# ── Admin login (panel) — ilk admin seed'i + login güvenliği ──
+ADMIN_SEED_EMAIL=$ADMIN_SEED_EMAIL
+ADMIN_SEED_PASSWORD=$ADMIN_SEED_PW
+ADMIN_SEED_AD=Sistem
+ADMIN_SEED_SOYAD=Yoneticisi
+ADMIN_BCRYPT_ROUNDS=12
+ADMIN_LOGIN_MAX_ATTEMPTS=10
+ADMIN_LOGIN_LOCKOUT_DURATION=900
 
 # ── Reverse geocode (opsiyonel; boşsa fire-report locationName placeholder) ──
 NOMINATIM_URL=
@@ -424,7 +442,15 @@ OFFICER_API_KEY=$OFFICER_API_KEY
 SCAN_HMAC_SECRET=$SCAN_HMAC_SECRET
 \`\`\`
 
-> **Admin paneli** \`x-api-key: <ADMIN_API_KEY>\`, **saha amiri** \`x-api-key: <OFFICER_API_KEY>\` header'ı ile çağırır.
+## Panel admin girişi
+
+- **URL**: \`POST http://$SSH_HOST/v1/admin/auth/login\`
+- **E-posta**: \`$ADMIN_SEED_EMAIL\`
+- **Şifre**: \`$ADMIN_SEED_PW\`
+
+> Panel bu kimlikle giriş yapıp Bearer access token alır. İlk girişten sonra
+> güçlü bir şifreyle yeni admin açıp bu seed hesabını değiştirmeniz önerilir.
+> \`x-api-key\` (admin/officer) yalnızca server-to-server / scan için fallback olarak kalır.
 
 ## Devre dışı entegrasyonlar (mock/empty mode)
 

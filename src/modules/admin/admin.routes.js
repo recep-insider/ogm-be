@@ -18,6 +18,8 @@ const emergencyService = require('../emergency/emergency.service');
 const trainingsService = require('../trainings/trainings.service');
 const blogService = require('../blog/blog.service');
 const adminService = require('./admin.service');
+const staffService = require('./staff.service');
+const { epostaField, sifreField } = require('./auth/adminAuth.validators');
 
 // İşlemi yapan admin'in audit bağlamı (x-api-key'de userId NULL kalır — bilinen kısıt).
 function actorFrom(req) {
@@ -894,6 +896,96 @@ router.put(
   validate({ body: Joi.object({ status: Joi.string().valid('pending', 'approved', 'rejected').required() }) }),
   asyncHandler(async (req, res) => {
     res.json(await trainingsService.adminSetSahaApplicationStatus(req.params.applicationId, req.body, actorFrom(req)));
+  }),
+);
+
+// ─── Admin/officer account management (/admin/staff) ───────────────────────
+// Like every /admin/* endpoint, this sits under requireAdmin → only a role=admin
+// token or the admin x-api-key can reach it; an officer token (role=officer) gets 403.
+
+const createStaffSchema = Joi.object({
+  eposta: epostaField.required(),
+  ad: Joi.string().max(100).allow('', null).optional(),
+  soyad: Joi.string().max(100).allow('', null).optional(),
+  sifre: sifreField.required(),
+  role: Joi.string().valid(...staffService.ROLES).required(),
+});
+
+const updateStaffSchema = Joi.object({
+  isActive: Joi.boolean().optional(),
+  role: Joi.string().valid(...staffService.ROLES).optional(),
+}).min(1);
+
+/**
+ * @openapi
+ * /admin/staff:
+ *   get:
+ *     tags: [Admin]
+ *     summary: Admin/officer hesaplarını listele (panel)
+ *     description: 'Yalnızca role=admin. x-api-key veya admin Bearer token.'
+ *     responses:
+ *       200: { description: 'Hesap listesi' }
+ */
+router.get('/staff', asyncHandler(async (_req, res) => {
+  res.json(await staffService.listStaff());
+}));
+
+/**
+ * @openapi
+ * /admin/staff:
+ *   post:
+ *     tags: [Admin]
+ *     summary: Yeni admin/officer hesabı oluştur (panel)
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [eposta, sifre, role]
+ *             properties:
+ *               eposta: { type: string, format: email }
+ *               ad: { type: string }
+ *               soyad: { type: string }
+ *               sifre: { type: string, format: password }
+ *               role: { type: string, enum: [admin, officer] }
+ *     responses:
+ *       201: { description: 'Oluşturulan hesap' }
+ *       409: { description: admin_email_exists }
+ */
+router.post('/staff', validate({ body: createStaffSchema }), asyncHandler(async (req, res) => {
+  res.status(201).json(await staffService.createStaff(req.body, actorFrom(req)));
+}));
+
+/**
+ * @openapi
+ * /admin/staff/{id}:
+ *   patch:
+ *     tags: [Admin]
+ *     summary: Admin/officer hesabını güncelle (aktiflik/rol)
+ *     parameters:
+ *       - { in: path, name: id, required: true, schema: { type: string } }
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               isActive: { type: boolean }
+ *               role: { type: string, enum: [admin, officer] }
+ *     responses:
+ *       200: { description: 'Güncellenen hesap' }
+ *       404: { description: admin_not_found }
+ */
+router.patch(
+  '/staff/:id',
+  validate({
+    params: Joi.object({ id: Joi.string().required() }),
+    body: updateStaffSchema,
+  }),
+  asyncHandler(async (req, res) => {
+    res.json(await staffService.updateStaff(req.params.id, req.body, actorFrom(req)));
   }),
 );
 
