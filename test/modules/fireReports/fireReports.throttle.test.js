@@ -34,7 +34,7 @@ jest.mock('../../../src/config/redis', () => ({
 jest.mock('../../../src/config/env', () => ({
   geo: { nominatimUrl: 'http://nominatim:8080' },
   upload: { dir: '/tmp' },
-  api: { baseUrl: 'https://api.test' },
+  api: { baseUrl: 'https://api.test', appUrl: 'https://ogm.test' },
 }));
 jest.mock('../../../src/config/logger', () => ({ warn: jest.fn(), info: jest.fn(), error: jest.fn() }));
 jest.mock('../../../src/shared/audit', () => ({ writeAudit: jest.fn() }));

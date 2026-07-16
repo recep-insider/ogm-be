@@ -18,7 +18,10 @@ describe('reverseGeocode', () => {
   // resetModules axios mock'unu da tazeliyor — modülle aynı registry'den al.
   function load(nominatimUrl = '') {
     jest.resetModules();
-    jest.doMock('../../src/config/env', () => ({ geo: { nominatimUrl } }));
+    jest.doMock('../../src/config/env', () => ({
+      geo: { nominatimUrl },
+      api: { appUrl: 'https://ogm.test' },
+    }));
     return { ...require('../../src/shared/reverse-geocode'), axios: require('axios') };
   }
 
@@ -41,7 +44,7 @@ describe('reverseGeocode', () => {
 
     expect(axios.get).toHaveBeenCalledWith(
       'https://nominatim.openstreetmap.org/reverse',
-      expect.objectContaining({ headers: { 'User-Agent': 'ogm-gonullu-api' } })
+      expect.objectContaining({ headers: { 'User-Agent': 'ogm-gonullu-api (+https://ogm.test)' } })
     );
     expect(result).toEqual({ locationName: 'Alemdar Caddesi', regionLabel: 'İstanbul / Fatih' });
   });
@@ -58,9 +61,8 @@ describe('reverseGeocode', () => {
     expect(result).toEqual({ locationName: 'Tepe', regionLabel: 'Muğla / Marmaris' });
   });
 
-  // timeoutMs → axios.timeout geçişi korumasız: JSDoc'a göre 0 verilirse axios
-  // "timeout yok" sayar, istek hiç sonlanmaz ve o process'in kuyruğu kalıcı
-  // kilitlenir. Aşağısı pass-through'u sabitler.
+  // timeoutMs → axios.timeout geçişi: geçersiz değer kuyruğu kilitleyebileceği
+  // için guard'lı (aşağıdaki it.each).
   it('timeoutMs verilmezse axios.get varsayılan 8000 ms timeout ile çağrılır', async () => {
     const { reverseGeocode, axios } = load('http://nominatim:8080');
     axios.get.mockResolvedValue({ data: { name: 'X', address: {} } });
@@ -79,15 +81,14 @@ describe('reverseGeocode', () => {
     expect(axios.get).toHaveBeenCalledWith(expect.any(String), expect.objectContaining({ timeout: 2500 }));
   });
 
-  // MEVCUT DAVRANIŞ — istenen değil: kodda 0'a karşı guard yok, değer olduğu
-  // gibi axios'a geçiyor. Guard eklenirse bu test bilerek kırılmalı.
-  it('timeoutMs: 0 filtrelenmez, axios.get 0 ile çağrılır (guard yok)', async () => {
+  // axios 0'ı "timeout yok" sayar: istek hiç sonlanmaz ve kuyruk kalıcı kilitlenir.
+  it.each([[0], [-1], [NaN], [Infinity]])('geçersiz timeoutMs (%p) varsayılana düşer, axios 0 görmez', async (bad) => {
     const { reverseGeocode, axios } = load('http://nominatim:8080');
     axios.get.mockResolvedValue({ data: { name: 'X', address: {} } });
 
-    await reverseGeocode(41.0082, 28.9784, { timeoutMs: 0 });
+    await reverseGeocode(41.0082, 28.9784, { timeoutMs: bad });
 
-    expect(axios.get).toHaveBeenCalledWith(expect.any(String), expect.objectContaining({ timeout: 0 }));
+    expect(axios.get).toHaveBeenCalledWith(expect.any(String), expect.objectContaining({ timeout: 8000 }));
   });
 
   it('servis hata verirse placeholder + koordinat metnine düşer', async () => {
@@ -119,7 +120,10 @@ describe('reverseGeocode — kuyruk derinliği', () => {
 
   function loadWithStamps(nominatimUrl = 'http://nominatim:8080') {
     jest.resetModules();
-    jest.doMock('../../src/config/env', () => ({ geo: { nominatimUrl } }));
+    jest.doMock('../../src/config/env', () => ({
+      geo: { nominatimUrl },
+      api: { appUrl: 'https://ogm.test' },
+    }));
     const axios = require('axios');
     const requestedAt = [];
     axios.get.mockImplementation(async () => {

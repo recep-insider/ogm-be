@@ -172,4 +172,61 @@ describe('scripts/backfill-fire-report-locations', () => {
       expect(process.exitCode).toBeUndefined();
     });
   });
+
+  // Nominatim erişilemezse her satır placeholder'a düşer: script hiçbir kaydı
+  // güncellemeden exit 0 ile biterse cron/deploy adımı "temiz koşu" sanır ve
+  // backfill'in hiç çalışmadığı fark edilmez.
+  describe('tümü başarısız koşu', () => {
+    const allFail = () =>
+      jest.fn(async () => ({ locationName: PLACEHOLDER, regionLabel: '36.85, 28.27' }));
+
+    test('hiçbir kayıt güncellenemezse process.exitCode = 1 olur', async () => {
+      const { done } = loadScript({ geocode: allFail() });
+
+      await done;
+
+      expect(process.exitCode).toBe(1);
+    });
+
+    test('hiçbir kayıt güncellenemezse teşhis mesajını loglar', async () => {
+      const { done } = loadScript({ geocode: allFail() });
+
+      await done;
+
+      expect(console.error).toHaveBeenCalledWith(
+        'Hiçbir kayıt güncellenemedi — NOMINATIM_URL ve servis erişimini kontrol edin.',
+      );
+    });
+
+    test('güncellenecek kayıt yokken exitCode set edilmez (temiz koşu)', async () => {
+      const { done } = loadScript({ rows: [], geocode: allFail() });
+
+      await done;
+
+      expect(process.exitCode).toBeUndefined();
+    });
+
+    test('kayıtların bir kısmı güncellenirse exitCode set edilmez', async () => {
+      let call = 0;
+      const geocode = jest.fn(async () => {
+        call += 1;
+        return call === 1
+          ? { locationName: PLACEHOLDER, regionLabel: '36.85, 28.27' }
+          : { locationName: 'Tepe', regionLabel: 'Muğla / Marmaris' };
+      });
+      const { done } = loadScript({ geocode });
+
+      await done;
+
+      expect(process.exitCode).toBeUndefined();
+    });
+
+    test('dry-run kayıt varken exitCode set etmez (güncelleme beklenmiyor)', async () => {
+      const { done } = loadScript({ dryRun: true });
+
+      await done;
+
+      expect(process.exitCode).toBeUndefined();
+    });
+  });
 });

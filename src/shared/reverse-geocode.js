@@ -10,6 +10,12 @@ const PLACEHOLDER = 'Bilinmeyen Konum';
 // Self-hosted container kullanılıyorsa da zararsız — ihbar hacmi saatte 5/kullanıcı.
 const MIN_INTERVAL_MS = 1100;
 
+const DEFAULT_TIMEOUT_MS = 8000;
+
+// OSM kullanım politikası User-Agent'ta geçerli bir iletişim bilgisi istiyor;
+// api.appUrl operatörün kendi adresi (uydurma mailbox yerine).
+const userAgent = () => `ogm-gonullu-api (+${env.api.appUrl})`;
+
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 // Kuyruk process başınadır (API ve backfill ayrı process → ayrı kuyruk).
@@ -63,11 +69,14 @@ function withDeadline(promise, ms) {
  * @param {{maxWaitMs?: number, timeoutMs?: number}} [opts] maxWaitMs kuyrukta
  *   bekleme + istek süresinin toplam üst sınırıdır (ihbar yazma yolu gibi
  *   gecikmeye duyarlı çağrılar vermeli); backfill sabırlı olabilir.
- *   timeoutMs asla 0 olmamalı: axios 0'ı "timeout yok" sayar, istek hiç
- *   sonlanmaz ve kuyruk o process'te kalıcı olarak kilitlenir.
  */
-async function reverseGeocode(lat, lng, { maxWaitMs = Infinity, timeoutMs = 8000 } = {}) {
+async function reverseGeocode(lat, lng, { maxWaitMs = Infinity, timeoutMs = DEFAULT_TIMEOUT_MS } = {}) {
   if (!env.geo.nominatimUrl) return fallback(lat, lng);
+
+  // axios 0'ı "timeout yok" sayar: istek hiç sonlanmaz, kuyruk o process'te
+  // kalıcı kilitlenir ve sonraki her geocode placeholder'a düşer. Geçersiz
+  // değeri yorumla değil, kodla engelle.
+  const timeout = Number.isFinite(timeoutMs) && timeoutMs > 0 ? timeoutMs : DEFAULT_TIMEOUT_MS;
 
   // Kuyruk zaten bütçeyi aşıyorsa isteği hiç açma: sonucu nasılsa deadline'a
   // takılıp atılacaktı — OSM'e boşuna istek gitmesin.
@@ -81,8 +90,8 @@ async function reverseGeocode(lat, lng, { maxWaitMs = Infinity, timeoutMs = 8000
       throttle(() =>
         axios.get(`${env.geo.nominatimUrl.replace(/\/$/, '')}/reverse`, {
           params: { lat, lon: lng, format: 'jsonv2', 'accept-language': 'tr' },
-          timeout: timeoutMs,
-          headers: { 'User-Agent': 'ogm-gonullu-api' },
+          timeout,
+          headers: { 'User-Agent': userAgent() },
         })
       ),
       maxWaitMs

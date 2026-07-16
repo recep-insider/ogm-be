@@ -32,13 +32,26 @@
 
 set -euo pipefail
 
+# ─── Renkli output ──────────────────────────────────────────────
+log()  { printf "\033[1;34m▶ %s\033[0m\n" "$*"; }
+ok()   { printf "\033[1;32m✓ %s\033[0m\n" "$*"; }
+warn() { printf "\033[1;33m! %s\033[0m\n" "$*"; }
+err()  { printf "\033[1;31m✗ %s\033[0m\n" "$*" >&2; }
+die()  { err "$*"; exit 1; }
+
 # ─── Yapılandırma ──────────────────────────────────────────────
 FRESH=0
 TARGET=""
 for arg in "$@"; do
   case "$arg" in
     --fresh) FRESH=1 ;;
-    *) TARGET="$arg" ;;
+    # Mod seçimi veri silen bir karar: yazım hatasını ("--frsh") sessizce SSH
+    # hedefi sanmak yerine dur.
+    --*) die "Bilinmeyen bayrak: $arg" ;;
+    *)
+      [ -z "$TARGET" ] || die "Birden fazla hedef verildi: '$TARGET' ve '$arg'"
+      TARGET="$arg"
+      ;;
   esac
 done
 TARGET="${TARGET:-root@94.73.180.124}"
@@ -53,13 +66,6 @@ if [[ "$TARGET_HOST" == *:* ]]; then
   SSH_PORT="${TARGET_HOST##*:}"
   TARGET="${TARGET%:*}"
 fi
-
-# ─── Renkli output ──────────────────────────────────────────────
-log()  { printf "\033[1;34m▶ %s\033[0m\n" "$*"; }
-ok()   { printf "\033[1;32m✓ %s\033[0m\n" "$*"; }
-warn() { printf "\033[1;33m! %s\033[0m\n" "$*"; }
-err()  { printf "\033[1;31m✗ %s\033[0m\n" "$*" >&2; }
-die()  { err "$*"; exit 1; }
 
 # ─── Pre-flight ──────────────────────────────────────────────
 log "Pre-flight kontrol"
@@ -376,6 +382,31 @@ if [ "$MODE" = "fresh" ]; then
   ok ".env yerinde"
 else
   log "Güncelleme modu: .env transferi atlandı (sunucudaki mevcut .env kullanılacak)"
+
+  # Sunucudaki .env korunduğu için yeni sürümle gelen anahtarlar oraya kendi
+  # başına ulaşmaz — eksikse eklenir, MEVCUT DEĞER ASLA EZİLMEZ.
+  # Buraya yalnızca secret OLMAYAN, varsayılanı güvenle yazılabilen anahtarlar girer.
+  ensure_env_key() {
+    local key="$1" val="$2" rc=0
+    run_ssh "grep -q '^${key}=' $DEPLOY_DIR/.env" || rc=$?
+    case "$rc" in
+      0) ok "  $key: zaten tanımlı, dokunulmadı" ;;
+      1)
+        run_ssh "printf '\n%s\n' '${key}=${val}' >> $DEPLOY_DIR/.env"
+        warn "  $key: eksikti, eklendi → $val"
+        ;;
+      # grep 1 = "yok" demek; başka her kod (ssh kopması, dosya hatası) "yok"
+      # sayılırsa anahtar mükerrer eklenir ve dotenv'de son satır kazanarak
+      # operatörün mevcut değerini sessizce ezer.
+      *) die "$key kontrol edilemedi (ssh/grep çıkış kodu $rc) — .env'e dokunulmadı" ;;
+    esac
+  }
+  log "Yeni env anahtarları kontrol ediliyor"
+  # Boş kalırsa yangın ihbarı konumu 'Bilinmeyen Konum' olarak yazılır.
+  ensure_env_key NOMINATIM_URL https://nominatim.openstreetmap.org
+  # Nominatim'e giden User-Agent'taki iletişim adresi buradan geliyor; eksikse
+  # env.js 'http://localhost'a düşer ve OSM'in istediği adres işe yaramaz olur.
+  ensure_env_key APP_URL "http://$SSH_HOST"
 fi
 
 # ─── Volume dizinleri (node user uid 1000 için) ──────────────────────────────────────

@@ -60,6 +60,13 @@ async function main() {
   }
 
   console.log(`Bitti: ${updated} güncellendi, ${failed} başarısız.`);
+
+  // Servis erişilemezse her satır placeholder'a düşer ve script hiçbir şey
+  // yapmadan 0 ile çıkardı — temiz koşudan ayırt edilemiyordu.
+  if (rows.length > 0 && updated === 0) {
+    console.error('Hiçbir kayıt güncellenemedi — NOMINATIM_URL ve servis erişimini kontrol edin.');
+    process.exitCode = 1;
+  }
 }
 
 main()
