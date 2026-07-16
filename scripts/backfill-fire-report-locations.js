@@ -1,3 +1,4 @@
+#!/usr/bin/env node
 'use strict';
 
 // NOMINATIM_URL tanımsızken oluşturulan ihbarların location_name/region_label
@@ -5,8 +6,8 @@
 // kayıtlı latitude/longitude üzerinden tekrar reverse geocode edip günceller.
 //
 // Kullanım (sunucuda):
-//   docker compose exec -T backend node scripts/backfill-fire-report-locations.js
-//   docker compose exec -T backend node scripts/backfill-fire-report-locations.js --dry-run
+//   docker compose exec -T backend npm run backfill:locations
+//   docker compose exec -T backend npm run backfill:locations -- --dry-run
 //
 // --dry-run kapsamı listeler, geocode isteği ATMAZ (koordinat kişisel veri).
 //
@@ -63,8 +64,14 @@ async function main() {
 
   // Servis erişilemezse her satır placeholder'a düşer ve script hiçbir şey
   // yapmadan 0 ile çıkardı — temiz koşudan ayırt edilemiyordu.
+  // Not: placeholder "servis kapalı" ile "koordinat gerçekten adres döndürmedi"
+  // (adressiz kırsal nokta — orman yangınında olağan) arasında ayrım yapmaz;
+  // mesaj bu yüzden ikisini de kapsıyor.
   if (rows.length > 0 && updated === 0) {
-    console.error('Hiçbir kayıt güncellenemedi — NOMINATIM_URL ve servis erişimini kontrol edin.');
+    console.error(
+      'Hiçbir kayıt güncellenemedi — NOMINATIM_URL/servis erişimini kontrol edin ' +
+        '(ya da koordinatların hiçbiri adres döndürmemiş olabilir).'
+    );
     process.exitCode = 1;
   }
 }

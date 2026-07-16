@@ -56,6 +56,9 @@ for arg in "$@"; do
 done
 TARGET="${TARGET:-root@94.73.180.124}"
 DEPLOY_DIR=/opt/ogm-gonullu
+# Reverse geocode varsayılanı — hem fresh .env şablonu hem update modundaki
+# ensure_env_key buradan okur (self-hosted'a geçilince tek yer değişsin).
+NOMINATIM_DEFAULT_URL=https://nominatim.openstreetmap.org
 LOCAL_REPO="$(cd "$(dirname "$0")" && pwd)"
 
 # TARGET'tan host:port ayır
@@ -331,7 +334,7 @@ SCAN_HMAC_SECRET=$SCAN_HMAC_SECRET
 # ── Reverse geocode (boşsa fire-report locationName 'Bilinmeyen Konum' kalır) ──
 # Public OSM: sn'de 1 istek (throttle kodda). Koordinat kişisel veri — kalıcı
 # çözüm self-hosted Nominatim container adresi.
-NOMINATIM_URL=https://nominatim.openstreetmap.org
+NOMINATIM_URL=$NOMINATIM_DEFAULT_URL
 
 # ── Logging ─────────────────────────────────────
 LOG_LEVEL=info
@@ -386,24 +389,46 @@ else
   # Sunucudaki .env korunduğu için yeni sürümle gelen anahtarlar oraya kendi
   # başına ulaşmaz — eksikse eklenir, MEVCUT DEĞER ASLA EZİLMEZ.
   # Buraya yalnızca secret OLMAYAN, varsayılanı güvenle yazılabilen anahtarlar girer.
-  ensure_env_key() {
-    local key="$1" val="$2" rc=0
-    run_ssh "grep -q '^${key}=' $DEPLOY_DIR/.env" || rc=$?
+  # grep rc: 0 = eşleşti, 1 = eşleşmedi, diğer = ssh/dosya hatası. Hata "yok"
+  # sayılırsa anahtar mükerrer yazılır ve operatörün değeri sessizce değişir.
+  _env_has() {
+    local pattern="$1" rc=0
+    run_ssh "grep -q '$pattern' $DEPLOY_DIR/.env" || rc=$?
     case "$rc" in
-      0) ok "  $key: zaten tanımlı, dokunulmadı" ;;
-      1)
-        run_ssh "printf '\n%s\n' '${key}=${val}' >> $DEPLOY_DIR/.env"
-        warn "  $key: eksikti, eklendi → $val"
-        ;;
-      # grep 1 = "yok" demek; başka her kod (ssh kopması, dosya hatası) "yok"
-      # sayılırsa anahtar mükerrer eklenir ve dotenv'de son satır kazanarak
-      # operatörün mevcut değerini sessizce ezer.
-      *) die "$key kontrol edilemedi (ssh/grep çıkış kodu $rc) — .env'e dokunulmadı" ;;
+      0|1) return "$rc" ;;
+      *) die ".env okunamadı (ssh/grep çıkış kodu $rc) — dosyaya dokunulmadı" ;;
     esac
+  }
+
+  ensure_env_key() {
+    local key="$1" val="$2"
+    # Eski şablon anahtarı BOŞ yazıyordu ('NOMINATIM_URL='). Sadece '^key='
+    # aranırsa o boş satır "tanımlı" sanılır, atlanır ve düzeltme sunucuya hiç
+    # ulaşmaz. Bu yüzden ölçüt "dolu mu" (=' den sonra en az bir karakter).
+    if _env_has "^${key}=..*"; then
+      ok "  $key: zaten dolu, dokunulmadı"
+      return
+    fi
+
+    if _env_has "^${key}="; then
+      # Boş satırı doldur — append edilirse mükerrer anahtar kalırdı.
+      # (Hedef Ubuntu/Debian: GNU sed.) sed'in replacement'ında '&' tüm eşleşme
+      # demek; kaçışlanmazsa değer sessizce bozulur.
+      local val_esc=${val//&/\\&}
+      run_ssh "sed -i 's|^${key}=.*|${key}=${val_esc}|' $DEPLOY_DIR/.env"
+      warn "  $key: boştu, dolduruldu → $val"
+    else
+      run_ssh "printf '\n%s\n' '${key}=${val}' >> $DEPLOY_DIR/.env"
+      warn "  $key: eksikti, eklendi → $val"
+    fi
+
+    # Yazımın tuttuğunu doğrula: sessiz no-op, düzeltmenin sunucuya hiç
+    # ulaşmadığını fark etmeden deploy'u "başarılı" göstermek demek.
+    _env_has "^${key}=..*" || die "$key yazılamadı — .env'i sunucuda elle kontrol edin"
   }
   log "Yeni env anahtarları kontrol ediliyor"
   # Boş kalırsa yangın ihbarı konumu 'Bilinmeyen Konum' olarak yazılır.
-  ensure_env_key NOMINATIM_URL https://nominatim.openstreetmap.org
+  ensure_env_key NOMINATIM_URL "$NOMINATIM_DEFAULT_URL"
   # Nominatim'e giden User-Agent'taki iletişim adresi buradan geliyor; eksikse
   # env.js 'http://localhost'a düşer ve OSM'in istediği adres işe yaramaz olur.
   ensure_env_key APP_URL "http://$SSH_HOST"

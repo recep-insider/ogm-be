@@ -193,9 +193,8 @@ describe('scripts/backfill-fire-report-locations', () => {
 
       await done;
 
-      expect(console.error).toHaveBeenCalledWith(
-        'Hiçbir kayıt güncellenemedi — NOMINATIM_URL ve servis erişimini kontrol edin.',
-      );
+      expect(console.error).toHaveBeenCalledWith(expect.stringContaining('Hiçbir kayıt güncellenemedi'));
+      expect(console.error).toHaveBeenCalledWith(expect.stringContaining('NOMINATIM_URL'));
     });
 
     test('güncellenecek kayıt yokken exitCode set edilmez (temiz koşu)', async () => {

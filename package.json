@@ -19,7 +19,8 @@
     "seed:make": "knex seed:make",
     "swagger:export": "node scripts/export-openapi.js",
     "swagger:watch": "node scripts/watch-swagger.js",
-    "postman:export": "node scripts/generate-postman.js"
+    "postman:export": "node scripts/generate-postman.js",
+    "backfill:locations": "node scripts/backfill-fire-report-locations.js"
   },
   "dependencies": {
     "axios": "^1.7.7",

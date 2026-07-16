@@ -123,9 +123,11 @@ const env = {
 
   geo: {
     // Reverse geocode servisi (fire-report locationName/regionLabel).
-    // Bilerek varsayılansız: ihbar koordinatı kişisel veridir, dışarıya ancak
-    // operatör NOMINATIM_URL'i açıkça tanımlarsa çıkar. Tanımsızken konum
-    // 'Bilinmeyen Konum' placeholder'ında kalır (bkz. shared/reverse-geocode.js).
+    // Bilerek kod varsayılanı YOK: ihbar koordinatı kişisel veridir, adres
+    // .env'de görünür olmalı. Tanımsızken konum 'Bilinmeyen Konum'
+    // placeholder'ında kalır, dışarıya istek gitmez (shared/reverse-geocode.js).
+    // deploy.sh bu anahtarı public OSM ile doldurur (TECH_DESIGN.md 6.5'in izin
+    // verdiği seçenek); self-hosted Nominatim adresi yazılırsa korunur.
     nominatimUrl: process.env.NOMINATIM_URL || '',
   },
 
