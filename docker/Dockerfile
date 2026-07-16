@@ -17,6 +17,9 @@ COPY --chown=node:node node_modules/ ./node_modules/
 COPY --chown=node:node src/        ./src/
 COPY --chown=node:node migrations/ ./migrations/
 COPY --chown=node:node seeds/      ./seeds/
+# Bakım script'leri (npm run backfill:locations gibi) container içinden
+# çalıştırılıyor — image'a girmezse komut MODULE_NOT_FOUND ile ölür.
+COPY --chown=node:node scripts/    ./scripts/
 
 RUN chown -R node:node /app
 
