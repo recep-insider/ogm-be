@@ -6,6 +6,14 @@
 #   ./deploy.sh                          # default: root@94.73.180.124
 #   ./deploy.sh root@host                # özel host
 #   ./deploy.sh root@host:2222           # özel port
+#   ./deploy.sh --fresh [root@host]      # SIFIRDAN kurulum (DB volume'ları SİLİNİR!)
+#
+# Mod seçimi (otomatik):
+#   - Sunucuda $DEPLOY_DIR/.env varsa  → GÜNCELLEME modu: mevcut .env ve
+#     DB/Redis volume'ları korunur; sadece kod rsync + rebuild + migrate yapılır.
+#     Secret üretilmez, seed ÇALIŞTIRILMAZ (seed'ler referans tablolarını ezer).
+#   - Yoksa → sıfırdan kurulum (secret üret, .env yaz, seed çalıştır).
+#   - --fresh bayrağı mevcut kurulumu da sıfırdan kurmaya zorlar (onay ister).
 #
 # Önkoşullar (yerel makina):
 #   - sshpass  (brew install hudochenkov/sshpass/sshpass)
@@ -25,7 +33,15 @@
 set -euo pipefail
 
 # ─── Yapılandırma ──────────────────────────────────────────────
-TARGET="${1:-root@94.73.180.124}"
+FRESH=0
+TARGET=""
+for arg in "$@"; do
+  case "$arg" in
+    --fresh) FRESH=1 ;;
+    *) TARGET="$arg" ;;
+  esac
+done
+TARGET="${TARGET:-root@94.73.180.124}"
 DEPLOY_DIR=/opt/ogm-gonullu
 LOCAL_REPO="$(cd "$(dirname "$0")" && pwd)"
 
@@ -85,26 +101,43 @@ echo "  Disk  : $DISK_FREE boş"
 echo "  RAM   : $RAM_INFO"
 ok "Inventory tamam"
 
-# ─── Çakışan deploy / port kontrolü ──────────────────────────────────────────────
-log "Mevcut deploy ve port çakışması kontrolü"
-if run_ssh "[ -d $DEPLOY_DIR ]"; then
-  warn "$DEPLOY_DIR zaten var."
-  read -rp "Üzerine yazılsın mı? (data volume'ları da silinecek; yazmak için 'evet'): " CONFIRM
-  [ "$CONFIRM" = "evet" ] || die "İptal edildi."
-  # Eski stack'i, volume'ları ve local image'ı temizle (cache'li bozuk image olmasın)
-  if run_ssh "[ -f $DEPLOY_DIR/docker-compose.yml ] && command -v docker >/dev/null"; then
-    warn "Eski stack durduruluyor (volume + local image dahil)..."
-    run_ssh "cd $DEPLOY_DIR && docker compose down -v --remove-orphans --rmi local 2>/dev/null || true"
+# ─── Mod tespiti (update / fresh) ──────────────────────────────────────────────
+log "Deploy modu tespit ediliyor"
+if [ "$FRESH" = "1" ]; then
+  MODE=fresh
+  warn "--fresh: sıfırdan kurulum zorlandı."
+elif run_ssh "[ -f $DEPLOY_DIR/.env ]"; then
+  MODE=update
+  ok "Mevcut kurulum bulundu → GÜNCELLEME modu (.env ve DB/Redis volume'ları korunacak)"
+else
+  MODE=fresh
+  ok "Mevcut kurulum yok → sıfırdan kurulum"
+fi
+
+# ─── Çakışan deploy / port kontrolü (sadece fresh) ──────────────────────────────
+if [ "$MODE" = "fresh" ]; then
+  log "Mevcut deploy ve port çakışması kontrolü"
+  if run_ssh "[ -d $DEPLOY_DIR ]"; then
+    warn "$DEPLOY_DIR zaten var."
+    warn "DİKKAT: Sıfırdan kurulum MySQL/Redis volume'larını ve TÜM VERİYİ siler."
+    warn "Veriyi korumak için --fresh olmadan çalıştırın (güncelleme modu)."
+    read -rp "Üzerine yazılsın mı? (data volume'ları da silinecek; yazmak için 'evet'): " CONFIRM
+    [ "$CONFIRM" = "evet" ] || die "İptal edildi."
+    # Eski stack'i, volume'ları ve local image'ı temizle (cache'li bozuk image olmasın)
+    if run_ssh "[ -f $DEPLOY_DIR/docker-compose.yml ] && command -v docker >/dev/null"; then
+      warn "Eski stack durduruluyor (volume + local image dahil)..."
+      run_ssh "cd $DEPLOY_DIR && docker compose down -v --remove-orphans --rmi local 2>/dev/null || true"
+    fi
   fi
+  PORT80=$(run_ssh "ss -ltn '( sport = :80 )' | tail -n +2 || true")
+  if [ -n "$PORT80" ]; then
+    warn "Port 80 zaten kullanılıyor:"
+    echo "$PORT80"
+    read -rp "Yine de devam edilsin mi? (yazmak için 'evet'): " CONFIRM
+    [ "$CONFIRM" = "evet" ] || die "İptal edildi."
+  fi
+  ok "Port/dizin OK"
 fi
-PORT80=$(run_ssh "ss -ltn '( sport = :80 )' | tail -n +2 || true")
-if [ -n "$PORT80" ]; then
-  warn "Port 80 zaten kullanılıyor:"
-  echo "$PORT80"
-  read -rp "Yine de devam edilsin mi? (yazmak için 'evet'): " CONFIRM
-  [ "$CONFIRM" = "evet" ] || die "İptal edildi."
-fi
-ok "Port/dizin OK"
 
 # ─── Docker kur / kontrol ──────────────────────────────────────────────
 log "Docker kontrol"
@@ -155,20 +188,24 @@ else
   ok "Docker kuruldu"
 fi
 
-# ─── Secret üret ──────────────────────────────────────────────
-log "Secret üretiliyor (yerel openssl)"
-gen_pw()    { openssl rand -base64 32 | tr -d '=+/' | head -c 32; }
-gen_hex()   { openssl rand -hex 64; }
+# ─── Secret üret (sadece fresh — update'te mevcut .env korunur) ─────────────
+if [ "$MODE" = "fresh" ]; then
+  log "Secret üretiliyor (yerel openssl)"
+  gen_pw()    { openssl rand -base64 32 | tr -d '=+/' | head -c 32; }
+  gen_hex()   { openssl rand -hex 64; }
 
-DB_ROOT_PW=$(gen_pw)
-DB_PW=$(gen_pw)
-REDIS_PW=$(gen_pw)
-JWT_ACCESS=$(gen_hex)
-JWT_REFRESH=$(gen_hex)
-ADMIN_API_KEY=$(gen_hex)
-OFFICER_API_KEY=$(gen_hex)
-SCAN_HMAC_SECRET=$(gen_hex)
-ok "Secret'lar hazır (ekrana basılmayacak)"
+  DB_ROOT_PW=$(gen_pw)
+  DB_PW=$(gen_pw)
+  REDIS_PW=$(gen_pw)
+  JWT_ACCESS=$(gen_hex)
+  JWT_REFRESH=$(gen_hex)
+  ADMIN_API_KEY=$(gen_hex)
+  OFFICER_API_KEY=$(gen_hex)
+  SCAN_HMAC_SECRET=$(gen_hex)
+  ok "Secret'lar hazır (ekrana basılmayacak)"
+else
+  log "Güncelleme modu: secret üretimi atlandı (sunucudaki .env korunuyor)"
+fi
 
 # ─── Yerel npm install (linux/amd64 platformu için) ──────────────────────────────
 # Sunucudaki npm 10.x bug'ı yüzünden node_modules'u yerel makinada hazırlıyoruz.
@@ -192,7 +229,8 @@ TMPDIR=$(mktemp -d)
 trap 'rm -rf "$TMPDIR"; unset SSHPASS' EXIT
 chmod 700 "$TMPDIR"
 
-# ─── .env üret ──────────────────────────────────────────────
+# ─── .env üret (sadece fresh) ──────────────────────────────────────────────
+if [ "$MODE" = "fresh" ]; then
 log ".env üretiliyor (production)"
 cat > "$TMPDIR/.env" <<EOF
 # ── Server ──────────────────────────────────────
@@ -284,7 +322,8 @@ ADMIN_API_KEY=$ADMIN_API_KEY
 OFFICER_API_KEY=$OFFICER_API_KEY
 SCAN_HMAC_SECRET=$SCAN_HMAC_SECRET
 
-# ── Reverse geocode (opsiyonel; boşsa fire-report locationName placeholder) ──
+# ── Reverse geocode (boşsa public OSM Nominatim; sn'de 1 istek throttle'ı kodda) ──
+# Kalıcı çözüm: self-hosted Nominatim container adresi yaz.
 NOMINATIM_URL=
 
 # ── Logging ─────────────────────────────────────
@@ -293,6 +332,7 @@ LOG_DIR=/app/logs
 EOF
 chmod 600 "$TMPDIR/.env"
 ok ".env hazır"
+fi
 
 # ─── Rsync exclude listesi ──────────────────────────────────────────────
 # Not: node_modules dahil ediliyor (yerel'de linux/amd64 için kuruldu).
@@ -327,11 +367,15 @@ run_rsync -az --delete \
   "$LOCAL_REPO/" "$TARGET:$DEPLOY_DIR/"
 ok "Transfer tamam"
 
-# ─── .env gönder ──────────────────────────────────────────────
-log ".env transfer"
-run_rsync -az "$TMPDIR/.env" "$TARGET:$DEPLOY_DIR/.env"
-run_ssh "chmod 600 $DEPLOY_DIR/.env"
-ok ".env yerinde"
+# ─── .env gönder (sadece fresh — update'te sunucudaki .env'e dokunulmaz) ─────
+if [ "$MODE" = "fresh" ]; then
+  log ".env transfer"
+  run_rsync -az "$TMPDIR/.env" "$TARGET:$DEPLOY_DIR/.env"
+  run_ssh "chmod 600 $DEPLOY_DIR/.env"
+  ok ".env yerinde"
+else
+  log "Güncelleme modu: .env transferi atlandı (sunucudaki mevcut .env kullanılacak)"
+fi
 
 # ─── Volume dizinleri (node user uid 1000 için) ──────────────────────────────────────
 # logs ve uploads bind-mount; container içindeki node user (uid 1000) yazabilmeli.
@@ -384,9 +428,17 @@ log "Knex migration"
 run_ssh "cd $DEPLOY_DIR && docker compose exec -T backend npx knex migrate:latest"
 ok "Migration tamam"
 
-log "Knex seed (referans data)"
-run_ssh "cd $DEPLOY_DIR && docker compose exec -T backend npx knex seed:run"
-ok "Seed tamam"
+# Seed sadece fresh'te: 01_reference_data.js tabloyu del() ile sıfırlayıp yeniden
+# yazıyor, 06_dev_demo.js demo kullanıcıyı siliyor — mevcut veriye dokunmamak için
+# güncelleme modunda seed ÇALIŞTIRILMAZ. Gerekirse sunucuda elle:
+#   docker compose exec -T backend npx knex seed:run
+if [ "$MODE" = "fresh" ]; then
+  log "Knex seed (referans data)"
+  run_ssh "cd $DEPLOY_DIR && docker compose exec -T backend npx knex seed:run"
+  ok "Seed tamam"
+else
+  log "Güncelleme modu: seed atlandı (mevcut data korunuyor)"
+fi
 
 # ─── Smoke test ──────────────────────────────────────────────
 log "Smoke test"
@@ -395,7 +447,8 @@ run_ssh "curl -fsS http://localhost/health/ready" && echo
 run_ssh "curl -fsS http://localhost/v1/reference/kan-grubu | head -c 200" && echo
 ok "Smoke test geçti"
 
-# ─── PRODUCTION-SECRETS.md ──────────────────────────────────────────────
+# ─── PRODUCTION-SECRETS.md (sadece fresh — update'te secret üretilmedi) ──────
+if [ "$MODE" = "fresh" ]; then
 SECRETS_FILE="$LOCAL_REPO/PRODUCTION-SECRETS.md"
 cat > "$SECRETS_FILE" <<EOF
 # OGM Gönüllü — Production Secrets
@@ -459,11 +512,16 @@ ssh $TARGET 'cd $DEPLOY_DIR && nano .env && docker compose restart backend'
 - SSL/domain eklenince \`docker/nginx/nginx.conf\`'a 443 server bloğu eklenmeli; \`EDEVLET_CALLBACK_URL\`, \`APP_URL\`, \`API_URL\` env'leri https'ye çevrilmeli.
 EOF
 chmod 600 "$SECRETS_FILE"
+fi
 
 # ─── Özet ──────────────────────────────────────────────
 echo
 ok "═══════════════════════════════════════════════════════"
-ok "Deploy başarılı"
+if [ "$MODE" = "fresh" ]; then
+  ok "Deploy başarılı (sıfırdan kurulum)"
+else
+  ok "Deploy başarılı (güncelleme — data ve .env korundu)"
+fi
 ok "═══════════════════════════════════════════════════════"
 echo
 echo "  API       : http://$SSH_HOST/health"
@@ -472,7 +530,9 @@ echo "  Reference : http://$SSH_HOST/v1/reference/kan-grubu"
 echo
 echo "  Sunucu    : $TARGET"
 echo "  Dizin     : $DEPLOY_DIR"
-echo "  Secret'lar: $SECRETS_FILE  (chmod 600, .gitignore'da)"
+if [ "$MODE" = "fresh" ]; then
+  echo "  Secret'lar: $SECRETS_FILE  (chmod 600, .gitignore'da)"
+fi
 echo
 echo "  Logları takip et:"
 echo "    sshpass -e ssh ${SSH_OPTS[*]} $TARGET 'cd $DEPLOY_DIR && docker compose logs -f backend'"
