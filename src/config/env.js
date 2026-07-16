@@ -122,6 +122,10 @@ const env = {
   },
 
   geo: {
+    // Reverse geocode servisi (fire-report locationName/regionLabel).
+    // Bilerek varsayılansız: ihbar koordinatı kişisel veridir, dışarıya ancak
+    // operatör NOMINATIM_URL'i açıkça tanımlarsa çıkar. Tanımsızken konum
+    // 'Bilinmeyen Konum' placeholder'ında kalır (bkz. shared/reverse-geocode.js).
     nominatimUrl: process.env.NOMINATIM_URL || '',
   },
 

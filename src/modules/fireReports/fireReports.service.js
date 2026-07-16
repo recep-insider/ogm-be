@@ -1,17 +1,16 @@
 'use strict';
 
 const path = require('path');
-const axios = require('axios');
 const { v4: uuidv4 } = require('uuid');
 const { db } = require('../../config/db');
 const { redis } = require('../../config/redis');
 const env = require('../../config/env');
-const logger = require('../../config/logger');
 const { errors } = require('../../shared/errors');
 const { toIso } = require('../../shared/dates');
 const { writeAudit } = require('../../shared/audit');
 const { sendPushToUser } = require('../../shared/push-provider');
 const { assetUrl } = require('../../shared/asset-url');
+const { reverseGeocode } = require('../../shared/reverse-geocode');
 
 function safeJson(value, fallback) {
   if (value == null) return fallback;
@@ -35,27 +34,6 @@ function mapReport(row) {
   };
 }
 
-// Koordinattan locationName/regionLabel türet (Nominatim varsa, yoksa placeholder).
-async function reverseGeocode(lat, lng) {
-  if (!env.geo.nominatimUrl) {
-    return { locationName: 'Bilinmeyen Konum', regionLabel: `${lat.toFixed(2)}, ${lng.toFixed(2)}` };
-  }
-  try {
-    const { data } = await axios.get(`${env.geo.nominatimUrl.replace(/\/$/, '')}/reverse`, {
-      params: { lat, lon: lng, format: 'jsonv2' },
-      timeout: 8000,
-      headers: { 'User-Agent': 'ogm-gonullu-api' },
-    });
-    const a = data.address || {};
-    const locationName = data.name || a.neighbourhood || a.suburb || a.village || a.town || a.city || 'Bilinmeyen Konum';
-    const region = [a.state || a.province, a.county || a.town || a.city].filter(Boolean).join(' / ');
-    return { locationName, regionLabel: region || locationName };
-  } catch (err) {
-    logger.warn('Reverse geocode başarısız', { error: err.message });
-    return { locationName: 'Bilinmeyen Konum', regionLabel: `${lat.toFixed(2)}, ${lng.toFixed(2)}` };
-  }
-}
-
 async function create({ userId, data, files, ip, userAgent }) {
   if (!files || files.length === 0) {
     throw errors.validation('En az bir medya dosyası zorunludur', { field: 'media' });
@@ -68,7 +46,13 @@ async function create({ userId, data, files, ip, userAgent }) {
   if (count > 5) throw errors.rateLimit('Saatlik yangın bildirim limiti aşıldı');
 
   const { lat, lng } = data.coordinates;
-  const { locationName, regionLabel } = await reverseGeocode(lat, lng);
+  // İhbar yazma yolu: konum adı "nice to have", ihbarın kaydı hayati. Geocode
+  // servisi yavaşsa/kuyruk doluysa placeholder ile devam edilir; eski kayıtlar
+  // scripts/backfill-fire-report-locations.js ile toparlanır.
+  const { locationName, regionLabel } = await reverseGeocode(lat, lng, {
+    maxWaitMs: 2000,
+    timeoutMs: 3000,
+  });
   const id = uuidv4();
   const now = new Date();
   const photoPaths = files.map((f) => path.relative(env.upload.dir, f.path));

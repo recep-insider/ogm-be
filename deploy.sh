@@ -322,9 +322,10 @@ ADMIN_API_KEY=$ADMIN_API_KEY
 OFFICER_API_KEY=$OFFICER_API_KEY
 SCAN_HMAC_SECRET=$SCAN_HMAC_SECRET
 
-# ── Reverse geocode (boşsa public OSM Nominatim; sn'de 1 istek throttle'ı kodda) ──
-# Kalıcı çözüm: self-hosted Nominatim container adresi yaz.
-NOMINATIM_URL=
+# ── Reverse geocode (boşsa fire-report locationName 'Bilinmeyen Konum' kalır) ──
+# Public OSM: sn'de 1 istek (throttle kodda). Koordinat kişisel veri — kalıcı
+# çözüm self-hosted Nominatim container adresi.
+NOMINATIM_URL=https://nominatim.openstreetmap.org
 
 # ── Logging ─────────────────────────────────────
 LOG_LEVEL=info
