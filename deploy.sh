@@ -356,6 +356,10 @@ logs/
 uploads/
 backups/
 coverage/
+# Admin paneli build'i ogm-gonullu-panel repo'sundan ayrı deploy edilir
+# (scripts/deploy.sh → frontend/panel). Bu repo'da yok; exclude edilmezse
+# --delete panel'i her BE deploy'unda siler.
+frontend/
 *.log
 .env
 .env.*

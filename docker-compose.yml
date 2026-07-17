@@ -9,6 +9,10 @@ services:
       - "443:443"
     volumes:
       - ./docker/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      # Admin paneli statik build'i (ogm-gonullu-panel → scripts/deploy.sh ile buraya
+      # rsync'lenir). Dizin yoksa Docker boş oluşturur; panel deploy edilene kadar
+      # /panel/ 404 döner, backend etkilenmez.
+      - ./frontend/panel:/usr/share/nginx/panel:ro
       - ./docker/nginx/ssl:/etc/nginx/ssl:ro
       # Let's Encrypt sertifikaları (setup-domain.sh tarafından üretilir)
       - ./certbot/conf:/etc/letsencrypt:ro
