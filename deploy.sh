@@ -494,7 +494,14 @@ if [ "$MODE" = "fresh" ]; then
   run_ssh "cd $DEPLOY_DIR && docker compose exec -T backend npx knex seed:run"
   ok "Seed tamam"
 else
-  log "Güncelleme modu: seed atlandı (mevcut data korunuyor)"
+  log "Güncelleme modu: genel seed atlandı (mevcut data korunuyor)"
+  # forest_units katalog verisi onboarding egitim doğrulaması için ZORUNLU ve
+  # seed'i idempotent (onConflict('id').ignore(), .del() yok) — mevcut veriyi
+  # ezmeden güncelleme modunda da güvenle çalıştırılabilir. Çalıştırılmazsa
+  # tablo boş kalır ve her egitim'li kayıt 400 alır.
+  log "Knex seed: 07_forest_units (idempotent katalog)"
+  run_ssh "cd $DEPLOY_DIR && docker compose exec -T backend npx knex seed:run --specific=07_forest_units.js"
+  ok "forest_units seed tamam"
 fi
 
 # ─── Smoke test ──────────────────────────────────────────────
