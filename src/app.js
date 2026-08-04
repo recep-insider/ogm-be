@@ -32,6 +32,7 @@ const equipmentRoutes = require('./modules/equipment/equipment.routes');
 const fireReportsRoutes = require('./modules/fireReports/fireReports.routes');
 const userFireReportsRoutes = require('./modules/fireReports/userFireReports.routes');
 const emergencyRoutes = require('./modules/emergency/emergency.routes');
+const sosRoutes = require('./modules/sos/sos.routes');
 const adminRoutes = require('./modules/admin/admin.routes');
 
 const app = express();
@@ -109,6 +110,7 @@ app.use('/v1/missions', missionsRoutes);
 app.use('/v1/trainings', trainingsRoutes);
 app.use('/v1/fire-reports', fireReportsRoutes);
 app.use('/v1/emergency', emergencyRoutes);
+app.use('/v1/sos', sosRoutes);
 app.use('/v1/notifications', notificationsRoutes);
 app.use('/v1/legal', legalRoutes);
 app.use('/v1/blog', blogRoutes);

@@ -34,6 +34,7 @@ const SEEDS = [
   '../../seeds/03_online_trainings',
   '../../seeds/04_saha_trainings',
   '../../seeds/05_missions',
+  '../../seeds/07_forest_units',
 ];
 
 describe.each(SEEDS)('seed idempotency: %s', (modPath) => {

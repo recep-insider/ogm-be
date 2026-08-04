@@ -318,12 +318,28 @@ WGS84 datum. Frontend `react-native-maps` ile uyumlu.
     "soyad": "Demir",
     "telefon": "+905551110000",
     "yakinlik": "Eş"
+  },
+  "egitim": {
+    "il": "Antalya",
+    "ilce": "Alanya",
+    "bolgeMudurlugu": "Antalya Orman Bölge Müdürlüğü",
+    "isletmeMudurlugu": "Alanya Orman İşletme Müdürlüğü",
+    "giysiBedeni": "M",
+    "ayakkabiNumarasi": 38,
+    "aciklama": null
   }
 }
 ```
 
 - **`iletisim.telefon`** opsiyonel: Telefon-OTP flow'unda zaten frontend phone'u tutuyor; e-Devlet flow'unda kullanıcı bu adımda telefon giriyor.
 - **`kisisel.meslekDiger`**: `meslek === "Diğer"` ise zorunlu, aksi takdirde `null`.
+- **`kisisel.hobiler`** opsiyonel — boş dizi kabul edilir, gönderilmezse `[]` sayılır (frontend "opsiyonel" gösterir).
+- **`egitim`** (2026-08-04): Eğitim Başvuru Bilgileri adımı. Şu an **opsiyonel** (backend frontend'den önce deploy edildiği için); yeni frontend rollout'u tamamlanınca zorunlu yapılacak. Alanlar:
+  - `il`/`ilce`/`bolgeMudurlugu`/`isletmeMudurlugu`: kanonik birim adları (Title Case) — backend `forest_units` tablosuna karşı **dördünün kombinasyonunu** doğrular (kaynak: "OGM Birim Kuruluşarı 03.08.2026-ORBİS-OİP.xlsx"; 81 il / 612 il+ilçe / 30 bölge / 281 işletme). Eşleşmezse `400 validation_error` ("Geçersiz eğitim birimi seçimi").
+  - `giysiBedeni`: `S|M|L|XL|XXL|XXXL` — kullanıcı profiline de yazılır (bkz. 3.1/4.1).
+  - `ayakkabiNumarasi`: integer 34–50 — kullanıcı profiline de yazılır.
+  - `aciklama`: max 500 karakter, `null` olabilir.
+  - Dört birim adı `applications.snapshot` içinde saklanır.
 
 - **Success Response (200):**
 ```json
@@ -404,6 +420,8 @@ WGS84 datum. Frontend `react-native-maps` ile uyumlu.
     "telefon": "+905551110000",
     "yakinlik": "Eş"
   },
+  "giysiBedeni": "M",
+  "ayakkabiNumarasi": 38,
   "applicationStatus": "approved",
   "volunteerLevel": {
     "level": 2,
@@ -421,6 +439,7 @@ WGS84 datum. Frontend `react-native-maps` ile uyumlu.
 - **Notlar:**
   - `hasProtectiveEquipment` aktif görev "Katıl" butonunu gate'liyor (`types.ts:78-82`).
   - `applicationStatus: 'requires_revision'` durumunda frontend revize bildirimi gösterir.
+  - `giysiBedeni` (`"S"|"M"|"L"|"XL"|"XXL"|"XXXL"|null`) ve `ayakkabiNumarasi` (integer 34–50 | null) **nullable**: bu sürümden önce kaydolmuş gönüllülerde değer yoktur (2026-08-04).
 
 ---
 
@@ -442,9 +461,12 @@ WGS84 datum. Frontend `react-native-maps` ile uyumlu.
   "meslek": "Diğer",
   "meslekDiger": "Mimar",
   "hobiler": ["Yüzme"],
+  "giysiBedeni": "L",
+  "ayakkabiNumarasi": 42,
   "avatarUrl": "https://cdn.example.com/avatars/u_123.jpg"
 }
 ```
+- **`giysiBedeni` / `ayakkabiNumarasi`** (2026-08-04): `null` gönderilerek temizlenebilir. Cevap her zaman **tam ve birleşmiş `UserProfile`** döner (frontend cache'i komple değiştirir — alan eksik dönerse ekranda "silinmiş" görünür).
 - **Success Response (200):** Güncel `UserProfile` (3.1 ile aynı şema).
 - **Error cases:** `400 validation_error`, `409 phone_taken`, `409 email_taken`
 - **TS tipi:** `UpdateProfileRequest` (`types.ts:286-296`)
@@ -915,7 +937,7 @@ WGS84 datum. Frontend `react-native-maps` ile uyumlu.
 
 ## 10. Emergency Reports (Acil Durum)
 
-1 endpoint.
+2 endpoint.
 
 ### 10.1 POST /emergency
 - **Kullanıldığı yer:** `src/services/api/endpoints/emergency.ts:33`, `src/screens/Home/hooks/useEmergencyReport.ts:22`
@@ -945,6 +967,33 @@ WGS84 datum. Frontend `react-native-maps` ile uyumlu.
 - **Error cases:** `429 rate_limited`
 - **TS tipler:** `EmergencyReportRequest`, `EmergencyReportResponse` (`types.ts:488-503`)
 - **Mock:** `mocks.ts:mockApi.submitEmergencyReport`
+
+---
+
+### 10.2 POST /sos
+- **Eklendi:** 2026-08-04. `/emergency`'den **ayrı kavram**: kullanıcı **kişisel olarak** acil yardım ister, görev bağlamı yoktur (`missionId` yok). Ana sayfadaki SOS butonu (3 sn basılı tutma) tetikler.
+- **Auth:** Evet (Bearer zorunlu — kullanıcı kimliği token'dan çözülür, body'de user id yok; misafir bu ekranı görmez).
+- **Request Body:**
+```json
+{
+  "coordinates": { "lat": 36.8529, "lng": 28.2661 },
+  "message": null
+}
+```
+- **Tüm alanlar opsiyonel.** Konum izni yoksa `coordinates` hiç gönderilmez; **konumsuz çağrı da kabul edilir** (operasyon merkezi kullanıcıyı arayarak konumu öğrenir). `message` max 500 karakter (frontend şu an göndermiyor, sözleşmede tutuluyor).
+- **Success Response (200):**
+```json
+{
+  "ok": true,
+  "sosId": "sos_01HZX...",
+  "createdAt": "2026-08-03T16:42:11.412Z",
+  "dispatchedTo": "OGM Yangın Harekat Merkezi"
+}
+```
+- **Backend yan etkileri:**
+  - Çağrı, kullanıcının geri arama bilgileriyle (**ad, soyad, tcKimlik, phone, adres, acil kişi**) çağrı anında `sos_reports` satırına **snapshot'lanarak** kaydedilir — profil sonradan değişse/hesap silinse bile operasyon merkezinde kalır.
+  - Operasyon Merkezi paneli çağrıları `GET /admin/sos-reports` üzerinden listeler (pull-based; panel akışı: yeni SOS → yetkili kullanıcıyı arar).
+- **Error cases:** `401 unauthorized` (uygulama refresh akışını çalıştırır), `429 rate_limited` (kullanıcı başına 5/dk), diğer hatalarda frontend "SOS çağrısı gönderilemedi, tekrar deneyin." gösterir ve onay ekranına geçmez.
 
 ---
 

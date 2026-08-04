@@ -306,6 +306,24 @@
                   "type": "string"
                 }
               },
+              "giysiBedeni": {
+                "type": "string",
+                "enum": [
+                  "S",
+                  "M",
+                  "L",
+                  "XL",
+                  "XXL",
+                  "XXXL"
+                ],
+                "nullable": true
+              },
+              "ayakkabiNumarasi": {
+                "type": "integer",
+                "minimum": 34,
+                "maximum": 50,
+                "nullable": true
+              },
               "acil": {
                 "$ref": "#/components/schemas/AcilIletisim"
               },
@@ -552,13 +570,63 @@
                 "type": "array",
                 "items": {
                   "type": "string"
-                },
-                "minItems": 1
+                }
               }
             }
           },
           "acil": {
             "$ref": "#/components/schemas/AcilIletisim"
+          },
+          "egitim": {
+            "type": "object",
+            "description": "Eğitim başvuru bilgileri. il/ilce/bolgeMudurlugu/isletmeMudurlugu kanonik birim listesine (forest_units) karşı doğrulanır. Yeni frontend rollout'u tamamlanana kadar opsiyonel.",
+            "required": [
+              "il",
+              "ilce",
+              "bolgeMudurlugu",
+              "isletmeMudurlugu",
+              "giysiBedeni",
+              "ayakkabiNumarasi"
+            ],
+            "properties": {
+              "il": {
+                "type": "string",
+                "example": "Antalya"
+              },
+              "ilce": {
+                "type": "string",
+                "example": "Alanya"
+              },
+              "bolgeMudurlugu": {
+                "type": "string",
+                "example": "Antalya Orman Bölge Müdürlüğü"
+              },
+              "isletmeMudurlugu": {
+                "type": "string",
+                "example": "Alanya Orman İşletme Müdürlüğü"
+              },
+              "giysiBedeni": {
+                "type": "string",
+                "enum": [
+                  "S",
+                  "M",
+                  "L",
+                  "XL",
+                  "XXL",
+                  "XXXL"
+                ]
+              },
+              "ayakkabiNumarasi": {
+                "type": "integer",
+                "minimum": 34,
+                "maximum": 50
+              },
+              "aciklama": {
+                "type": "string",
+                "maxLength": 500,
+                "nullable": true
+              }
+            }
           }
         }
       },
@@ -1909,6 +1977,44 @@
         "responses": {
           "200": {
             "description": "items: SOS + user + mission, total/page/pageSize"
+          }
+        }
+      }
+    },
+    "/admin/sos-reports": {
+      "get": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "SOS çağrı listesi (panel)",
+        "description": "Mobil uygulamadan ÇAĞRILMAZ. x-api-key (admin) gerektirir. Kişisel SOS çağrıları (görev bağlamı yok); kullanıcı iletişim ve acil kişi bilgileri çağrı anındaki snapshot'tan döner.",
+        "security": [
+          {
+            "adminApiKey": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "query",
+            "name": "page",
+            "schema": {
+              "type": "integer",
+              "default": 1
+            }
+          },
+          {
+            "in": "query",
+            "name": "pageSize",
+            "schema": {
+              "type": "integer",
+              "default": 20,
+              "maximum": 100
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "items: SOS + user{ad,soyad,tcKimlik,phone,adres,acil{}}, total/page/pageSize"
           }
         }
       }
@@ -4051,6 +4157,84 @@
         }
       }
     },
+    "/sos": {
+      "post": {
+        "tags": [
+          "Emergency"
+        ],
+        "summary": "SOS — kişisel acil yardım çağrısı (görev bağlamı yok)",
+        "description": "Ana sayfadaki SOS butonundan tetiklenir. /emergency'den farklı olarak görev (mission) bağlamı yoktur. Konum izni yoksa coordinates alanı hiç gönderilmez; konumsuz çağrı da kabul edilir. Kullanıcının iletişim ve acil durum kişi bilgileri çağrı anında kayda snapshot'lanır ve operasyon merkezi paneline düşer.\n",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "coordinates": {
+                    "type": "object",
+                    "nullable": true,
+                    "properties": {
+                      "lat": {
+                        "type": "number"
+                      },
+                      "lng": {
+                        "type": "number"
+                      }
+                    }
+                  },
+                  "message": {
+                    "type": "string",
+                    "nullable": true,
+                    "maxLength": 500
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "SOS çağrısı alındı",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": {
+                      "type": "boolean",
+                      "example": true
+                    },
+                    "sosId": {
+                      "type": "string"
+                    },
+                    "createdAt": {
+                      "type": "string",
+                      "format": "date-time"
+                    },
+                    "dispatchedTo": {
+                      "type": "string",
+                      "example": "OGM Yangın Harekat Merkezi"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          }
+        }
+      }
+    },
     "/trainings/online": {
       "get": {
         "tags": [
@@ -4309,6 +4493,26 @@
                       "type": "string"
                     },
                     "description": "Her öğe `/v1/reference/hobiler` listesinden olmalı"
+                  },
+                  "giysiBedeni": {
+                    "type": "string",
+                    "enum": [
+                      "S",
+                      "M",
+                      "L",
+                      "XL",
+                      "XXL",
+                      "XXXL"
+                    ],
+                    "nullable": true,
+                    "description": "null gönderilirse temizlenir"
+                  },
+                  "ayakkabiNumarasi": {
+                    "type": "integer",
+                    "minimum": 34,
+                    "maximum": 50,
+                    "nullable": true,
+                    "description": "null gönderilirse temizlenir"
                   },
                   "acil": {
                     "$ref": "#/components/schemas/AcilIletisim"

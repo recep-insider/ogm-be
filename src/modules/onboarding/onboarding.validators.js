@@ -49,6 +49,7 @@ const KAN_GRUBU = ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', '0+', '0-'];
 const OGRENIM = ['Lise', 'Ön Lisans', 'Lisans', 'Yüksek Lisans', 'Doktora', 'Diğer'];
 const MESLEK = ['Memur', 'Öğretmen', 'Mühendis', 'Öğrenci', 'Emekli', 'Diğer'];
 const YAKINLIK = ['Anne', 'Baba', 'Eş', 'Kardeş', 'Arkadaş', 'Diğer'];
+const GIYSI_BEDENI = ['S', 'M', 'L', 'XL', 'XXL', 'XXXL'];
 
 const kisisel = Joi.object({
   kanGrubu: Joi.string().valid(...KAN_GRUBU).required(),
@@ -59,7 +60,7 @@ const kisisel = Joi.object({
     then: Joi.string().min(2).max(100).required(),
     otherwise: Joi.any().valid(null, '').optional(),
   }),
-  hobiler: Joi.array().items(Joi.string().min(1).max(100)).min(1).required(),
+  hobiler: Joi.array().items(Joi.string().min(1).max(100)).default([]),
 });
 
 const acil = Joi.object({
@@ -69,11 +70,26 @@ const acil = Joi.object({
   yakinlik: Joi.string().valid(...YAKINLIK).required(),
 });
 
+// İl/ilçe/bölge/işletme kanonik ad doğrulaması servis katmanında forest_units
+// tablosuna karşı tek sorguyla yapılır (dört alanın kombinasyonu eşleşmeli).
+const egitim = Joi.object({
+  il: Joi.string().min(1).max(50).required(),
+  ilce: Joi.string().min(1).max(60).required(),
+  bolgeMudurlugu: Joi.string().min(1).max(100).required(),
+  isletmeMudurlugu: Joi.string().min(1).max(100).required(),
+  giysiBedeni: Joi.string().valid(...GIYSI_BEDENI).required(),
+  ayakkabiNumarasi: Joi.number().integer().min(34).max(50).required(),
+  aciklama: Joi.string().max(500).allow('', null).optional(),
+});
+
 const onboardingSchema = Joi.object({
   kimlik: kimlik.required(),
   iletisim: iletisim.required(),
   kisisel: kisisel.required(),
   acil: acil.required(),
+  // TODO: Eski frontend bu bloğu göndermiyor ve backend önce deploy ediliyor;
+  // yeni frontend rollout'u tamamlanınca .required() yapılmalı.
+  egitim: egitim.optional(),
 });
 
-module.exports = { onboardingSchema };
+module.exports = { onboardingSchema, GIYSI_BEDENI };

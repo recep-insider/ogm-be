@@ -72,6 +72,8 @@ async function getMe(userId) {
     meslek: user.meslek,
     meslekDiger: user.meslek_diger,
     hobiler: safeJson(user.hobiler, []),
+    giysiBedeni: user.giysi_bedeni,
+    ayakkabiNumarasi: user.ayakkabi_numarasi != null ? Number(user.ayakkabi_numarasi) : null,
     acil: {
       ad: user.acil_ad,
       soyad: user.acil_soyad,
@@ -95,6 +97,8 @@ const PATCH_KEYS = {
   meslek: 'meslek',
   meslekDiger: 'meslek_diger',
   hobiler: 'hobiler',
+  giysiBedeni: 'giysi_bedeni',
+  ayakkabiNumarasi: 'ayakkabi_numarasi',
 };
 
 async function patchMe(userId, body, audit = {}) {

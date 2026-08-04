@@ -58,6 +58,17 @@ router.use(requireAuth);
  *                 type: array
  *                 items: { type: string }
  *                 description: 'Her öğe `/v1/reference/hobiler` listesinden olmalı'
+ *               giysiBedeni:
+ *                 type: string
+ *                 enum: [S, M, L, XL, XXL, XXXL]
+ *                 nullable: true
+ *                 description: 'null gönderilirse temizlenir'
+ *               ayakkabiNumarasi:
+ *                 type: integer
+ *                 minimum: 34
+ *                 maximum: 50
+ *                 nullable: true
+ *                 description: 'null gönderilirse temizlenir'
  *               acil: { $ref: '#/components/schemas/AcilIletisim' }
  *     responses:
  *       200:

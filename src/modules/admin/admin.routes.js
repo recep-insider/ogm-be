@@ -15,6 +15,7 @@ const { adminStatusSchema } = require('../fireReports/fireReports.validators');
 const fireReportsService = require('../fireReports/fireReports.service');
 const missionsService = require('../missions/missions.service');
 const emergencyService = require('../emergency/emergency.service');
+const sosService = require('../sos/sos.service');
 const trainingsService = require('../trainings/trainings.service');
 const blogService = require('../blog/blog.service');
 const adminService = require('./admin.service');
@@ -431,6 +432,35 @@ router.get(
   validate({ query: emergencyQuerySchema }),
   asyncHandler(async (req, res) => {
     res.json(await emergencyService.adminList(req.query));
+  }),
+);
+
+const sosQuerySchema = Joi.object({
+  ...pageQueryKeys,
+});
+
+/**
+ * @openapi
+ * /admin/sos-reports:
+ *   get:
+ *     tags: [Admin]
+ *     summary: SOS çağrı listesi (panel)
+ *     description: >-
+ *       Mobil uygulamadan ÇAĞRILMAZ. x-api-key (admin) gerektirir.
+ *       Kişisel SOS çağrıları (görev bağlamı yok); kullanıcı iletişim ve acil kişi
+ *       bilgileri çağrı anındaki snapshot'tan döner.
+ *     security: [ { adminApiKey: [] } ]
+ *     parameters:
+ *       - { in: query, name: page, schema: { type: integer, default: 1 } }
+ *       - { in: query, name: pageSize, schema: { type: integer, default: 20, maximum: 100 } }
+ *     responses:
+ *       200: { description: 'items: SOS + user{ad,soyad,tcKimlik,phone,adres,acil{}}, total/page/pageSize' }
+ */
+router.get(
+  '/sos-reports',
+  validate({ query: sosQuerySchema }),
+  asyncHandler(async (req, res) => {
+    res.json(await sosService.adminList(req.query));
   }),
 );
 

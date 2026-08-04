@@ -44,6 +44,27 @@ async function complete({ user, registration, data, files, ip, userAgent }) {
     }
   }
 
+  // Eğitim birimi kanonik ad doğrulaması: dört alanın kombinasyonu forest_units'te
+  // tek satır olarak bulunmalı (il+ilçe → bölge bağımlılığı da böylece doğrulanır).
+  if (data.egitim) {
+    const unit = await db('forest_units')
+      .where({
+        il: data.egitim.il,
+        ilce: data.egitim.ilce,
+        bolge_mudurlugu: data.egitim.bolgeMudurlugu,
+        isletme_mudurlugu: data.egitim.isletmeMudurlugu,
+      })
+      .first();
+    if (!unit) {
+      throw errors.validation('Geçersiz eğitim birimi seçimi', {
+        il: data.egitim.il,
+        ilce: data.egitim.ilce,
+        bolgeMudurlugu: data.egitim.bolgeMudurlugu,
+        isletmeMudurlugu: data.egitim.isletmeMudurlugu,
+      });
+    }
+  }
+
   let userId = user?.id;
   let isNewUser = false;
 
@@ -94,6 +115,13 @@ async function complete({ user, registration, data, files, ip, userAgent }) {
         is_active: true,
         updated_at: now,
       };
+
+      // egitim bloğu gönderilmediyse mevcut değerler korunur (eski frontend uyumluluğu);
+      // il/ilçe/bölge/işletme adları applications.snapshot içinde saklanır.
+      if (data.egitim) {
+        userRow.giysi_bedeni = data.egitim.giysiBedeni;
+        userRow.ayakkabi_numarasi = data.egitim.ayakkabiNumarasi;
+      }
 
       if (isNewUser) {
         userRow.created_at = now;

@@ -147,6 +147,8 @@ const definition = {
               meslek: { $ref: '#/components/schemas/Meslek' },
               meslekDiger: { type: 'string', nullable: true },
               hobiler: { type: 'array', items: { type: 'string' } },
+              giysiBedeni: { type: 'string', enum: ['S', 'M', 'L', 'XL', 'XXL', 'XXXL'], nullable: true },
+              ayakkabiNumarasi: { type: 'integer', minimum: 34, maximum: 50, nullable: true },
               acil: { $ref: '#/components/schemas/AcilIletisim' },
               volunteerLevel: { $ref: '#/components/schemas/VolunteerLevel' },
               avatarUrl: { type: 'string', format: 'uri', nullable: true },
@@ -253,10 +255,26 @@ const definition = {
               ogrenim: { $ref: '#/components/schemas/Ogrenim' },
               meslek: { $ref: '#/components/schemas/Meslek' },
               meslekDiger: { type: 'string', nullable: true, minLength: 2 },
-              hobiler: { type: 'array', items: { type: 'string' }, minItems: 1 },
+              hobiler: { type: 'array', items: { type: 'string' } },
             },
           },
           acil: { $ref: '#/components/schemas/AcilIletisim' },
+          egitim: {
+            type: 'object',
+            description:
+              'Eğitim başvuru bilgileri. il/ilce/bolgeMudurlugu/isletmeMudurlugu kanonik birim listesine '
+              + '(forest_units) karşı doğrulanır. Yeni frontend rollout\'u tamamlanana kadar opsiyonel.',
+            required: ['il', 'ilce', 'bolgeMudurlugu', 'isletmeMudurlugu', 'giysiBedeni', 'ayakkabiNumarasi'],
+            properties: {
+              il: { type: 'string', example: 'Antalya' },
+              ilce: { type: 'string', example: 'Alanya' },
+              bolgeMudurlugu: { type: 'string', example: 'Antalya Orman Bölge Müdürlüğü' },
+              isletmeMudurlugu: { type: 'string', example: 'Alanya Orman İşletme Müdürlüğü' },
+              giysiBedeni: { type: 'string', enum: ['S', 'M', 'L', 'XL', 'XXL', 'XXXL'] },
+              ayakkabiNumarasi: { type: 'integer', minimum: 34, maximum: 50 },
+              aciklama: { type: 'string', maxLength: 500, nullable: true },
+            },
+          },
         },
       },
       ActiveMissionSummary: {
