@@ -29,6 +29,12 @@ async function bootstrap() {
     });
   });
 
+  // nginx upstream keepalive (65sn) Node'un varsayılan 5sn keepAliveTimeout'undan
+  // uzun; Node boştaki bağlantıyı kapatırken nginx aynı anda yeniden kullanırsa
+  // istek aralıklı 502'ye düşer. Bu yüzden Node tarafı nginx'ten uzun tutulur.
+  server.keepAliveTimeout = 75000;
+  server.headersTimeout = 80000;
+
   const shutdown = async (signal) => {
     logger.info(`${signal} alındı, kapanıyor...`);
     server.close(async () => {
