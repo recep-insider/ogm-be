@@ -35,6 +35,18 @@ jest.mock('../../../src/shared/audit', () => ({ writeAudit: jest.fn().mockResolv
 jest.mock('../../../src/shared/asset-url', () => ({
   assetUrl: (rel) => (rel ? `https://cdn.test/${rel}` : null),
 }));
+// Hazırlık zinciri kendi testinde doğrulanır; burada getVolunteer'ın türetilmiş
+// alanları künyeye taşıdığını görmek yeterli.
+jest.mock('../../../src/modules/users/readiness.service', () => ({
+  getReadiness: jest.fn(async () => ({
+    zincir: { kkdDurumu: 'tam', eksikAdimlar: [], tamam: true, steps: [] },
+    kisiDurumu: 'hazir',
+    mudahaleYetkisi: true,
+    engeller: [],
+    komisyon: { decision: 'approved', decidedAt: null, decidedBy: null, decisionNo: null },
+  })),
+  kkdSet: jest.fn(async () => []),
+}));
 jest.mock('../../../src/modules/equipment/equipment.service', () => ({
   hasProtectiveEquipment: (...a) => mockHasEquipment(...a),
   PROTECTIVE_TYPE: 'Koruyucu Ekipman',
@@ -121,7 +133,9 @@ describe('admin.service — getVolunteer', () => {
       userId: 'u1', tcKimlik: '12345678901', dogumTarihi: '1990-05-01',
       avatarUrl: 'https://cdn.test/avatars/u1.jpg', egitim: true, donanim: true,
       acil: { ad: 'Veli', telefon: '+905329998877' },
+      kisiDurumu: 'hazir', kkdDurumu: 'tam', mudahaleYetkisi: true,
     });
+    expect(result.komisyon.decision).toBe('approved');
     expect(result.application).toMatchObject({
       applicationId: 'app1', status: 'pending',
       saglikRaporu: 'https://cdn.test/onboarding/saglik.pdf', sabikaKaydi: null,

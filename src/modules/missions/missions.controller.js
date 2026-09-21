@@ -14,8 +14,8 @@ async function getActive(req, res) {
   res.status(200).json(await service.getActive(req.user.id, req.params.id));
 }
 
-async function join(req, res) {
-  res.status(200).json(await service.join(req.user.id, req.params.id, audit(req)));
+async function respond(req, res) {
+  res.status(200).json(await service.respond(req.user.id, req.params.id, req.body.decision, audit(req)));
 }
 
 async function scan(req, res) {
@@ -35,4 +35,4 @@ async function getHistory(req, res) {
   res.status(200).json(await service.getHistory(req.user.id, req.params.id));
 }
 
-module.exports = { listActive, getActive, join, scan, submitPhoto, listHistory, getHistory };
+module.exports = { listActive, getActive, respond, scan, submitPhoto, listHistory, getHistory };

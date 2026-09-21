@@ -13,6 +13,7 @@ const {
   accessTokenSeconds,
 } = require('../../shared/jwt');
 const { toIso, toDateOnly } = require('../../shared/dates');
+const { sendTransactional } = require('../../shared/sms-provider');
 
 async function unlinkSafe(file) {
   if (!file) return;
@@ -80,6 +81,24 @@ async function complete({ user, registration, data, files, ip, userAgent }) {
     }
   }
 
+  // backend-gereksinimleri.md §7.2: tek telefon = tek başvuru. DB'de unique kısıt var,
+  // ama mobilin ekranda gösterebileceği anlamlı hatayı (409 phone_in_use) burada üretiyoruz.
+  const phoneToUse = data.iletisim.telefon || registration?.phone || null;
+  if (phoneToUse) {
+    const existsByPhone = await db('users')
+      .where({ phone: phoneToUse })
+      .whereNull('deleted_at')
+      .first();
+    if (existsByPhone && existsByPhone.id !== userId) {
+      await Promise.all([unlinkSafe(saglik), unlinkSafe(sabika)]);
+      throw errors.conflict(
+        'Bu telefon numarasıyla bir başvuru zaten mevcut',
+        undefined,
+        'phone_in_use',
+      );
+    }
+  }
+
   if (!userId) {
     userId = uuidv4();
     isNewUser = true;
@@ -89,7 +108,7 @@ async function complete({ user, registration, data, files, ip, userAgent }) {
 
   try {
     await db.transaction(async (trx) => {
-      const phone = data.iletisim.telefon || registration?.phone || null;
+      const phone = phoneToUse;
 
       const userRow = {
         id: userId,
@@ -107,6 +126,7 @@ async function complete({ user, registration, data, files, ip, userAgent }) {
         meslek: data.kisisel.meslek,
         meslek_diger: data.kisisel.meslekDiger || null,
         hobiler: JSON.stringify(data.kisisel.hobiler),
+        stk_text: data.kisisel.stkText || null,
         acil_ad: data.acil.ad,
         acil_soyad: data.acil.soyad,
         acil_telefon: data.acil.telefon,
@@ -160,6 +180,11 @@ async function complete({ user, registration, data, files, ip, userAgent }) {
 
   const application = await db('applications').where({ user_id: userId }).orderBy('submitted_at', 'desc').first();
   const userRecord = await db('users').where({ id: userId }).first();
+
+  // §7.2: başvuru GÖNDERİLDİĞİ anda bilgilendirme SMS'i gider — komisyon kararı
+  // SMS'inden (§7.1) ayrı, daha erken bir tetikleyicidir. Gönderim hatası başvuruyu
+  // düşürmez; kayıt zaten kalıcı.
+  await sendTransactional(userRecord.phone, 'applicationReceived');
 
   // Eğer kayıt token ile geldiyse şimdi gerçek auth token'ları üret
   let tokens = null;

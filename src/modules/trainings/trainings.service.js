@@ -6,6 +6,7 @@ const { errors } = require('../../shared/errors');
 const { assetUrl } = require('../../shared/asset-url');
 const { toDateOnly, toIso } = require('../../shared/dates');
 const { writeAudit } = require('../../shared/audit');
+const { deliverKkdSet } = require('../equipment/equipment.service');
 
 const LAST_SEATS_THRESHOLD = 5;
 
@@ -25,6 +26,9 @@ async function listOnline(userId) {
       description: t.description || '',
       durationMin: t.duration_min,
       iconTone: t.icon_tone,
+      // mobil §8: "Zorunlu" rozeti ve yüz yüze/online ayrımı panelle birebir alanlardan gelir.
+      required: !!t.required,
+      delivery: t.delivery,
       videoUrl: assetUrl(t.video_path),
       status: p ? p.status : 'not_started',
       progressPercent: p ? p.progress_percent : 0,
@@ -33,15 +37,23 @@ async function listOnline(userId) {
 }
 
 // ── Saha (5.2) ──────────────────────────────────────────────
+/**
+ * Katılım sayaçları — backend-gereksinimleri.md §8: "Kayıtlı 28/30 · Katılan 24".
+ * Tek bir `enrolled` sayısı yetmez. Kontenjan yalnızca BİLGİ amaçlıdır; doluluk ne
+ * başvuruyu engeller ne de bir "yedek" durumu üretir (yedek kavramı kaldırıldı).
+ */
 async function seatInfo(trainingId, totalSeats) {
-  const taken = await db('saha_training_applications')
+  const rows = await db('saha_training_applications')
     .where({ training_id: trainingId })
-    .whereIn('status', ['pending', 'approved'])
+    .select('attendance')
     .count({ c: '*' })
-    .first();
-  const used = Number(taken?.c || 0);
-  const available = Math.max(0, totalSeats - used);
+    .groupBy('attendance');
+  const enrolled = rows.reduce((sum, r) => sum + Number(r.c), 0);
+  const attended = Number(rows.find((r) => r.attendance === 'katildi')?.c || 0);
+  const available = Math.max(0, totalSeats - enrolled);
   return {
+    enrolled,
+    attended,
     availableSeats: available,
     seatStatus: available > 0 && available <= LAST_SEATS_THRESHOLD ? 'last_seats' : 'available',
   };
@@ -54,11 +66,15 @@ async function listSaha(userId) {
 
   const out = [];
   for (const t of trainings) {
-    const { availableSeats, seatStatus } = await seatInfo(t.id, t.total_seats);
+    const { availableSeats, seatStatus, enrolled, attended } = await seatInfo(t.id, t.total_seats);
     out.push({
       id: t.id,
       title: t.title,
       location: t.location,
+      // §8: yetkinlik bayrağı — bayraksız kayıt (buluşma, tanıtım) müdahale kapısından geçirmez.
+      grantsCompetency: !!t.grants_competency,
+      enrolled,
+      attended,
       startDate: toDateOnly(t.start_date),
       startTime: t.start_time,
       endTime: t.end_time,
@@ -81,15 +97,15 @@ async function applySaha(userId, trainingId, audit = {}) {
   const existing = await db('saha_training_applications').where({ user_id: userId, training_id: trainingId }).first();
   if (existing) throw errors.conflict('Bu eğitime zaten başvurdunuz', undefined, 'already_applied');
 
-  const { availableSeats } = await seatInfo(trainingId, t.total_seats);
-  if (availableSeats <= 0) throw errors.gone('Eğitim kontenjanı dolu', undefined, 'training_full');
-
+  // §8: başvuru onayı OTOMATİKTİR — 1. fazda manuel onay kuyruğu yoktur ve kontenjan
+  // dolu diye ayrı bir "yedek" durumuna düşme yoktur. Kontenjan bilgi amaçlı kalır.
   const id = uuidv4();
   await db('saha_training_applications').insert({
     id,
     user_id: userId,
     training_id: trainingId,
-    status: 'pending',
+    status: 'approved',
+    attendance: 'kayitli',
   });
 
   await writeAudit({
@@ -101,7 +117,7 @@ async function applySaha(userId, trainingId, audit = {}) {
     userAgent: audit.userAgent,
   });
 
-  return { applicationId: id, status: 'pending' };
+  return { applicationId: id, status: 'approved', attendance: 'kayitli' };
 }
 
 // ── Aldığım Eğitimler (6.1 / 6.2) ───────────────────────────
@@ -166,6 +182,8 @@ function mapAdminOnlineRow(t) {
     description: t.description || '',
     durationMin: t.duration_min,
     iconTone: t.icon_tone,
+    required: !!t.required,
+    delivery: t.delivery,
     sortOrder: t.sort_order,
     videoUrl: assetUrl(t.video_path),
     isActive: !!t.is_active,
@@ -201,17 +219,15 @@ async function adminListSaha({ isActive } = {}) {
 
 function sahaAdminCounts() {
   return [
-    db.raw("(select count(*) from saha_training_applications a where a.training_id = t.id and a.status = 'pending') as pending_count"),
-    db.raw("(select count(*) from saha_training_applications a where a.training_id = t.id and a.status = 'approved') as approved_count"),
-    db.raw("(select count(*) from saha_training_applications a where a.training_id = t.id and a.status = 'rejected') as rejected_count"),
+    db.raw('(select count(*) from saha_training_applications a where a.training_id = t.id) as enrolled_count'),
+    db.raw("(select count(*) from saha_training_applications a where a.training_id = t.id and a.attendance = 'katildi') as attended_count"),
   ];
 }
 
 function mapAdminSahaRow(t) {
-  const pending = Number(t.pending_count || 0);
-  const approved = Number(t.approved_count || 0);
-  // seatInfo ile aynı kural: pending + approved koltuk işgal eder.
-  const used = pending + approved;
+  // §8: sayaç ayrışır — "Kayıtlı N/kontenjan · Katılan N".
+  const enrolled = Number(t.enrolled_count || 0);
+  const attended = Number(t.attended_count || 0);
   return {
     id: t.id,
     title: t.title,
@@ -225,8 +241,10 @@ function mapAdminSahaRow(t) {
     cover: assetUrl(t.cover_path),
     coverPath: t.cover_path || null, // panel roundtrip — URL'den path'e geri çevirmek kırılgan
     totalSeats: t.total_seats,
-    availableSeats: Math.max(0, t.total_seats - used),
-    applications: { pending, approved, rejected: Number(t.rejected_count || 0) },
+    availableSeats: Math.max(0, t.total_seats - enrolled),
+    grantsCompetency: !!t.grants_competency,
+    enrolled,
+    attended,
     isActive: !!t.is_active,
     createdAt: toIso(t.created_at),
   };
@@ -249,6 +267,8 @@ function onlineToRow(body) {
   if (body.description !== undefined) row.description = body.description || null;
   if (body.durationMin !== undefined) row.duration_min = body.durationMin;
   if (body.iconTone !== undefined) row.icon_tone = body.iconTone;
+  if (body.required !== undefined) row.required = body.required;
+  if (body.delivery !== undefined) row.delivery = body.delivery;
   if (body.sortOrder !== undefined) row.sort_order = body.sortOrder;
   if (body.videoPath !== undefined) row.video_path = body.videoPath || null;
   if (body.isActive !== undefined) row.is_active = body.isActive;
@@ -327,6 +347,7 @@ function sahaToRow(body) {
   if (body.instructorAvatarPath !== undefined) row.instructor_avatar_path = body.instructorAvatarPath || null;
   if (body.coverPath !== undefined) row.cover_path = body.coverPath || null;
   if (body.totalSeats !== undefined) row.total_seats = body.totalSeats;
+  if (body.grantsCompetency !== undefined) row.grants_competency = body.grantsCompetency;
   if (body.isActive !== undefined) row.is_active = body.isActive;
   return row;
 }
@@ -400,6 +421,10 @@ async function adminListSahaApplications(trainingId, { status } = {}) {
     items: rows.map((a) => ({
       applicationId: a.id,
       status: a.status,
+      // §8: katılımcı durumu yalnızca kayitli | katildi.
+      attendance: a.attendance,
+      attendanceAt: toIso(a.attendance_at),
+      kkdDelivered: !!a.kkd_delivered,
       createdAt: toIso(a.created_at),
       user: a.user_id ? { userId: a.user_id, ad: a.user_ad, soyad: a.user_soyad, phone: a.user_phone } : null,
     })),
@@ -430,6 +455,84 @@ async function adminSetSahaApplicationStatus(applicationId, { status }, actor = 
   return { applicationId, status };
 }
 
+/**
+ * Yoklama (backend-gereksinimleri.md §8) — saha eğitiminin tamamlandığını işaretleyen
+ * TEK mekanizma. Yetkinlik bayraklı bir eğitimde "katıldı" işaretlenmesi uygulamalı eğitim
+ * adımını kapatır; bayraksız kayıtlar (buluşma, tanıtım) yetkinlik kazandırmaz.
+ *
+ * Aynı satırda "KKD teslim" işaretlenirse eksik kalemler o anda AYNI zimmet kaydına
+ * yazılır (§6, ikinci teslim yolu) — gönüllü zaten fiziksel olarak oradadır.
+ *
+ * Yoklamada "gelmedi" AÇIK SORUDUR (prd.md §14): veri modeli yalnızca kayitli/katildi
+ * bilir, bu yüzden attended:false yalnızca kaydı `kayitli`ye geri alır.
+ *
+ * @param {string} trainingId
+ * @param {{entries: Array<{userId:string, attended:boolean, kkdDelivered?:boolean}>}} body
+ */
+async function adminSaveAttendance(trainingId, body, actor = {}) {
+  const training = await db('saha_trainings').where({ id: trainingId }).first();
+  if (!training) throw errors.notFound('Eğitim bulunamadı', 'training_not_found');
+
+  const entries = body.entries || [];
+  const userIds = entries.map((e) => e.userId);
+  const applications = await db('saha_training_applications')
+    .where({ training_id: trainingId })
+    .whereIn('user_id', userIds);
+  const byUser = new Map(applications.map((a) => [a.user_id, a]));
+
+  const unknown = userIds.filter((id) => !byUser.has(id));
+  if (unknown.length) {
+    throw errors.validation('Eğitime kaydı olmayan gönüllü', { userIds: unknown });
+  }
+
+  const now = new Date();
+  const results = [];
+
+  for (const entry of entries) {
+    const application = byUser.get(entry.userId);
+    const attendance = entry.attended ? 'katildi' : 'kayitli';
+    await db('saha_training_applications').where({ id: application.id }).update({
+      attendance,
+      attendance_at: entry.attended ? now : null,
+      kkd_delivered: entry.attended ? !!entry.kkdDelivered : false,
+      updated_at: now,
+    });
+
+    let kkd = null;
+    if (entry.attended && entry.kkdDelivered) {
+      kkd = await deliverKkdSet(entry.userId, {}, actor);
+    }
+
+    results.push({
+      userId: entry.userId,
+      attendance,
+      kkdDelivered: !!(entry.attended && entry.kkdDelivered),
+      kkdDurumu: kkd?.kkdDurumu,
+    });
+  }
+
+  await writeAudit({
+    userId: actor.userId || null,
+    action: 'trainings.saha.attendance',
+    entity: 'saha_training',
+    entityId: trainingId,
+    ip: actor.ip,
+    userAgent: actor.userAgent,
+    payload: {
+      grantsCompetency: !!training.grants_competency,
+      attended: results.filter((r) => r.attendance === 'katildi').length,
+      total: results.length,
+    },
+  });
+
+  return {
+    trainingId,
+    grantsCompetency: !!training.grants_competency,
+    saved: results.length,
+    items: results,
+  };
+}
+
 module.exports = {
   listOnline,
   listSaha,
@@ -446,4 +549,5 @@ module.exports = {
   adminRemoveSaha,
   adminListSahaApplications,
   adminSetSahaApplicationStatus,
+  adminSaveAttendance,
 };

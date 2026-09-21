@@ -4,8 +4,11 @@ const env = require('../config/env');
 const logger = require('../config/logger');
 const { db } = require('../config/db');
 
-// topic → notification_preferences kolonu (Ek B.5)
+// topic → notification_preferences kolonu (Ek B.5).
+// backend §4 / mobil §16: `acil` sınıfının kolonu YOKTUR — kapatılamaz ve gönüllünün
+// bildirim tercihini bypass eder (tahliye, acil çağrı, toplanma noktası değişikliği).
 const TOPIC_COLUMN = {
+  acil: null,
   taskCalls: 'task_calls',
   trainings: 'trainings',
   announcements: 'announcements',
@@ -54,7 +57,7 @@ function stringifyData(data) {
 /**
  * Tek kullanıcıya, topic opt-in'ine saygı göstererek push gönderir.
  * @param {string} userId
- * @param {{topic: 'taskCalls'|'trainings'|'announcements', title: string, body: string, data?: object}} payload
+ * @param {{topic: 'acil'|'taskCalls'|'trainings'|'announcements', title: string, body: string, data?: object}} payload
  */
 async function sendPushToUser(userId, payload) {
   const column = TOPIC_COLUMN[payload.topic];

@@ -2,8 +2,10 @@
 
 // POST /sos — kişisel acil yardım çağrısı: konumsuz çağrı kabul edilir, kullanıcı
 // iletişim bilgileri çağrı anında satıra snapshot'lanır, rate limit ayrı anahtardadır.
+// Çağrı `active` açılır ve geçmişine mobil kaynaklı ilk satır düşer (backend §10).
 
 const mockInserted = [];
+const mockHistory = [];
 const mockState = { user: null, redisCount: 0 };
 
 jest.mock('../../../src/config/db', () => {
@@ -12,7 +14,8 @@ jest.mock('../../../src/config/db', () => {
       where: jest.fn(() => c),
       first: jest.fn(async () => (table === 'users' ? mockState.user : undefined)),
       insert: jest.fn(async (row) => {
-        mockInserted.push(row);
+        if (table === 'sos_history') mockHistory.push(row);
+        else mockInserted.push(row);
         return [1];
       }),
     };
@@ -52,6 +55,7 @@ const USER_ROW = {
 describe('sos.service.create', () => {
   beforeEach(() => {
     mockInserted.length = 0;
+    mockHistory.length = 0;
     mockState.user = { ...USER_ROW };
     mockState.redisCount = 0;
     jest.clearAllMocks();
@@ -64,6 +68,7 @@ describe('sos.service.create', () => {
     expect(typeof result.sosId).toBe('string');
     expect(typeof result.createdAt).toBe('string');
     expect(result.dispatchedTo).toBe('OGM Yangın Harekat Merkezi');
+    expect(result.status).toBe('active');
     // Kontrat /emergency'den farklı: reportId/submittedAt DEĞİL.
     expect(result.reportId).toBeUndefined();
     expect(result.submittedAt).toBeUndefined();
@@ -71,12 +76,17 @@ describe('sos.service.create', () => {
     expect(mockInserted).toHaveLength(1);
     expect(mockInserted[0].lat).toBeNull();
     expect(mockInserted[0].lng).toBeNull();
+    expect(mockInserted[0].status).toBe('active');
+
+    // Geçmişteki ilk satır mobil kaynaklıdır — yanıt süresi operatör kaydından türer.
+    expect(mockHistory).toHaveLength(1);
+    expect(mockHistory[0]).toMatchObject({ event: 'SOS çağrısı gönderildi', by_kind: 'mobil' });
   });
 
   test('kullanıcı bilgileri satıra snapshot\'lanır (geri arama telefonu dahil)', async () => {
     await service.create({
       userId: 'u1',
-      body: { coordinates: { lat: 36.8529, lng: 28.2661 }, message: 'Yardım' },
+      body: { coordinates: { lat: 36.8529, lng: 28.2661 } },
       ip: '1.2.3.4',
       userAgent: 'jest',
     });
@@ -85,7 +95,6 @@ describe('sos.service.create', () => {
     expect(row.user_id).toBe('u1');
     expect(row.lat).toBe(36.8529);
     expect(row.lng).toBe(28.2661);
-    expect(row.message).toBe('Yardım');
     expect(row.ad).toBe('Ali');
     expect(row.soyad).toBe('Yılmaz');
     expect(row.tc_kimlik).toBe('10000000146');

@@ -660,15 +660,18 @@
             "type": "string",
             "enum": [
               "active",
-              "staffed"
+              "archived"
             ]
           },
           "userStatus": {
             "type": "string",
             "enum": [
               "not_joined",
-              "accepted",
-              "on_site"
+              "cagrildi",
+              "yolda",
+              "sahada",
+              "tamamladi",
+              "katilamiyor"
             ]
           }
         }
@@ -1672,8 +1675,7 @@
               "type": "string",
               "enum": [
                 "active",
-                "staffed",
-                "completed"
+                "archived"
               ]
             }
           },
@@ -1705,6 +1707,23 @@
         "responses": {
           "200": {
             "description": "items: görev (camelCase, cover URL, pendingPhotos), total/page/pageSize"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "Olay kaydı oluştur (panel)",
+        "description": "Olay HER ZAMAN `active` durumunda başlar. Toplanma noktası zorunludur; ikisi tek işlemde açılır. `callVolunteers` yalnızca çağrının hemen gidip gitmeyeceğini belirler — çağrı YALNIZCA `Hazır` gönüllülere gider, yarıçap admin'de girilmez. Bölge filtresi yalnızca görünümü süzer: başka bölgede olay açılabilir.",
+        "security": [
+          {
+            "adminApiKey": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "{ok, missionId, status: active, called}"
           }
         }
       }
@@ -1987,7 +2006,7 @@
           "Admin"
         ],
         "summary": "SOS çağrı listesi (panel)",
-        "description": "Mobil uygulamadan ÇAĞRILMAZ. x-api-key (admin) gerektirir. Kişisel SOS çağrıları (görev bağlamı yok); kullanıcı iletişim ve acil kişi bilgileri çağrı anındaki snapshot'tan döner.",
+        "description": "Mobil uygulamadan ÇAĞRILMAZ. x-api-key (admin) gerektirir. Durum üç değerlidir (active → responded | cancelled) ve her çağrı geçmişiyle birlikte döner. Kan grubu ve acil durum kişisi TÜRETİLİR (gönüllü kaydından); kullanıcı silinmişse çağrı anındaki snapshot'a düşülür. Yanıt süresi çağrı saati ile geçmişteki ilk OPERATÖR kaydı arasındaki farktır, ölçülemiyorsa null döner.",
         "security": [
           {
             "adminApiKey": []
@@ -2010,11 +2029,86 @@
               "default": 20,
               "maximum": 100
             }
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "active",
+                "responded",
+                "cancelled"
+              ]
+            }
           }
         ],
         "responses": {
           "200": {
-            "description": "items: SOS + user{ad,soyad,tcKimlik,phone,adres,acil{}}, total/page/pageSize"
+            "description": "items: SOS + status/history/responseSeconds + user{...,kanGrubu,acil{}}"
+          }
+        }
+      }
+    },
+    "/admin/sos-reports/{id}/history": {
+      "post": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "SOS geçmişine kayıt düş (ve gerekiyorsa durumu aynı çağrıda güncelle)",
+        "description": "Hazır aksiyonlar merkezin KENDİ işlemleriyle sınırlıdır: gönüllüyü aradı, 112 arandı, müdahale edildi. Sahadan gelen bilgi serbest nota yazılır ve operatörün adına düşer. Operatör çağrıyı İPTAL EDEMEZ — `cancelled` yalnızca gönüllünün mobilden verdiği sinyaldir.",
+        "security": [
+          {
+            "adminApiKey": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "action": {
+                    "type": "string",
+                    "enum": [
+                      "called_volunteer",
+                      "called_112",
+                      "responded"
+                    ]
+                  },
+                  "note": {
+                    "type": "string",
+                    "maxLength": 300
+                  },
+                  "by": {
+                    "type": "string",
+                    "description": "Kaydı düşen operatör/görevli adı"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "{ok, sosId, status, history[], responseSeconds}"
+          },
+          "404": {
+            "description": "sos_not_found"
+          },
+          "409": {
+            "description": "sos_cancelled"
           }
         }
       }
@@ -2033,7 +2127,7 @@
         ],
         "responses": {
           "200": {
-            "description": "volunteers{total,pending,approved,rejected,requiresRevision}, fireReports{reviewing,confirmed,rejected,today}, missions{active,staffed,completed}, pendingPhotos, sahaApplications{pending}, emergency{total,today}, blog{published,draft}"
+            "description": "volunteers{total,pending,approved,rejected,requiresRevision}, fireReports{reviewing,confirmed,rejected,today}, missions{active,archived}, pendingPhotos, sahaApplications{pending}, emergency{total,today}, blog{published,draft}"
           }
         }
       }
@@ -2567,6 +2661,409 @@
           },
           "404": {
             "description": "application_not_found"
+          }
+        }
+      }
+    },
+    "/admin/volunteers/{userId}/commission": {
+      "post": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "Komisyon kararı — \"Onayla ve SMS Gönder\" / \"Reddet ve SMS Gönder\" (panel)",
+        "description": "Bölge Müdürlüğü Komisyonunun kararını AYRI bir kayıt olarak yazar (red kararı da saklanır) ve kararla birlikte gönüllüye sabit şablonlu bilgilendirme SMS'i gönderir. Karar ve SMS tek işlemdir; ret gerekçesi SMS metnine girmez.",
+        "security": [
+          {
+            "adminApiKey": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "userId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "decision"
+                ],
+                "properties": {
+                  "decision": {
+                    "type": "string",
+                    "enum": [
+                      "approved",
+                      "rejected"
+                    ]
+                  },
+                  "decidedBy": {
+                    "type": "string",
+                    "nullable": true
+                  },
+                  "decisionNo": {
+                    "type": "string",
+                    "nullable": true
+                  },
+                  "note": {
+                    "type": "string",
+                    "nullable": true
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "{decisionId, decision, decidedAt, smsSent, kisiDurumu, eksikAdimlar}"
+          },
+          "404": {
+            "description": "user_not_found"
+          }
+        }
+      }
+    },
+    "/admin/volunteers/{userId}/kkd": {
+      "post": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "KKD seti teslim et (panel)",
+        "description": "Tek işlemle standart beş kalemi (kask, tulum, bot, eldiven, maske) açar. Zaten geçerli zimmeti olan kalem tekrar açılmaz. Ömür sonu tarihi kalem tipinden hesaplanır; beden gönüllü profilinden türer, zimmete yazılmaz. Gönüllü onayı gerekmez.",
+        "security": [
+          {
+            "adminApiKey": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "userId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "{ok, delivered[], kkdDurumu, items[]}"
+          },
+          "404": {
+            "description": "user_not_found"
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "Gönüllünün KKD seti (panel)",
+        "security": [
+          {
+            "adminApiKey": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "userId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "beş kalemin zimmet/ömür/beden görünümü"
+          }
+        }
+      }
+    },
+    "/admin/volunteers/{userId}/readiness": {
+      "get": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "Hazırlık zinciri ve kişi durumu (panel, türetilmiş)",
+        "security": [
+          {
+            "adminApiKey": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "userId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "{zincir, kisiDurumu, mudahaleYetkisi, engeller, komisyon}"
+          }
+        }
+      }
+    },
+    "/admin/equipment/{equipmentId}/return": {
+      "post": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "Zimmet iadesi (API hazır — panelde ekranı yok)",
+        "description": "İade akışı panelden geçici olarak kaldırıldı; uç sözleşme gereği hazır tutulur.",
+        "security": [
+          {
+            "adminApiKey": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "equipmentId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "{ok, equipmentId, returnedAt, kkdDurumu}"
+          },
+          "404": {
+            "description": "equipment_not_found"
+          },
+          "409": {
+            "description": "already_returned"
+          }
+        }
+      }
+    },
+    "/admin/trainings/saha/{id}/attendance": {
+      "put": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "Saha eğitimi yoklaması (panel)",
+        "description": "Uygulamalı eğitimin tamamlandığını işaretleyen TEK mekanizma. Yetkinlik bayraklı eğitimde \"katıldı\" işaretlenen gönüllünün uygulamalı adımı kapanır. Aynı satırda kkdDelivered işaretlenirse eksik KKD kalemleri o anda aynı zimmet kaydına yazılır.",
+        "security": [
+          {
+            "adminApiKey": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "entries"
+                ],
+                "properties": {
+                  "entries": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "required": [
+                        "userId",
+                        "attended"
+                      ],
+                      "properties": {
+                        "userId": {
+                          "type": "string"
+                        },
+                        "attended": {
+                          "type": "boolean"
+                        },
+                        "kkdDelivered": {
+                          "type": "boolean"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "{trainingId, grantsCompetency, saved, items[]}"
+          },
+          "404": {
+            "description": "training_not_found"
+          }
+        }
+      }
+    },
+    "/admin/missions/{id}/archive": {
+      "post": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "Olayı arşivle (panel) — TERMİNAL",
+        "description": "Durum geçişi operatör kararıdır, otomatik değişmez. Arşivlendi terminaldir: aynı kayıt tekrar Aktif'e alınamaz, yeniden alevlenirse YENİ olay kaydı açılır. Yeni gönüllü çağrısı durur, toplanma noktası kapanır, sahadaki gönüllüler `tamamladi` olur ve sahadaki sayı sıfırlanır (check-in kayıtları korunur).",
+        "security": [
+          {
+            "adminApiKey": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "{ok, missionId, status: archived, archivedAt}"
+          },
+          "409": {
+            "description": "already_archived"
+          }
+        }
+      }
+    },
+    "/admin/missions/{id}/call": {
+      "post": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "Gönüllü çağrısı gönder (panel)",
+        "description": "Yalnızca `Hazır` gönüllülere push gider — katılamayacak kişiye çağrı gönderilmez. Gönüllüler bölgeye göre süzülmez.",
+        "security": [
+          {
+            "adminApiKey": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "{called}"
+          }
+        }
+      }
+    },
+    "/admin/missions/{id}/assembly-point": {
+      "get": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "Olayın toplanma noktası (panel)",
+        "security": [
+          {
+            "adminApiKey": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Toplanma noktası veya null"
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "Toplanma noktasını oluştur/güncelle (panel)",
+        "description": "Olay başına TEK nokta vardır. Konum DEĞİŞİRSE operatör elle bildirim yazmaz; sunucu üç kitleye gönderir: yola çıkmamışa sessiz, yoldakine zorunlu push+SMS, sahadakine push. Kontenjan alanı yoktur.",
+        "security": [
+          {
+            "adminApiKey": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "{ok, assemblyPoint, locationChanged, notified}"
+          },
+          "409": {
+            "description": "mission_archived"
+          }
+        }
+      }
+    },
+    "/admin/missions/{id}/check-ins": {
+      "get": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "Yangın sahası giriş kayıtları (panel)",
+        "description": "Sahadaki gönüllü sayısının tek kaynağı; panel, mobil ve toplanma noktası ekranı aynı sayıyı gösterir. Olay arşivlendiğinde sayı sıfırlanır, kayıtlar korunur.",
+        "security": [
+          {
+            "adminApiKey": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "{mission, onSite, trend, items[]}"
           }
         }
       }
@@ -3176,6 +3673,25 @@
         }
       }
     },
+    "/users/me/equipment/kkd": {
+      "get": {
+        "tags": [
+          "Equipment"
+        ],
+        "summary": "KKD seti — beş kalemin zimmet, ömür ve beden görünümü",
+        "description": "mobil-gereksinimleri.md §12: kalıcı/geçici ayrımı YOKTUR, tek set vardır. Elle \"KKD tamam\" işaretlemesi yoktur — durum zimmetten türer, ömrü dolan kalem otomatik düşer. Beden gönüllü profilinden okunur.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "items[]: itemKey, label, beden, serialNo, assignedAt, expiresAt, status"
+          }
+        }
+      }
+    },
     "/fire-reports": {
       "post": {
         "tags": [
@@ -3577,12 +4093,13 @@
         }
       }
     },
-    "/missions/active/{id}/join": {
+    "/missions/active/{id}/respond": {
       "post": {
         "tags": [
           "Missions"
         ],
-        "summary": "Göreve katıl (userStatus → accepted)",
+        "summary": "Katılım kararı — \"Katılmak istiyorum\" (yolda) | \"Katılamıyorum\"",
+        "description": "backend §3: bu durumların sinyal sahibi GÖNÜLLÜDÜR; operatör panelden değiştiremez. §5 kuralı istisnasızdır: hazırlık zincirinde eksiği olan gönüllü hiçbir göreve katılamaz — destek rolüyle katılma seçeneği yoktur. Engel varsa 403 `readiness_incomplete` ve eksik adımlar döner. Uygunluk canlı bir değerdir, sahaya varışta (check-in) yeniden değerlendirilir.",
         "security": [
           {
             "bearerAuth": []
@@ -3598,9 +4115,31 @@
             }
           }
         ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "decision"
+                ],
+                "properties": {
+                  "decision": {
+                    "type": "string",
+                    "enum": [
+                      "yolda",
+                      "katilamiyor"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
-            "description": "Katılım onaylandı",
+            "description": "Karar kaydedildi",
             "content": {
               "application/json": {
                 "schema": {
@@ -3611,7 +4150,10 @@
                     },
                     "userStatus": {
                       "type": "string",
-                      "example": "accepted"
+                      "enum": [
+                        "yolda",
+                        "katilamiyor"
+                      ]
                     }
                   }
                 }
@@ -3619,10 +4161,10 @@
             }
           },
           "403": {
-            "description": "equipment_required"
+            "description": "readiness_incomplete — eksik adımlar details.engeller içinde"
           },
           "409": {
-            "description": "mission_full | already_joined"
+            "description": "status_locked — sahada/tamamladı durumu değiştirilemez"
           }
         }
       }
@@ -3632,8 +4174,8 @@
         "tags": [
           "Missions"
         ],
-        "summary": "Saha amiri QR tarama (userStatus → on_site)",
-        "description": "Mobil uygulamadan ÇAĞRILMAZ. Saha amiri (officer) `x-api-key` veya\n`role=officer` token ile çağırır. Opsiyonel `token` HMAC imzasıdır (B.1).\n",
+        "summary": "Yangın sahası giriş kaydı — QR check-in (userStatus → sahada)",
+        "description": "Mobil uygulamadan ÇAĞRILMAZ. Saha amiri (officer) `x-api-key` veya\n`role=officer` token ile çağırır. Opsiyonel `token` HMAC imzasıdır (B.1).\n\nbackend §13: Gönüllü QR'ı `OGM:VOL:{id}` formatındadır; okutulamazsa TC kimlik\nnumarasıyla manuel kayıt yedek yöntemdir. Hazırlık zincirinde eksik varsa\ncheck-in ENGELLENİR — yalnızca uyarı değil, kayıt oluşmaz ve sahadaki sayıya\ngirmez. Arama bölge kapsamıyla sınırlı değildir. Sahadaki gönüllü sayısının tek\nkaynağı bu kayıttır.\n",
         "security": [
           {
             "officerApiKey": []
@@ -3655,12 +4197,17 @@
             "application/json": {
               "schema": {
                 "type": "object",
-                "required": [
-                  "userId"
-                ],
                 "properties": {
+                  "qr": {
+                    "type": "string",
+                    "example": "OGM:VOL:8f3c..."
+                  },
                   "userId": {
                     "type": "string"
+                  },
+                  "tcKimlik": {
+                    "type": "string",
+                    "description": "QR okutulamazsa yedek yöntem"
                   },
                   "scannedAt": {
                     "type": "string",
@@ -3677,23 +4224,16 @@
         },
         "responses": {
           "200": {
-            "description": "on_site'a geçildi",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "ok": {
-                      "type": "boolean"
-                    },
-                    "userStatus": {
-                      "type": "string",
-                      "example": "on_site"
-                    }
-                  }
-                }
-              }
-            }
+            "description": "Giriş kaydedildi — künye (ad, soyad, maskeli TC, kişi/KKD/eğitim durumu, STK) döner"
+          },
+          "403": {
+            "description": "readiness_incomplete — katılım engeli, kayıt OLUŞMAZ"
+          },
+          "404": {
+            "description": "volunteer_not_found | mission_not_found"
+          },
+          "409": {
+            "description": "mission_archived"
           }
         }
       }
@@ -3703,7 +4243,7 @@
         "tags": [
           "Missions"
         ],
-        "summary": "Görev fotoğrafı yükle (yalnızca on_site)",
+        "summary": "Görev fotoğrafı yükle (yalnızca sahada olan gönüllü)",
         "security": [
           {
             "bearerAuth": []
@@ -3940,6 +4480,7 @@
           "Notifications"
         ],
         "summary": "Bildirim tercihleri",
+        "description": "Dört kategori döner. `acil` sınıfı KAPATILAMAZ (closable:false) ve listenin en üstünde sabittir — bu bir güvenlik gereksinimidir, tercih değil. Kanal kategoriden türer: SMS yalnızca `acil`, diğerleri push. Yangın bildirim mesafesi gönüllünün kendi tercihidir (admin mesafe girmez) ve `baseLocation` noktasından ölçülür; acil sınıfı bu tercihi bypass eder.",
         "security": [
           {
             "bearerAuth": []
@@ -3963,7 +4504,7 @@
           "Notifications"
         ],
         "summary": "Bildirim tercihlerini güncelle",
-        "description": "Request `distanceKm` (flat) gönderilir; response `distance:{km,min,max}` (nested) döner.",
+        "description": "Request `distanceKm` (flat) gönderilir; response `distance:{km,min,max}` (nested) döner. `acil` kategorisi için anahtar YOKTUR — kapatılamaz.",
         "security": [
           {
             "bearerAuth": []
@@ -3987,6 +4528,29 @@
                   },
                   "distanceKm": {
                     "type": "integer"
+                  },
+                  "baseLocation": {
+                    "type": "object",
+                    "nullable": true,
+                    "description": "Yarıçapın ölçüleceği nokta; null gönderilirse temizlenir.",
+                    "required": [
+                      "lat",
+                      "lng"
+                    ],
+                    "properties": {
+                      "lat": {
+                        "type": "number"
+                      },
+                      "lng": {
+                        "type": "number"
+                      },
+                      "il": {
+                        "type": "string"
+                      },
+                      "ilce": {
+                        "type": "string"
+                      }
+                    }
                   }
                 }
               }
@@ -4163,7 +4727,7 @@
           "Emergency"
         ],
         "summary": "SOS — kişisel acil yardım çağrısı (görev bağlamı yok)",
-        "description": "Ana sayfadaki SOS butonundan tetiklenir. /emergency'den farklı olarak görev (mission) bağlamı yoktur. Konum izni yoksa coordinates alanı hiç gönderilmez; konumsuz çağrı da kabul edilir. Kullanıcının iletişim ve acil durum kişi bilgileri çağrı anında kayda snapshot'lanır ve operasyon merkezi paneline düşer.\n",
+        "description": "Ana sayfadaki SOS butonundan tetiklenir. /emergency'den farklı olarak görev (mission) bağlamı yoktur. Konum izni yoksa coordinates alanı hiç gönderilmez; konumsuz çağrı da kabul edilir. Sebep alanı YOKTUR (backend §12). Çağrı `active` durumunda açılır ve geçmişine \"SOS çağrısı gönderildi\" satırı düşer.\n",
         "security": [
           {
             "bearerAuth": []
@@ -4187,11 +4751,6 @@
                         "type": "number"
                       }
                     }
-                  },
-                  "message": {
-                    "type": "string",
-                    "nullable": true,
-                    "maxLength": 500
                   }
                 }
               }
@@ -4213,6 +4772,14 @@
                     "sosId": {
                       "type": "string"
                     },
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "active",
+                        "responded",
+                        "cancelled"
+                      ]
+                    },
                     "createdAt": {
                       "type": "string",
                       "format": "date-time"
@@ -4231,6 +4798,94 @@
           },
           "429": {
             "$ref": "#/components/responses/RateLimited"
+          }
+        }
+      }
+    },
+    "/sos/active": {
+      "get": {
+        "tags": [
+          "Emergency"
+        ],
+        "summary": "Açık SOS çağrım — canlı durum ve geçmiş",
+        "description": "mobil §4: ekran statik bir onay değil, canlı durumdur (Gönderildi → Merkez seni arıyor → Müdahale edildi / İptal edildi). Aradaki adımlar ayrı bir durum değil, çağrının geçmişindeki satırlardır. Ana ekran widget'ı da bu sözleşmeyi okur.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Açık çağrı ({sosId,status,history[]}) veya null"
+          }
+        }
+      }
+    },
+    "/sos/{id}": {
+      "get": {
+        "tags": [
+          "Emergency"
+        ],
+        "summary": "SOS çağrısının durumu ve geçmişi",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "{sosId,status,createdAt,coordinates,history[]}"
+          },
+          "404": {
+            "description": "sos_not_found"
+          }
+        }
+      }
+    },
+    "/sos/{id}/cancel": {
+      "post": {
+        "tags": [
+          "Emergency"
+        ],
+        "summary": "SOS'u iptal et (yalnızca gönüllü)",
+        "description": "backend §10: `cancelled` sinyalinin sahibi gönüllüdür — operatör panelden iptal EDEMEZ, yalnızca görüntüler (yolda/katılamıyor ile aynı ilke). Yalnızca `active` çağrı iptal edilebilir.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "{ok, sosId, status: cancelled, cancelledAt}"
+          },
+          "403": {
+            "description": "Çağrı başkasına ait"
+          },
+          "404": {
+            "description": "sos_not_found"
+          },
+          "409": {
+            "description": "sos_not_active"
           }
         }
       }
@@ -4884,6 +5539,25 @@
           },
           "401": {
             "$ref": "#/components/responses/Unauthorized"
+          }
+        }
+      }
+    },
+    "/users/me/readiness": {
+      "get": {
+        "tags": [
+          "Users"
+        ],
+        "summary": "Hazırlık zinciri — gönüllü nerede takıldı (türetilmiş)",
+        "description": "mobil-gereksinimleri.md §8/§10: Başvuru → Komisyon onayı → Teorik eğitim → Uygulamalı (saha) eğitimi → KKD → Hazır. Adımlar birbirinin yerine geçmez, sıra atlanamaz. Eksiği olan gönüllü hiçbir göreve katılamaz; engeller burada listelenir.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "{zincir:{steps[],eksikAdimlar,siradakiAdim,tamam}, kisiDurumu, mudahaleYetkisi, engeller[], komisyon}"
           }
         }
       }

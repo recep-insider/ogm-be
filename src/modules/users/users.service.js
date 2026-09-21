@@ -10,6 +10,7 @@ const { writeAudit } = require('../../shared/audit');
 const { assetUrl } = require('../../shared/asset-url');
 const { toDateOnly } = require('../../shared/dates');
 const { hasProtectiveEquipment } = require('../equipment/equipment.service');
+const readinessService = require('./readiness.service');
 
 function safeJson(value, fallback) {
   if (value == null) return fallback;
@@ -52,10 +53,11 @@ async function getMe(userId) {
   const user = await db('users').where({ id: userId, is_active: true }).first();
   if (!user) throw errors.notFound('Kullanıcı bulunamadı');
 
-  const [applicationStatus, completed, hasEquipment] = await Promise.all([
+  const [applicationStatus, completed, hasEquipment, readiness] = await Promise.all([
     getApplicationStatus(userId),
     db('user_trainings').where({ user_id: userId, status: 'completed' }).count({ c: '*' }).first(),
     hasProtectiveEquipment(userId),
+    readinessService.getReadiness(userId),
   ]);
 
   return {
@@ -73,6 +75,7 @@ async function getMe(userId) {
     meslekDiger: user.meslek_diger,
     hobiler: safeJson(user.hobiler, []),
     giysiBedeni: user.giysi_bedeni,
+    stkText: user.stk_text || null,
     ayakkabiNumarasi: user.ayakkabi_numarasi != null ? Number(user.ayakkabi_numarasi) : null,
     acil: {
       ad: user.acil_ad,
@@ -85,6 +88,12 @@ async function getMe(userId) {
     volunteerLevel: computeVolunteerLevel(Number(completed?.c || 0)),
     avatarUrl: assetUrl(user.avatar_path),
     hasProtectiveEquipment: hasEquipment,
+    // mobil §10: profilde gönüllülük durumu özeti — panelin kisiDurumu() türetimiyle aynı.
+    kisiDurumu: readiness.kisiDurumu,
+    kkdDurumu: readiness.zincir.kkdDurumu,
+    mudahaleYetkisi: readiness.mudahaleYetkisi,
+    hazirlikZinciri: readiness.zincir,
+    komisyon: readiness.komisyon,
   };
 }
 
@@ -99,6 +108,8 @@ const PATCH_KEYS = {
   hobiler: 'hobiler',
   giysiBedeni: 'giysi_bedeni',
   ayakkabiNumarasi: 'ayakkabi_numarasi',
+  // mobil §11: STK üyeliği başvuruda beyan edilir, serbest metindir (enum'a bağlanmaz).
+  stkText: 'stk_text',
 };
 
 async function patchMe(userId, body, audit = {}) {

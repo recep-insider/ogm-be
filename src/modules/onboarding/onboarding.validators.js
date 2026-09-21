@@ -61,6 +61,8 @@ const kisisel = Joi.object({
     otherwise: Joi.any().valid(null, '').optional(),
   }),
   hobiler: Joi.array().items(Joi.string().min(1).max(100)).default([]),
+  // mobil §11: STK üyeliği BAŞVURU SIRASINDA beyan edilir (ORBİS'te tutulur).
+  stkText: Joi.string().max(200).allow('', null).optional(),
 });
 
 const acil = Joi.object({

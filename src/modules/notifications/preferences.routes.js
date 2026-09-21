@@ -17,6 +17,12 @@ router.use(requireAuth);
  *   get:
  *     tags: [Notifications]
  *     summary: Bildirim tercihleri
+ *     description: >-
+ *       Dört kategori döner. `acil` sınıfı KAPATILAMAZ (closable:false) ve listenin en
+ *       üstünde sabittir — bu bir güvenlik gereksinimidir, tercih değil. Kanal
+ *       kategoriden türer: SMS yalnızca `acil`, diğerleri push. Yangın bildirim mesafesi
+ *       gönüllünün kendi tercihidir (admin mesafe girmez) ve `baseLocation` noktasından
+ *       ölçülür; acil sınıfı bu tercihi bypass eder.
  *     security: [ { bearerAuth: [] } ]
  *     responses:
  *       200:
@@ -27,7 +33,9 @@ router.use(requireAuth);
  *   patch:
  *     tags: [Notifications]
  *     summary: Bildirim tercihlerini güncelle
- *     description: 'Request `distanceKm` (flat) gönderilir; response `distance:{km,min,max}` (nested) döner.'
+ *     description: >-
+ *       Request `distanceKm` (flat) gönderilir; response `distance:{km,min,max}` (nested)
+ *       döner. `acil` kategorisi için anahtar YOKTUR — kapatılamaz.
  *     security: [ { bearerAuth: [] } ]
  *     requestBody:
  *       required: true
@@ -40,6 +48,16 @@ router.use(requireAuth);
  *               trainings: { type: boolean }
  *               announcements: { type: boolean }
  *               distanceKm: { type: integer }
+ *               baseLocation:
+ *                 type: object
+ *                 nullable: true
+ *                 description: 'Yarıçapın ölçüleceği nokta; null gönderilirse temizlenir.'
+ *                 required: [lat, lng]
+ *                 properties:
+ *                   lat: { type: number }
+ *                   lng: { type: number }
+ *                   il: { type: string }
+ *                   ilce: { type: string }
  *     responses:
  *       200:
  *         description: Güncellenmiş tercihler

@@ -40,6 +40,17 @@ jest.mock('../../../src/shared/asset-url', () => ({ assetUrl: () => null }));
 jest.mock('../../../src/modules/equipment/equipment.service', () => ({
   hasProtectiveEquipment: jest.fn(async () => false),
 }));
+// Hazırlık zinciri kendi testinde (readiness.service.test.js) doğrulanır; burada
+// getMe'nin türetilmiş alanları cevaba taşıdığını görmek yeterli.
+jest.mock('../../../src/modules/users/readiness.service', () => ({
+  getReadiness: jest.fn(async () => ({
+    zincir: { kkdDurumu: 'yok', eksikAdimlar: ['komisyon'], tamam: false, steps: [] },
+    kisiDurumu: 'basvuru',
+    mudahaleYetkisi: false,
+    engeller: [{ key: 'komisyon', label: 'Komisyon onayı' }],
+    komisyon: { decision: 'pending', decidedAt: null, decidedBy: null, decisionNo: null },
+  })),
+}));
 
 const { patchMe, getMe } = require('../../../src/modules/users/users.service');
 
@@ -82,6 +93,15 @@ describe('users.service — giysiBedeni / ayakkabiNumarasi', () => {
     expect(profile).toHaveProperty('acil');
     expect(profile).toHaveProperty('volunteerLevel');
     expect(profile).toHaveProperty('hobiler');
+  });
+
+  test('getMe türetilmiş gönüllülük durumunu döner (mobil §10 profil özeti)', async () => {
+    const profile = await getMe('u1');
+
+    expect(profile.kisiDurumu).toBe('basvuru');
+    expect(profile.kkdDurumu).toBe('yok');
+    expect(profile.mudahaleYetkisi).toBe(false);
+    expect(profile.komisyon.decision).toBe('pending');
   });
 
   test('getMe değer yokken null döner (eski kayıtlar)', async () => {

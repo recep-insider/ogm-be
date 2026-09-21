@@ -26,6 +26,8 @@ const patchMeSchema = Joi.object({
   hobiler: Joi.array().items(Joi.string().min(1).max(100)).optional(),
   giysiBedeni: Joi.string().valid(...GIYSI_BEDENI).allow(null).optional(),
   ayakkabiNumarasi: Joi.number().integer().min(34).max(50).allow(null).optional(),
+  // mobil §11: STK üyeliği serbest metindir — enum'a bağlanmaz, dış entegrasyon yok.
+  stkText: Joi.string().max(200).allow(null, '').optional(),
   avatarUrl: Joi.string().uri().allow(null, '').optional(),
   acil: acilSchema.optional(),
 }).min(1);

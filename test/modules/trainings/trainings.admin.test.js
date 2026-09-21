@@ -51,14 +51,14 @@ describe('trainings.service — adminListOnline', () => {
 describe('trainings.service — adminListSaha', () => {
   beforeEach(() => { mockQueue.length = 0; });
 
-  test('koltuk hesabı seatInfo kuralıyla aynı: pending + approved işgal eder', async () => {
+  test('sayaç ayrışır: Kayıtlı N/kontenjan · Katılan N (yedek kavramı yok)', async () => {
     mockQueue.push([
       {
         id: 'ft1', title: 'Antalya Saha', location: 'Antalya Kampı',
         start_date: '2026-06-15', start_time: '09:00', end_time: '17:00',
         instructor_name: 'Kpt. Mert Tan', instructor_avatar_path: null, cover_path: null,
-        total_seats: 30, is_active: 1,
-        pending_count: '3', approved_count: '25', rejected_count: '2',
+        total_seats: 30, is_active: 1, grants_competency: 1,
+        enrolled_count: '28', attended_count: '24',
         created_at: new Date('2026-05-20T08:00:00Z'),
       },
     ]);
@@ -67,19 +67,19 @@ describe('trainings.service — adminListSaha', () => {
 
     expect(result.items[0]).toMatchObject({
       id: 'ft1', startDate: '2026-06-15', instructorName: 'Kpt. Mert Tan',
-      totalSeats: 30, availableSeats: 2, // 30 - (3+25)
-      applications: { pending: 3, approved: 25, rejected: 2 },
+      totalSeats: 30, availableSeats: 2, // 30 - 28 kayıtlı
+      enrolled: 28, attended: 24, grantsCompetency: true,
       isActive: true,
     });
   });
 
-  test('availableSeats negatife düşmez (aşırı başvuru)', async () => {
+  test('availableSeats negatife düşmez — kontenjan aşımı engel değil, yalnızca bilgi', async () => {
     mockQueue.push([
       {
         id: 'ft2', title: 'Dolu Eğitim', location: 'X', start_date: '2026-07-01',
         start_time: '09:00', end_time: '17:00', instructor_name: 'Y',
         total_seats: 10, is_active: 1,
-        pending_count: '8', approved_count: '5', rejected_count: '0',
+        enrolled_count: '13', attended_count: '5',
         created_at: null,
       },
     ]);

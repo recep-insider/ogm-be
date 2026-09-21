@@ -14,11 +14,15 @@ const fireReportsController = require('../fireReports/fireReports.controller');
 const { adminStatusSchema } = require('../fireReports/fireReports.validators');
 const fireReportsService = require('../fireReports/fireReports.service');
 const missionsService = require('../missions/missions.service');
+const assemblyPointsService = require('../missions/assemblyPoints.service');
 const emergencyService = require('../emergency/emergency.service');
 const sosService = require('../sos/sos.service');
 const trainingsService = require('../trainings/trainings.service');
 const blogService = require('../blog/blog.service');
 const adminService = require('./admin.service');
+const equipmentService = require('../equipment/equipment.service');
+const readinessService = require('../users/readiness.service');
+const { KKD_ITEM_KEYS } = require('../../shared/kkd');
 
 // İşlemi yapan admin'in audit bağlamı (x-api-key'de userId NULL kalır — bilinen kısıt).
 function actorFrom(req) {
@@ -301,7 +305,8 @@ router.get(
 );
 
 const missionsQuerySchema = Joi.object({
-  status: Joi.string().valid('active', 'staffed', 'completed').optional(),
+  // §2: iki durum — active | archived (arşivlendi terminaldir, ayrı arşiv ekranı yoktur).
+  status: Joi.string().valid('active', 'archived').optional(),
   isActive: Joi.boolean().optional(),
   ...pageQueryKeys,
 });
@@ -315,7 +320,7 @@ const missionsQuerySchema = Joi.object({
  *     description: 'Tüm görevler (is_active filtresi opsiyonel) + pendingPhotos sayacı. x-api-key (admin).'
  *     security: [ { adminApiKey: [] } ]
  *     parameters:
- *       - { in: query, name: status, schema: { type: string, enum: [active, staffed, completed] } }
+ *       - { in: query, name: status, schema: { type: string, enum: [active, archived] } }
  *       - { in: query, name: isActive, schema: { type: boolean } }
  *       - { in: query, name: page, schema: { type: integer, default: 1 } }
  *       - { in: query, name: pageSize, schema: { type: integer, default: 20, maximum: 100 } }
@@ -437,7 +442,14 @@ router.get(
 
 const sosQuerySchema = Joi.object({
   ...pageQueryKeys,
+  status: Joi.string().valid('active', 'responded', 'cancelled').optional(),
 });
+
+const sosHistorySchema = Joi.object({
+  action: Joi.string().valid('called_volunteer', 'called_112', 'responded').optional(),
+  note: Joi.string().max(300).optional(),
+  by: Joi.string().max(120).optional(),
+}).or('action', 'note');
 
 /**
  * @openapi
@@ -447,20 +459,60 @@ const sosQuerySchema = Joi.object({
  *     summary: SOS çağrı listesi (panel)
  *     description: >-
  *       Mobil uygulamadan ÇAĞRILMAZ. x-api-key (admin) gerektirir.
- *       Kişisel SOS çağrıları (görev bağlamı yok); kullanıcı iletişim ve acil kişi
- *       bilgileri çağrı anındaki snapshot'tan döner.
+ *       Durum üç değerlidir (active → responded | cancelled) ve her çağrı geçmişiyle
+ *       birlikte döner. Kan grubu ve acil durum kişisi TÜRETİLİR (gönüllü kaydından);
+ *       kullanıcı silinmişse çağrı anındaki snapshot'a düşülür. Yanıt süresi çağrı saati
+ *       ile geçmişteki ilk OPERATÖR kaydı arasındaki farktır, ölçülemiyorsa null döner.
  *     security: [ { adminApiKey: [] } ]
  *     parameters:
  *       - { in: query, name: page, schema: { type: integer, default: 1 } }
  *       - { in: query, name: pageSize, schema: { type: integer, default: 20, maximum: 100 } }
+ *       - { in: query, name: status, schema: { type: string, enum: [active, responded, cancelled] } }
  *     responses:
- *       200: { description: 'items: SOS + user{ad,soyad,tcKimlik,phone,adres,acil{}}, total/page/pageSize' }
+ *       200: { description: 'items: SOS + status/history/responseSeconds + user{...,kanGrubu,acil{}}' }
  */
 router.get(
   '/sos-reports',
   validate({ query: sosQuerySchema }),
   asyncHandler(async (req, res) => {
     res.json(await sosService.adminList(req.query));
+  }),
+);
+
+/**
+ * @openapi
+ * /admin/sos-reports/{id}/history:
+ *   post:
+ *     tags: [Admin]
+ *     summary: SOS geçmişine kayıt düş (ve gerekiyorsa durumu aynı çağrıda güncelle)
+ *     description: >-
+ *       Hazır aksiyonlar merkezin KENDİ işlemleriyle sınırlıdır: gönüllüyü aradı,
+ *       112 arandı, müdahale edildi. Sahadan gelen bilgi serbest nota yazılır ve
+ *       operatörün adına düşer. Operatör çağrıyı İPTAL EDEMEZ — `cancelled` yalnızca
+ *       gönüllünün mobilden verdiği sinyaldir.
+ *     security: [ { adminApiKey: [] } ]
+ *     parameters:
+ *       - { in: path, name: id, required: true, schema: { type: string } }
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               action: { type: string, enum: [called_volunteer, called_112, responded] }
+ *               note: { type: string, maxLength: 300 }
+ *               by: { type: string, description: 'Kaydı düşen operatör/görevli adı' }
+ *     responses:
+ *       200: { description: '{ok, sosId, status, history[], responseSeconds}' }
+ *       404: { description: sos_not_found }
+ *       409: { description: sos_cancelled }
+ */
+router.post(
+  '/sos-reports/:id/history',
+  validate({ body: sosHistorySchema }),
+  asyncHandler(async (req, res) => {
+    res.json(await sosService.adminAddHistory(req.params.id, req.body, actorFrom(req)));
   }),
 );
 
@@ -478,7 +530,7 @@ router.get(
  *       200:
  *         description: >-
  *           volunteers{total,pending,approved,rejected,requiresRevision},
- *           fireReports{reviewing,confirmed,rejected,today}, missions{active,staffed,completed},
+ *           fireReports{reviewing,confirmed,rejected,today}, missions{active,archived},
  *           pendingPhotos, sahaApplications{pending}, emergency{total,today}, blog{published,draft}
  */
 router.get(
@@ -708,6 +760,9 @@ const onlineBaseKeys = {
   description: Joi.string().allow('').max(2000),
   durationMin: Joi.number().integer().min(0).max(10000),
   iconTone: Joi.string().valid('primary', 'tertiary'),
+  // backend §1/§7: teorik eğitim kapısı yalnızca YAYINDA + ZORUNLU eğitimlerden oluşur.
+  required: Joi.boolean(),
+  delivery: Joi.string().valid('yuzyuze', 'online'),
   sortOrder: Joi.number().integer().min(0),
   videoPath: Joi.string().allow('', null).max(512),
   isActive: Joi.boolean(),
@@ -730,6 +785,8 @@ const sahaBaseKeys = {
   instructorAvatarPath: Joi.string().allow('', null).max(512),
   coverPath: Joi.string().allow('', null).max(512),
   totalSeats: Joi.number().integer().min(0).max(10000),
+  // §8: yetkinlik bayrağı — yalnızca bayraklı eğitimin yoklaması uygulamalı adımı kapatır.
+  grantsCompetency: Joi.boolean(),
   isActive: Joi.boolean(),
 };
 const sahaCreateSchema = Joi.object({
@@ -924,6 +981,367 @@ router.put(
   validate({ body: Joi.object({ status: Joi.string().valid('pending', 'approved', 'rejected').required() }) }),
   asyncHandler(async (req, res) => {
     res.json(await trainingsService.adminSetSahaApplicationStatus(req.params.applicationId, req.body, actorFrom(req)));
+  }),
+);
+
+// ── Komisyon kararı, KKD zimmeti ve yoklama (gönüllülük zinciri) ─────────────
+
+const commissionSchema = Joi.object({
+  decision: Joi.string().valid('approved', 'rejected').required(),
+  decidedBy: Joi.string().max(120).allow('', null).optional(),
+  decisionNo: Joi.string().max(64).allow('', null).optional(),
+  note: Joi.string().max(1000).allow('', null).optional(),
+});
+
+/**
+ * @openapi
+ * /admin/volunteers/{userId}/commission:
+ *   post:
+ *     tags: [Admin]
+ *     summary: Komisyon kararı — "Onayla ve SMS Gönder" / "Reddet ve SMS Gönder" (panel)
+ *     description: >-
+ *       Bölge Müdürlüğü Komisyonunun kararını AYRI bir kayıt olarak yazar (red kararı da
+ *       saklanır) ve kararla birlikte gönüllüye sabit şablonlu bilgilendirme SMS'i gönderir.
+ *       Karar ve SMS tek işlemdir; ret gerekçesi SMS metnine girmez.
+ *     security: [ { adminApiKey: [] } ]
+ *     parameters:
+ *       - { in: path, name: userId, required: true, schema: { type: string } }
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [decision]
+ *             properties:
+ *               decision: { type: string, enum: [approved, rejected] }
+ *               decidedBy: { type: string, nullable: true }
+ *               decisionNo: { type: string, nullable: true }
+ *               note: { type: string, nullable: true }
+ *     responses:
+ *       200: { description: '{decisionId, decision, decidedAt, smsSent, kisiDurumu, eksikAdimlar}' }
+ *       404: { description: user_not_found }
+ */
+router.post(
+  '/volunteers/:userId/commission',
+  validate({ body: commissionSchema }),
+  asyncHandler(async (req, res) => {
+    res.json(await adminService.setCommissionDecision(req.params.userId, req.body, actorFrom(req)));
+  }),
+);
+
+const kkdDeliverSchema = Joi.object({
+  // Operatör YALNIZCA seri numarası girer; beden profilden, ömür sonu kalem tipinden türer.
+  serials: Joi.object().pattern(Joi.string().valid(...KKD_ITEM_KEYS), Joi.string().max(64).allow('', null)).optional(),
+  itemKeys: Joi.array().items(Joi.string().valid(...KKD_ITEM_KEYS)).min(1).optional(),
+  assignedAt: Joi.date().iso().optional(),
+});
+
+/**
+ * @openapi
+ * /admin/volunteers/{userId}/kkd:
+ *   post:
+ *     tags: [Admin]
+ *     summary: KKD seti teslim et (panel)
+ *     description: >-
+ *       Tek işlemle standart beş kalemi (kask, tulum, bot, eldiven, maske) açar. Zaten
+ *       geçerli zimmeti olan kalem tekrar açılmaz. Ömür sonu tarihi kalem tipinden
+ *       hesaplanır; beden gönüllü profilinden türer, zimmete yazılmaz. Gönüllü onayı gerekmez.
+ *     security: [ { adminApiKey: [] } ]
+ *     parameters:
+ *       - { in: path, name: userId, required: true, schema: { type: string } }
+ *     responses:
+ *       200: { description: '{ok, delivered[], kkdDurumu, items[]}' }
+ *       404: { description: user_not_found }
+ *   get:
+ *     tags: [Admin]
+ *     summary: Gönüllünün KKD seti (panel)
+ *     security: [ { adminApiKey: [] } ]
+ *     parameters:
+ *       - { in: path, name: userId, required: true, schema: { type: string } }
+ *     responses:
+ *       200: { description: 'beş kalemin zimmet/ömür/beden görünümü' }
+ */
+router.post(
+  '/volunteers/:userId/kkd',
+  validate({ body: kkdDeliverSchema }),
+  asyncHandler(async (req, res) => {
+    res.json(await equipmentService.deliverKkdSet(req.params.userId, req.body, actorFrom(req)));
+  }),
+);
+
+router.get(
+  '/volunteers/:userId/kkd',
+  asyncHandler(async (req, res) => {
+    res.json({ items: await readinessService.kkdSet(req.params.userId) });
+  }),
+);
+
+/**
+ * @openapi
+ * /admin/volunteers/{userId}/readiness:
+ *   get:
+ *     tags: [Admin]
+ *     summary: Hazırlık zinciri ve kişi durumu (panel, türetilmiş)
+ *     security: [ { adminApiKey: [] } ]
+ *     parameters:
+ *       - { in: path, name: userId, required: true, schema: { type: string } }
+ *     responses:
+ *       200: { description: '{zincir, kisiDurumu, mudahaleYetkisi, engeller, komisyon}' }
+ */
+router.get(
+  '/volunteers/:userId/readiness',
+  asyncHandler(async (req, res) => {
+    res.json(await readinessService.getReadiness(req.params.userId));
+  }),
+);
+
+/**
+ * @openapi
+ * /admin/equipment/{equipmentId}/return:
+ *   post:
+ *     tags: [Admin]
+ *     summary: Zimmet iadesi (API hazır — panelde ekranı yok)
+ *     description: 'İade akışı panelden geçici olarak kaldırıldı; uç sözleşme gereği hazır tutulur.'
+ *     security: [ { adminApiKey: [] } ]
+ *     parameters:
+ *       - { in: path, name: equipmentId, required: true, schema: { type: string } }
+ *     responses:
+ *       200: { description: '{ok, equipmentId, returnedAt, kkdDurumu}' }
+ *       404: { description: equipment_not_found }
+ *       409: { description: already_returned }
+ */
+router.post(
+  '/equipment/:equipmentId/return',
+  asyncHandler(async (req, res) => {
+    res.json(await equipmentService.returnEquipment(req.params.equipmentId, actorFrom(req)));
+  }),
+);
+
+const attendanceSchema = Joi.object({
+  entries: Joi.array()
+    .items(
+      Joi.object({
+        userId: Joi.string().max(36).required(),
+        attended: Joi.boolean().required(),
+        kkdDelivered: Joi.boolean().optional(),
+      }),
+    )
+    .min(1)
+    .required(),
+});
+
+/**
+ * @openapi
+ * /admin/trainings/saha/{id}/attendance:
+ *   put:
+ *     tags: [Admin]
+ *     summary: Saha eğitimi yoklaması (panel)
+ *     description: >-
+ *       Uygulamalı eğitimin tamamlandığını işaretleyen TEK mekanizma. Yetkinlik bayraklı
+ *       eğitimde "katıldı" işaretlenen gönüllünün uygulamalı adımı kapanır. Aynı satırda
+ *       kkdDelivered işaretlenirse eksik KKD kalemleri o anda aynı zimmet kaydına yazılır.
+ *     security: [ { adminApiKey: [] } ]
+ *     parameters:
+ *       - { in: path, name: id, required: true, schema: { type: string } }
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [entries]
+ *             properties:
+ *               entries:
+ *                 type: array
+ *                 items:
+ *                   type: object
+ *                   required: [userId, attended]
+ *                   properties:
+ *                     userId: { type: string }
+ *                     attended: { type: boolean }
+ *                     kkdDelivered: { type: boolean }
+ *     responses:
+ *       200: { description: '{trainingId, grantsCompetency, saved, items[]}' }
+ *       404: { description: training_not_found }
+ */
+router.put(
+  '/trainings/saha/:id/attendance',
+  validate({ body: attendanceSchema }),
+  asyncHandler(async (req, res) => {
+    res.json(await trainingsService.adminSaveAttendance(req.params.id, req.body, actorFrom(req)));
+  }),
+);
+
+// ── Olay kaydı yaşam döngüsü ve toplanma noktası (§2, §4) ───────────────────
+
+const assemblyPointKeys = {
+  name: Joi.string().max(200).required(),
+  address: Joi.string().max(300).allow('', null).optional(),
+  coordinates: Joi.object({
+    lat: Joi.number().min(-90).max(90).required(),
+    lng: Joi.number().min(-180).max(180).required(),
+  }).required(),
+};
+
+const missionCreateSchema = Joi.object({
+  title: Joi.string().max(200).required(),
+  fullTitle: Joi.string().max(200).optional(),
+  shortLocation: Joi.string().max(120).required(),
+  regionLabel: Joi.string().max(120).optional(),
+  locationLabel: Joi.string().max(200).optional(),
+  description: Joi.string().max(4000).allow('', null).optional(),
+  category: Joi.string().max(64).optional(),
+  iconName: Joi.string().max(32).optional(),
+  coordinates: Joi.object({
+    lat: Joi.number().min(-90).max(90).required(),
+    lng: Joi.number().min(-180).max(180).required(),
+  }).required(),
+  startedAt: Joi.date().iso().optional(),
+  startDate: Joi.date().iso().optional(),
+  // Toplanma noktası ZORUNLU — olaysız/noktasız kayıt oluşmaz (§7).
+  assemblyPoint: Joi.object(assemblyPointKeys).required(),
+  // Yalnızca bildirimin hemen gidip gitmeyeceğini belirler; durumu etkilemez (§2).
+  callVolunteers: Joi.boolean().default(false),
+  linkedReportIds: Joi.array().items(Joi.string().max(36)).optional(),
+});
+// §12: şiddet, tip, tahmini alan, ekip sayıları, hava durumu, ihtiyaç listesi ve
+// kapsama yarıçapı BİLİNÇLİ olarak yoktur — panel bu alanlara yazma ucu sunmuyor.
+
+const assemblyPointUpsertSchema = Joi.object({
+  ...assemblyPointKeys,
+  isOpen: Joi.boolean().optional(),
+});
+
+/**
+ * @openapi
+ * /admin/missions:
+ *   post:
+ *     tags: [Admin]
+ *     summary: Olay kaydı oluştur (panel)
+ *     description: >-
+ *       Olay HER ZAMAN `active` durumunda başlar. Toplanma noktası zorunludur; ikisi tek
+ *       işlemde açılır. `callVolunteers` yalnızca çağrının hemen gidip gitmeyeceğini
+ *       belirler — çağrı YALNIZCA `Hazır` gönüllülere gider, yarıçap admin'de girilmez.
+ *       Bölge filtresi yalnızca görünümü süzer: başka bölgede olay açılabilir.
+ *     security: [ { adminApiKey: [] } ]
+ *     responses:
+ *       200: { description: '{ok, missionId, status: active, called}' }
+ */
+router.post(
+  '/missions',
+  validate({ body: missionCreateSchema }),
+  asyncHandler(async (req, res) => {
+    res.json(await missionsService.adminCreate(req.body, actorFrom(req)));
+  }),
+);
+
+/**
+ * @openapi
+ * /admin/missions/{id}/archive:
+ *   post:
+ *     tags: [Admin]
+ *     summary: Olayı arşivle (panel) — TERMİNAL
+ *     description: >-
+ *       Durum geçişi operatör kararıdır, otomatik değişmez. Arşivlendi terminaldir:
+ *       aynı kayıt tekrar Aktif'e alınamaz, yeniden alevlenirse YENİ olay kaydı açılır.
+ *       Yeni gönüllü çağrısı durur, toplanma noktası kapanır, sahadaki gönüllüler
+ *       `tamamladi` olur ve sahadaki sayı sıfırlanır (check-in kayıtları korunur).
+ *     security: [ { adminApiKey: [] } ]
+ *     parameters:
+ *       - { in: path, name: id, required: true, schema: { type: string } }
+ *     responses:
+ *       200: { description: '{ok, missionId, status: archived, archivedAt}' }
+ *       409: { description: already_archived }
+ */
+router.post(
+  '/missions/:id/archive',
+  asyncHandler(async (req, res) => {
+    res.json(await missionsService.adminArchive(req.params.id, actorFrom(req)));
+  }),
+);
+
+/**
+ * @openapi
+ * /admin/missions/{id}/call:
+ *   post:
+ *     tags: [Admin]
+ *     summary: Gönüllü çağrısı gönder (panel)
+ *     description: >-
+ *       Yalnızca `Hazır` gönüllülere push gider — katılamayacak kişiye çağrı
+ *       gönderilmez. Gönüllüler bölgeye göre süzülmez.
+ *     security: [ { adminApiKey: [] } ]
+ *     parameters:
+ *       - { in: path, name: id, required: true, schema: { type: string } }
+ *     responses:
+ *       200: { description: '{called}' }
+ */
+router.post(
+  '/missions/:id/call',
+  asyncHandler(async (req, res) => {
+    res.json(await missionsService.callReadyVolunteers(req.params.id, actorFrom(req)));
+  }),
+);
+
+/**
+ * @openapi
+ * /admin/missions/{id}/assembly-point:
+ *   get:
+ *     tags: [Admin]
+ *     summary: Olayın toplanma noktası (panel)
+ *     security: [ { adminApiKey: [] } ]
+ *     parameters:
+ *       - { in: path, name: id, required: true, schema: { type: string } }
+ *     responses:
+ *       200: { description: 'Toplanma noktası veya null' }
+ *   put:
+ *     tags: [Admin]
+ *     summary: Toplanma noktasını oluştur/güncelle (panel)
+ *     description: >-
+ *       Olay başına TEK nokta vardır. Konum DEĞİŞİRSE operatör elle bildirim yazmaz;
+ *       sunucu üç kitleye gönderir: yola çıkmamışa sessiz, yoldakine zorunlu push+SMS,
+ *       sahadakine push. Kontenjan alanı yoktur.
+ *     security: [ { adminApiKey: [] } ]
+ *     parameters:
+ *       - { in: path, name: id, required: true, schema: { type: string } }
+ *     responses:
+ *       200: { description: '{ok, assemblyPoint, locationChanged, notified}' }
+ *       409: { description: mission_archived }
+ */
+router.get(
+  '/missions/:id/assembly-point',
+  asyncHandler(async (req, res) => {
+    res.json(await assemblyPointsService.getByMission(req.params.id));
+  }),
+);
+
+router.put(
+  '/missions/:id/assembly-point',
+  validate({ body: assemblyPointUpsertSchema }),
+  asyncHandler(async (req, res) => {
+    res.json(await assemblyPointsService.upsert(req.params.id, req.body, actorFrom(req)));
+  }),
+);
+
+/**
+ * @openapi
+ * /admin/missions/{id}/check-ins:
+ *   get:
+ *     tags: [Admin]
+ *     summary: Yangın sahası giriş kayıtları (panel)
+ *     description: >-
+ *       Sahadaki gönüllü sayısının tek kaynağı; panel, mobil ve toplanma noktası ekranı
+ *       aynı sayıyı gösterir. Olay arşivlendiğinde sayı sıfırlanır, kayıtlar korunur.
+ *     security: [ { adminApiKey: [] } ]
+ *     parameters:
+ *       - { in: path, name: id, required: true, schema: { type: string } }
+ *     responses:
+ *       200: { description: '{mission, onSite, trend, items[]}' }
+ */
+router.get(
+  '/missions/:id/check-ins',
+  asyncHandler(async (req, res) => {
+    res.json(await missionsService.adminCheckIns(req.params.id));
   }),
 );
 

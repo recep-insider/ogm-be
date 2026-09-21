@@ -40,7 +40,7 @@ const { redis } = require('../../../src/config/redis');
 const service = require('../../../src/modules/fireReports/fireReports.service');
 
 const files = [{ path: '/tmp/reports/x.jpg' }];
-const data = { coordinates: { lat: 36.85, lng: 28.27 }, needs: [], description: 'Duman' };
+const data = { coordinates: { lat: 36.85, lng: 28.27 }, description: 'Duman' };
 
 describe('fireReports.service.create — guest (userId=null)', () => {
   beforeEach(() => {

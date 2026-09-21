@@ -271,4 +271,23 @@ router.post(
   asyncHandler(controller.phoneChangeCommit),
 );
 
+/**
+ * @openapi
+ * /users/me/readiness:
+ *   get:
+ *     tags: [Users]
+ *     summary: Hazırlık zinciri — gönüllü nerede takıldı (türetilmiş)
+ *     description: >-
+ *       mobil-gereksinimleri.md §8/§10: Başvuru → Komisyon onayı → Teorik eğitim →
+ *       Uygulamalı (saha) eğitimi → KKD → Hazır. Adımlar birbirinin yerine geçmez, sıra
+ *       atlanamaz. Eksiği olan gönüllü hiçbir göreve katılamaz; engeller burada listelenir.
+ *     security: [ { bearerAuth: [] } ]
+ *     responses:
+ *       200:
+ *         description: '{zincir:{steps[],eksikAdimlar,siradakiAdim,tamam}, kisiDurumu, mudahaleYetkisi, engeller[], komisyon}'
+ */
+router.get('/me/readiness', asyncHandler(async (req, res) => {
+  res.status(200).json(await readinessService.getReadiness(req.user.id));
+}));
+
 module.exports = router;

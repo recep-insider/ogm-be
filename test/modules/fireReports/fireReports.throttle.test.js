@@ -42,7 +42,7 @@ jest.mock('../../../src/shared/push-provider', () => ({ sendPushToUser: jest.fn(
 jest.mock('../../../src/shared/asset-url', () => ({ assetUrl: (rel) => `https://cdn.test/${rel}` }));
 
 const files = [{ path: '/tmp/reports/x.jpg' }];
-const data = { coordinates: { lat: 36.85, lng: 28.27 }, needs: [], description: 'Duman' };
+const data = { coordinates: { lat: 36.85, lng: 28.27 }, description: 'Duman' };
 
 /** Fake timer altında istek/tamamlanma anlarını ölçmek için taze modül grafiği. */
 function load() {

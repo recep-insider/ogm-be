@@ -31,13 +31,22 @@ describe('reverseGeocode', () => {
     const result = await reverseGeocode(41.0082, 28.9784);
 
     expect(axios.get).not.toHaveBeenCalled();
-    expect(result).toEqual({ locationName: PLACEHOLDER, regionLabel: '41.01, 28.98' });
+    expect(result).toEqual({
+      locationName: PLACEHOLDER,
+      regionLabel: '41.01, 28.98',
+      postalCode: null,
+      il: null,
+      ilce: null,
+    });
   });
 
   it('NOMINATIM_URL tanımlıysa gerçek konum adını döner', async () => {
     const { reverseGeocode, axios } = load('https://nominatim.openstreetmap.org');
     axios.get.mockResolvedValue({
-      data: { name: 'Alemdar Caddesi', address: { state: 'İstanbul', county: 'Fatih' } },
+      data: {
+        name: 'Alemdar Caddesi',
+        address: { state: 'İstanbul', county: 'Fatih', postcode: '34110' },
+      },
     });
 
     const result = await reverseGeocode(41.0082, 28.9784);
@@ -46,7 +55,14 @@ describe('reverseGeocode', () => {
       'https://nominatim.openstreetmap.org/reverse',
       expect.objectContaining({ headers: { 'User-Agent': 'ogm-gonullu-api (+https://ogm.test)' } })
     );
-    expect(result).toEqual({ locationName: 'Alemdar Caddesi', regionLabel: 'İstanbul / Fatih' });
+    // backend §5: ihbar başlığı bu üç alandan türüyor — posta kodu ve il/ilçe dönmeli.
+    expect(result).toEqual({
+      locationName: 'Alemdar Caddesi',
+      regionLabel: 'İstanbul / Fatih',
+      postalCode: '34110',
+      il: 'İstanbul',
+      ilce: 'Fatih',
+    });
   });
 
   it('name yoksa adres alanlarından mahalle/ilçe türetir', async () => {
@@ -58,7 +74,13 @@ describe('reverseGeocode', () => {
     const result = await reverseGeocode(36.85, 28.27);
 
     expect(axios.get).toHaveBeenCalledWith('http://nominatim:8080/reverse', expect.any(Object));
-    expect(result).toEqual({ locationName: 'Tepe', regionLabel: 'Muğla / Marmaris' });
+    expect(result).toEqual({
+      locationName: 'Tepe',
+      regionLabel: 'Muğla / Marmaris',
+      postalCode: null,
+      il: 'Muğla',
+      ilce: 'Marmaris',
+    });
   });
 
   // timeoutMs → axios.timeout geçişi: geçersiz değer kuyruğu kilitleyebileceği
@@ -97,7 +119,13 @@ describe('reverseGeocode', () => {
 
     const result = await reverseGeocode(41.0082, 28.9784);
 
-    expect(result).toEqual({ locationName: PLACEHOLDER, regionLabel: '41.01, 28.98' });
+    expect(result).toEqual({
+      locationName: PLACEHOLDER,
+      regionLabel: '41.01, 28.98',
+      postalCode: null,
+      il: null,
+      ilce: null,
+    });
   });
 
   it('ardışık istekleri saniyede 1 ile sınırlar (OSM kullanım politikası)', async () => {

@@ -285,8 +285,11 @@ const definition = {
           title: { type: 'string' },
           shortLocation: { type: 'string', example: 'Muğla / Marmaris' },
           iconName: { type: 'string', enum: ['water', 'helmet', 'tool', 'first-aid'] },
-          status: { type: 'string', enum: ['active', 'staffed'] },
-          userStatus: { type: 'string', enum: ['not_joined', 'accepted', 'on_site'] },
+          status: { type: 'string', enum: ['active', 'archived'] },
+          userStatus: {
+            type: 'string',
+            enum: ['not_joined', 'cagrildi', 'yolda', 'sahada', 'tamamladi', 'katilamiyor'],
+          },
         },
       },
       ActiveMissionDetail: {

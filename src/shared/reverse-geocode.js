@@ -42,7 +42,15 @@ function throttle(fn) {
 }
 
 function fallback(lat, lng) {
-  return { locationName: PLACEHOLDER, regionLabel: `${lat.toFixed(2)}, ${lng.toFixed(2)}` };
+  // Posta kodu ve il/ilçe çözülemezse boş kalır — ihbar başlığı (backend §5) bunları
+  // kullanır, uydurulmuş bir değer başlığı yanlış yerle etiketlemekten kötüdür.
+  return {
+    locationName: PLACEHOLDER,
+    regionLabel: `${lat.toFixed(2)}, ${lng.toFixed(2)}`,
+    postalCode: null,
+    il: null,
+    ilce: null,
+  };
 }
 
 const DEADLINE = Symbol('deadline');
@@ -62,7 +70,7 @@ function withDeadline(promise, ms) {
 }
 
 /**
- * Koordinattan locationName/regionLabel türetir (Nominatim reverse geocode).
+ * Koordinattan locationName/regionLabel + postalCode/il/ilce türetir (Nominatim reverse geocode).
  * Servis tanımsız, yanıt maxWaitMs içinde gelmiyor veya istek başarısızsa
  * placeholder + koordinat metni döner — çağıran maxWaitMs'ten uzun beklemez.
  *
@@ -103,8 +111,18 @@ async function reverseGeocode(lat, lng, { maxWaitMs = Infinity, timeoutMs = DEFA
     const { data } = response;
     const a = data.address || {};
     const locationName = data.name || a.neighbourhood || a.suburb || a.village || a.town || a.city || PLACEHOLDER;
-    const region = [a.state || a.province, a.county || a.town || a.city].filter(Boolean).join(' / ');
-    return { locationName, regionLabel: region || locationName };
+    const il = a.state || a.province || null;
+    const ilce = a.county || a.town || a.city_district || a.city || null;
+    const region = [il, a.county || a.town || a.city].filter(Boolean).join(' / ');
+    // backend §5: ihbar kaydı posta kodu ve il/ilçe taşımalı — panel başlığı adresten
+    // değil `[Posta Kodu] İl, İlçe` biçiminden türüyor, bölge kapsamı da il'den eşleşiyor.
+    return {
+      locationName,
+      regionLabel: region || locationName,
+      postalCode: a.postcode || null,
+      il,
+      ilce,
+    };
   } catch (err) {
     logger.warn('Reverse geocode başarısız', { error: err.message });
     return fallback(lat, lng);

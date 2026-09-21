@@ -6,7 +6,10 @@ const { errors } = require('../../shared/errors');
 const { writeAudit } = require('../../shared/audit');
 const { assetUrl } = require('../../shared/asset-url');
 const { toIso, toDateOnly } = require('../../shared/dates');
+const { v4: uuidv4 } = require('uuid');
 const { hasProtectiveEquipment, PROTECTIVE_TYPE } = require('../equipment/equipment.service');
+const { sendTransactional } = require('../../shared/sms-provider');
+const readinessService = require('../users/readiness.service');
 
 // applications.status enum'u ile aynı (migrations/20260427120200_create_applications.js).
 const APPLICATION_STATUSES = ['pending', 'approved', 'rejected', 'requires_revision'];
@@ -57,6 +60,91 @@ async function setApplicationStatus(userId, { status, note }, actor = {}) {
     userId,
     status,
     reviewedAt: reviewedAt.toISOString(),
+  };
+}
+
+/**
+ * Komisyon kararı (backend-gereksinimleri.md §7.1) — Bölge Müdürlüğü Komisyonunun kararı
+ * ayrı bir kayıt olarak saklanır (red kararı da) ve karar ile SMS TEK işlemdir:
+ * "Onayla ve SMS Gönder" / "Reddet ve SMS Gönder". İçerik sabit şablondur, operatör
+ * serbest metin yazmaz; ret gerekçesi SMS metnine girmez.
+ *
+ * Kanal kategorisi `acil` değildir; §4'ün "SMS yalnızca Acil sınıfına gider" kuralına
+ * bilinçli istisnadır — bu SMS kategori bazlı değil, işlemsel (tek seferlik) bir bildirimdir.
+ *
+ * @param {string} userId
+ * @param {{decision:'approved'|'rejected', decidedBy?:string, decisionNo?:string, note?:string}} body
+ * @param {{userId?:string|null, ip?:string, userAgent?:string}} actor
+ */
+async function setCommissionDecision(userId, body, actor = {}) {
+  if (!['approved', 'rejected'].includes(body.decision)) {
+    throw errors.validation('Geçersiz komisyon kararı', { decision: body.decision });
+  }
+
+  const user = await db('users').where({ id: userId }).whereNull('deleted_at').first();
+  if (!user) throw errors.notFound('Kullanıcı bulunamadı', 'user_not_found');
+
+  const id = uuidv4();
+  const decidedAt = new Date();
+
+  await db.transaction(async (trx) => {
+    await trx('commission_decisions').insert({
+      id,
+      user_id: userId,
+      decision: body.decision,
+      decided_at: decidedAt,
+      decided_by: body.decidedBy || null,
+      decision_no: body.decisionNo || null,
+      note: body.note || null,
+      created_at: decidedAt,
+      updated_at: decidedAt,
+    });
+
+    // applications.status komisyon kararından TÜREYEN bir ayna alandır (mobilin
+    // accessLevel'i hâlâ bunu okuyor); kararın kendisi commission_decisions'tadır.
+    const application = await trx('applications')
+      .where({ user_id: userId })
+      .orderBy('submitted_at', 'desc')
+      .first();
+    if (application) {
+      await trx('applications').where({ id: application.id }).update({
+        status: body.decision,
+        reviewed_at: decidedAt,
+        reviewed_by: actor.userId || null,
+        updated_at: decidedAt,
+      });
+    }
+  });
+
+  const sms = await sendTransactional(
+    user.phone,
+    body.decision === 'approved' ? 'commissionApproved' : 'commissionRejected',
+  );
+  if (sms.sent) {
+    await db('commission_decisions')
+      .where({ id })
+      .update({ sms_sent_at: sms.sentAt, sms_phone: user.phone, updated_at: new Date() });
+  }
+
+  await writeAudit({
+    userId: actor.userId || null,
+    action: 'admin.commission.decision',
+    entity: 'commission_decision',
+    entityId: id,
+    ip: actor.ip,
+    userAgent: actor.userAgent,
+    payload: { targetUserId: userId, decision: body.decision, smsSent: sms.sent },
+  });
+
+  const readiness = await readinessService.getReadiness(userId);
+  return {
+    decisionId: id,
+    userId,
+    decision: body.decision,
+    decidedAt: decidedAt.toISOString(),
+    smsSent: sms.sent,
+    kisiDurumu: readiness.kisiDurumu,
+    eksikAdimlar: readiness.zincir.eksikAdimlar,
   };
 }
 
@@ -134,10 +222,12 @@ async function getVolunteer(userId) {
   const user = await db('users').where({ id: userId }).whereNull('deleted_at').first();
   if (!user) throw errors.notFound('Kullanıcı bulunamadı', 'user_not_found');
 
-  const [application, completed, hasEquipment] = await Promise.all([
+  const [application, completed, hasEquipment, readiness, kkd] = await Promise.all([
     db('applications').where({ user_id: userId }).orderBy('submitted_at', 'desc').first(),
     db('user_trainings').where({ user_id: userId, status: 'completed' }).count({ c: '*' }).first(),
     hasProtectiveEquipment(userId),
+    readinessService.getReadiness(userId),
+    readinessService.kkdSet(userId),
   ]);
 
   return {
@@ -163,7 +253,14 @@ async function getVolunteer(userId) {
       egitim: Number(completed?.c || 0) > 0,
       donanim: hasEquipment,
       createdAt: toIso(user.created_at),
+      // §1: türetilen alanlar — panel bunları elle girmez, sunucu döner.
+      kisiDurumu: readiness.kisiDurumu,
+      kkdDurumu: readiness.zincir.kkdDurumu,
+      mudahaleYetkisi: readiness.mudahaleYetkisi,
     },
+    hazirlikZinciri: readiness.zincir,
+    komisyon: readiness.komisyon,
+    kkd,
     application: application
       ? {
           applicationId: application.id,
@@ -240,10 +337,10 @@ async function dashboardSummary() {
       rejected: fire.rejected || 0,
       today: Number(fireToday?.c || 0),
     },
+    // §2: iki durum — active | archived.
     missions: {
       active: mission.active || 0,
-      staffed: mission.staffed || 0,
-      completed: mission.completed || 0,
+      archived: mission.archived || 0,
     },
     pendingPhotos: Number(pendingPhotos?.c || 0),
     sahaApplications: { pending: Number(sahaPending?.c || 0) },
@@ -348,6 +445,7 @@ async function reportsSeries({ metric, interval, from, to }) {
 
 module.exports = {
   setApplicationStatus,
+  setCommissionDecision,
   listVolunteers,
   getVolunteer,
   mapVolunteerListItem,

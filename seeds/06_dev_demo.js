@@ -99,8 +99,8 @@ exports.seed = async function seed(knex) {
 
   // Geçmiş görev katılımı (history) + aktif görevde accepted.
   await knex('mission_participants').insert([
-    { id: 'mp_demo_hist', user_id: DEMO_USER_ID, mission_id: 'fm_marmaris_2025', status: 'on_site', joined_at: now, on_site_at: now },
-    { id: 'mp_demo_active', user_id: DEMO_USER_ID, mission_id: 'am_marmaris', status: 'accepted', joined_at: now },
+    { id: 'mp_demo_hist', user_id: DEMO_USER_ID, mission_id: 'fm_marmaris_2025', status: 'tamamladi', joined_at: now, on_site_at: now, completed_at: now },
+    { id: 'mp_demo_active', user_id: DEMO_USER_ID, mission_id: 'am_marmaris', status: 'yolda', joined_at: now, responded_at: now },
   ]);
 
   await knex('notification_preferences').insert({
