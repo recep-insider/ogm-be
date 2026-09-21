@@ -19,6 +19,9 @@ const patchMeSchema = Joi.object({
   phone: Joi.string().pattern(/^\+\d{10,15}$/).optional(),
   eposta: Joi.string().email().optional(),
   adres: Joi.string().min(10).max(500).optional(),
+  // mobil §11: il/ilçe dropdown — bölge kapsamı (backend §11) bu alandan eşleşir.
+  il: Joi.string().max(60).allow(null, '').optional(),
+  ilce: Joi.string().max(60).allow(null, '').optional(),
   kanGrubu: Joi.string().valid(...KAN_GRUBU).optional(),
   ogrenim: Joi.string().valid(...OGRENIM).optional(),
   meslek: Joi.string().valid(...MESLEK).optional(),

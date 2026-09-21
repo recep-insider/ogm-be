@@ -20,13 +20,22 @@ const sosService = require('../sos/sos.service');
 const trainingsService = require('../trainings/trainings.service');
 const blogService = require('../blog/blog.service');
 const adminService = require('./admin.service');
+const dispatchService = require('../notifications/dispatch.service');
+const { REGIONS, REGION_KEYS } = require('../../shared/regions');
 const equipmentService = require('../equipment/equipment.service');
 const readinessService = require('../users/readiness.service');
 const { KKD_ITEM_KEYS } = require('../../shared/kkd');
 
 // İşlemi yapan admin'in audit bağlamı (x-api-key'de userId NULL kalır — bilinen kısıt).
 function actorFrom(req) {
-  return { userId: req.user?.id || null, ip: req.ip, userAgent: req.headers['user-agent'] };
+  return {
+    userId: req.user?.id || null,
+    // Panelde operatör adı x-operator-name ile taşınır (x-api-key'de kimlik yok);
+    // SOS geçmişi ve bildirim kaydı bu adı "by" olarak saklar.
+    name: req.headers['x-operator-name'] || null,
+    ip: req.ip,
+    userAgent: req.headers['user-agent'],
+  };
 }
 
 const router = Router();
@@ -250,11 +259,16 @@ router.get(
 router.get(
   '/volunteers/:userId',
   asyncHandler(async (req, res) => {
-    res.json(await adminService.getVolunteer(req.params.userId));
+    res.json(await adminService.getVolunteer(req.params.userId, actorFrom(req)));
   }),
 );
 
+// §11: kapsam bir SORGU PARAMETRESİDİR, türetim kuralının parçası değil.
+// "all" (veya parametresiz) = Tüm Bölgeler — hiçbir kayıt elenmez.
+const regionQueryKey = { region: Joi.string().valid(...REGION_KEYS, 'all').optional() };
+
 const fireReportsQuerySchema = Joi.object({
+  ...regionQueryKey,
   status: Joi.string().valid('reviewing', 'confirmed', 'rejected').optional(),
   ...pageQueryKeys,
 });
@@ -305,6 +319,7 @@ router.get(
 );
 
 const missionsQuerySchema = Joi.object({
+  ...regionQueryKey,
   // §2: iki durum — active | archived (arşivlendi terminaldir, ayrı arşiv ekranı yoktur).
   status: Joi.string().valid('active', 'archived').optional(),
   isActive: Joi.boolean().optional(),
@@ -475,7 +490,7 @@ router.get(
   '/sos-reports',
   validate({ query: sosQuerySchema }),
   asyncHandler(async (req, res) => {
-    res.json(await sosService.adminList(req.query));
+    res.json(await sosService.adminList(req.query, actorFrom(req)));
   }),
 );
 
@@ -616,6 +631,8 @@ const blogBaseKeys = {
   publishedAt: Joi.date().iso(),
   readTimeMin: Joi.number().integer().min(1).max(120),
   themes: Joi.array().items(Joi.string().max(60)).max(2),
+  // mobil §9: kategoriler panelle birebir — Haber · Teknik · Eğitim ("duyuru" kaldırıldı).
+  category: Joi.string().valid('haber', 'teknik', 'egitim'),
   authorName: Joi.string().allow('').max(120),
   authorRole: Joi.string().allow('').max(120),
   content: Joi.array().items(contentBlockSchema).max(100),
@@ -1188,6 +1205,9 @@ const missionCreateSchema = Joi.object({
   title: Joi.string().max(200).required(),
   fullTitle: Joi.string().max(200).optional(),
   shortLocation: Joi.string().max(120).required(),
+  // §11: bölge kapsamı il alanından eşleşir.
+  il: Joi.string().max(60).optional(),
+  ilce: Joi.string().max(60).optional(),
   regionLabel: Joi.string().max(120).optional(),
   locationLabel: Joi.string().max(200).optional(),
   description: Joi.string().max(4000).allow('', null).optional(),
@@ -1342,6 +1362,138 @@ router.get(
   '/missions/:id/check-ins',
   asyncHandler(async (req, res) => {
     res.json(await missionsService.adminCheckIns(req.params.id));
+  }),
+);
+
+// ── Bölge (kapsam) modeli, elle bildirim ve ihbar-olay bağı ─────────────────
+
+/**
+ * @openapi
+ * /admin/regions:
+ *   get:
+ *     tags: [Admin]
+ *     summary: Bölge listesi (kapsam menüsü)
+ *     description: >-
+ *       Faz 1 kırılımı: yedi coğrafi bölge, varsayılan Akdeniz. 81 il tam olarak bir
+ *       bölgeye aittir; eşleşme il alanından yapılır. Kapsam yalnızca OLAY ve İHBAR
+ *       kayıtlarını süzer — gönüllüler bölge kapsamına girmez.
+ *     security: [ { adminApiKey: [] } ]
+ *     responses:
+ *       200: { description: '{items:[{key,label,default,cities[]}]}' }
+ */
+router.get(
+  '/regions',
+  asyncHandler(async (_req, res) => {
+    res.json({ items: REGIONS });
+  }),
+);
+
+const notificationSendSchema = Joi.object({
+  category: Joi.string().valid('acil', 'gorev', 'egitim', 'bilgi').required(),
+  title: Joi.string().max(200).required(),
+  body: Joi.string().max(500).required(),
+  // Olay bazlı gönderim: segment seçimi Hazır/Çağrıldı/Yolda/Sahada.
+  missionId: Joi.string().max(36).optional(),
+  segments: Joi.array()
+    .items(Joi.string().valid('hazir', 'cagrildi', 'yolda', 'sahada'))
+    .min(1)
+    .optional(),
+  // Genel gönderim: Hazır / Eğitim Bekleyenler / Tüm Gönüllüler.
+  audience: Joi.string().valid('hazir', 'egitim_bekleyen', 'tumu').optional(),
+})
+  .oxor('missionId', 'audience')
+  // Yarıçap/mesafe alanı bilinçli olarak YOK: admin mesafe girmez (§4).
+  .without('segments', ['audience']);
+
+/**
+ * @openapi
+ * /admin/notifications:
+ *   post:
+ *     tags: [Admin]
+ *     summary: Bildirim gönder (panel)
+ *     description: >-
+ *       Kanal KATEGORİDEN TÜRER, operatör seçmez: SMS yalnızca `acil` sınıfına gider,
+ *       diğer her şey push. `acil` kapatılamaz ve gönüllünün bildirim tercihini bypass
+ *       eder. Yarıçap admin'de girilmez. Olay bazlı gönderimde segment seçimi Hazır,
+ *       Çağrıldı, Yolda, Sahada; genel gönderimde Hazır, Eğitim Bekleyenler, Tüm
+ *       Gönüllüler. Gönderim denetim izine yazılır.
+ *     security: [ { adminApiKey: [] } ]
+ *     responses:
+ *       200: { description: '{ok, notificationId, channel, recipients, pushCount, smsCount}' }
+ *   get:
+ *     tags: [Admin]
+ *     summary: Bildirim gönderim geçmişi (panel)
+ *     security: [ { adminApiKey: [] } ]
+ *     responses:
+ *       200: { description: 'items[] + total/page/pageSize' }
+ */
+router.post(
+  '/notifications',
+  validate({ body: notificationSendSchema }),
+  asyncHandler(async (req, res) => {
+    res.json(await dispatchService.send(req.body, actorFrom(req)));
+  }),
+);
+
+router.get(
+  '/notifications',
+  validate({ query: Joi.object({ ...pageQueryKeys }) }),
+  asyncHandler(async (req, res) => {
+    res.json(await dispatchService.history(req.query));
+  }),
+);
+
+const linkReportsSchema = Joi.object({
+  reportIds: Joi.array().items(Joi.string().max(36)).min(1).required(),
+});
+
+/**
+ * @openapi
+ * /admin/missions/{id}/reports:
+ *   post:
+ *     tags: [Admin]
+ *     summary: İhbarı olaya bağla ("Olaya Ekle")
+ *     description: >-
+ *       Birden fazla ihbar TEK olay kaydına bağlanabilir. Bağın tek sahibi ihbar
+ *       kaydıdır; bağlanan ihbar "Doğrulandı" olur ve medyası olayın galerisini besler.
+ *     security: [ { adminApiKey: [] } ]
+ *     parameters:
+ *       - { in: path, name: id, required: true, schema: { type: string } }
+ *     responses:
+ *       200: { description: '{ok, missionId, linked[]}' }
+ *       404: { description: 'mission_not_found | not_found' }
+ */
+router.post(
+  '/missions/:id/reports',
+  validate({ body: linkReportsSchema }),
+  asyncHandler(async (req, res) => {
+    res.json(
+      await fireReportsService.linkToMission(req.params.id, req.body.reportIds, actorFrom(req)),
+    );
+  }),
+);
+
+/**
+ * @openapi
+ * /admin/missions/{id}/reports/{reportId}:
+ *   delete:
+ *     tags: [Admin]
+ *     summary: İhbarın olay bağını kaldır
+ *     description: 'Bağ kaldırılan ihbar yeniden "İnceleniyor" durumuna döner.'
+ *     security: [ { adminApiKey: [] } ]
+ *     parameters:
+ *       - { in: path, name: id, required: true, schema: { type: string } }
+ *       - { in: path, name: reportId, required: true, schema: { type: string } }
+ *     responses:
+ *       200: { description: '{ok, missionId, unlinked}' }
+ *       409: { description: not_linked }
+ */
+router.delete(
+  '/missions/:id/reports/:reportId',
+  asyncHandler(async (req, res) => {
+    res.json(
+      await fireReportsService.unlinkFromMission(req.params.id, req.params.reportId, actorFrom(req)),
+    );
   }),
 );
 

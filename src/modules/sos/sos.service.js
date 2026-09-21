@@ -177,7 +177,7 @@ async function getActiveForUser(userId) {
  * silinmişse satırdaki snapshot'a düşülür, böylece geri arama bilgisi kaybolmaz.
  * @param {{status?:string, page?:number, pageSize?:number}} params
  */
-async function adminList({ status, page = 1, pageSize = 20 } = {}) {
+async function adminList({ status, page = 1, pageSize = 20 } = {}, actor = {}) {
   const base = db('sos_reports as sr');
   if (status) base.where('sr.status', status);
 
@@ -202,6 +202,20 @@ async function adminList({ status, page = 1, pageSize = 20 } = {}) {
     .offset((page - 1) * pageSize);
 
   const historyBySos = await historyFor(rows.map((r) => r.id));
+
+  // §9: çağrı kartı kan grubu, TC ve acil durum kişisini doğrudan gösterir —
+  // görüntülemenin kendisi loglanır (üçüncü kişinin verisi).
+  if (rows.length) {
+    await writeAudit({
+      userId: actor.userId || null,
+      action: 'sos.pii.view',
+      entity: 'sos_report',
+      entityId: rows[0].id,
+      ip: actor.ip,
+      userAgent: actor.userAgent,
+      payload: { count: rows.length, fields: ['tcKimlik', 'kanGrubu', 'emergencyContact'] },
+    });
+  }
 
   return {
     items: rows.map((r) => mapAdminSos(r, historyBySos.get(r.id) || [])),

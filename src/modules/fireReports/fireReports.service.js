@@ -12,6 +12,7 @@ const { sendPushToUser } = require('../../shared/push-provider');
 const { assetUrl } = require('../../shared/asset-url');
 const { reverseGeocode } = require('../../shared/reverse-geocode');
 const { ihbarBasliklari, dayKey } = require('../../shared/fire-report-title');
+const { regionForCity, regionLabel, applyRegionFilter } = require('../../shared/regions');
 
 function safeJson(value, fallback) {
   if (value == null) return fallback;
@@ -41,6 +42,9 @@ function mapReport(row, title) {
     ilce: row.ilce || null,
     locationName: row.location_name || '',
     regionLabel: row.region_label || '',
+    // §11: kapsam il alanından türer — panel "Tüm Bölgeler" görünümünde bu anahtarla gruplar.
+    region: regionForCity(row.il),
+    regionName: regionLabel(regionForCity(row.il)),
     status: row.status,
     statusLabel: STATUS_LABEL[row.status] || row.status,
     submittedAt: toIso(row.created_at),
@@ -188,7 +192,16 @@ function mapAdminReport(row, { includeIp = false, title } = {}) {
     ...mapReport(row, title),
     description: row.description || '',
     anonymous: !!row.anonymous,
+    // §5: bağlı olduğu olay kaydı (bağın tek sahibi ihbardır).
+    missionId: row.mission_id || null,
     photoUrls: safeJson(row.photo_paths, []).map(assetUrl),
+    // §5 "1. fazda AI yok": güven çipi yerine mevcut veriden türeyen sinyaller.
+    signals: {
+      // Aynı il/ilçeden aynı gün gelen DİĞER ihbar sayısı — kümelenmeyi gösterir.
+      sameAreaCount: row.same_area_count != null ? Number(row.same_area_count) : undefined,
+      reporterType: row.anonymous ? 'anonymous' : 'volunteer',
+      photoCount: safeJson(row.photo_paths, []).length,
+    },
     reporter:
       !row.anonymous && row.user_id
         ? {
@@ -205,16 +218,26 @@ function mapAdminReport(row, { includeIp = false, title } = {}) {
 
 const REPORTER_COLUMNS = ['u.ad as reporter_ad', 'u.soyad as reporter_soyad', 'u.phone as reporter_phone'];
 
+// Aynı il/ilçeden AYNI GÜN gelen diğer ihbarların sayısı (kendisi hariç).
+const SAME_AREA_COUNT = db.raw(
+  `(select count(*) from fire_reports x
+      where x.id <> fr.id
+        and x.il <=> fr.il and x.ilce <=> fr.ilce
+        and date(x.created_at) = date(fr.created_at)) as same_area_count`,
+);
+
 /** Admin (panel) — ihbar listesi. @param {{status?:string, page?:number, pageSize?:number}} params */
-async function adminList({ status, page = 1, pageSize = 20 } = {}) {
+async function adminList({ status, region, page = 1, pageSize = 20 } = {}) {
   const base = db('fire_reports as fr');
   if (status) base.where('fr.status', status);
+  // Kapsam yalnızca GÖRÜNÜMÜ süzer; "Tüm Bölgeler"de hiçbir kayıt elenmez (§11).
+  applyRegionFilter(base, region, 'fr.il');
 
   const [{ total }] = await base.clone().count({ total: 'fr.id' });
   const rows = await base
     .clone()
     .leftJoin('users as u', 'u.id', 'fr.user_id')
-    .select('fr.*', ...REPORTER_COLUMNS)
+    .select('fr.*', ...REPORTER_COLUMNS, SAME_AREA_COUNT)
     .orderBy([
       { column: 'fr.created_at', order: 'desc' },
       { column: 'fr.id', order: 'desc' }, // unique tie-breaker
@@ -235,12 +258,86 @@ async function adminList({ status, page = 1, pageSize = 20 } = {}) {
 async function adminGetById(id) {
   const row = await db('fire_reports as fr')
     .leftJoin('users as u', 'u.id', 'fr.user_id')
-    .select('fr.*', ...REPORTER_COLUMNS)
+    .select('fr.*', ...REPORTER_COLUMNS, SAME_AREA_COUNT)
     .where('fr.id', id)
     .first();
   if (!row) throw errors.notFound('Bildirim bulunamadı', 'not_found');
   const { title } = await titleFor(row);
   return mapAdminReport(row, { includeIp: true, title });
+}
+
+/**
+ * İhbarı bir olay kaydına bağlar / bağını kaldırır (§5).
+ * Bağın TEK sahibi ihbar kaydıdır (`fire_reports.mission_id`); olay tarafında ayna alan
+ * tutulmaz. Bağlanan ihbar "Doğrulandı" (confirmed), bağı kaldırılan ihbar yeniden
+ * "İnceleniyor" (reviewing) olur — mobilin gördüğü etiket bu geçişi izler.
+ *
+ * @param {string} missionId
+ * @param {string[]} reportIds
+ */
+async function linkToMission(missionId, reportIds, actor = {}) {
+  const mission = await db('missions').where({ id: missionId }).first('id', 'status');
+  if (!mission) throw errors.notFound('Görev bulunamadı', 'mission_not_found');
+
+  const rows = await db('fire_reports').whereIn('id', reportIds);
+  const missing = reportIds.filter((id) => !rows.some((r) => r.id === id));
+  if (missing.length) throw errors.notFound('İhbar bulunamadı', 'not_found');
+
+  const now = new Date();
+  await db('fire_reports')
+    .whereIn('id', reportIds)
+    .update({ mission_id: missionId, status: 'confirmed', updated_at: now });
+
+  await writeAudit({
+    userId: actor.userId || null,
+    action: 'fire_reports.link',
+    entity: 'mission',
+    entityId: missionId,
+    ip: actor.ip,
+    userAgent: actor.userAgent,
+    payload: { reportIds },
+  });
+
+  return { ok: true, missionId, linked: reportIds };
+}
+
+async function unlinkFromMission(missionId, reportId, actor = {}) {
+  const row = await db('fire_reports').where({ id: reportId }).first();
+  if (!row) throw errors.notFound('İhbar bulunamadı', 'not_found');
+  if (row.mission_id !== missionId) {
+    throw errors.conflict('İhbar bu olaya bağlı değil', undefined, 'not_linked');
+  }
+
+  const now = new Date();
+  await db('fire_reports')
+    .where({ id: reportId })
+    .update({ mission_id: null, status: 'reviewing', updated_at: now });
+
+  await writeAudit({
+    userId: actor.userId || null,
+    action: 'fire_reports.unlink',
+    entity: 'mission',
+    entityId: missionId,
+    ip: actor.ip,
+    userAgent: actor.userAgent,
+    payload: { reportId },
+  });
+
+  return { ok: true, missionId, unlinked: reportId };
+}
+
+/**
+ * Olaya bağlı ihbarların medyası (§5) — olayın galerisini besler.
+ * Panelin operatör onayından geçirdiği galeri ile aynı havuza girer.
+ */
+async function mediaForMission(missionId) {
+  const rows = await db('fire_reports')
+    .where({ mission_id: missionId })
+    .orderBy('created_at', 'asc')
+    .select('id', 'photo_paths');
+  return rows.flatMap((r) =>
+    safeJson(r.photo_paths, []).map((p) => ({ reportId: r.id, url: assetUrl(p) })),
+  );
 }
 
 module.exports = {
@@ -254,5 +351,8 @@ module.exports = {
   withTitles,
   titlesFor,
   titleFor,
+  linkToMission,
+  unlinkFromMission,
+  mediaForMission,
   STATUS_LABEL,
 };

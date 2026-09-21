@@ -165,7 +165,9 @@ function mapVolunteerListItem(row) {
 }
 
 /**
- * Gönüllü listesi (admin paneli). Misafir ve silinmiş kullanıcılar hariç;
+ * Gönüllü listesi (admin paneli). BÖLGEYE GÖRE SÜZÜLMEZ (§11): "şu bölgenin gönüllüsü"
+ * diye bir kavram yoktur, liste ve sayaçlar her zaman tüm gönüllüleri kapsar.
+ * Misafir ve silinmiş kullanıcılar hariç;
  * her kullanıcı EN GÜNCEL başvurusuyla eşlenir. PII gözetimi: tc_kimlik
  * listede DÖNMEZ (yalnızca getVolunteer detayında).
  *
@@ -218,9 +220,22 @@ async function listVolunteers({ status, q, page = 1, pageSize = 20 } = {}) {
 }
 
 /** Gönüllü detayı (admin paneli) — PII burada döner: tcKimlik, adres, acil kişi, belgeler. */
-async function getVolunteer(userId) {
+async function getVolunteer(userId, actor = {}) {
   const user = await db('users').where({ id: userId }).whereNull('deleted_at').first();
   if (!user) throw errors.notFound('Kullanıcı bulunamadı', 'user_not_found');
+
+  // §9: acil durum kişisi ve TC gibi PII bu yanıtta doğrudan döner ("Göster" kapısı
+  // kaldırıldı, tek tıkla açılan perde erişimi kısıtlamıyordu). Log tetikleyicisi artık
+  // ayrı bir "göster" isteği değil, KAYDIN GÖRÜNTÜLENMESİDİR.
+  await writeAudit({
+    userId: actor.userId || null,
+    action: 'admin.volunteer.pii.view',
+    entity: 'user',
+    entityId: userId,
+    ip: actor.ip,
+    userAgent: actor.userAgent,
+    payload: { fields: ['tcKimlik', 'adres', 'phone', 'emergencyContact'] },
+  });
 
   const [application, completed, hasEquipment, readiness, kkd] = await Promise.all([
     db('applications').where({ user_id: userId }).orderBy('submitted_at', 'desc').first(),

@@ -27,8 +27,9 @@ router.use(optionalAuth);
  *               type: array
  *               items: { $ref: '#/components/schemas/BlogPost' }
  */
-router.get('/posts', asyncHandler(async (_req, res) => {
-  res.status(200).json(await service.list());
+// mobil §9: kategori filtresi — Haber · Teknik · Eğitim + "Tümü".
+router.get('/posts', asyncHandler(async (req, res) => {
+  res.status(200).json(await service.list(req.query));
 }));
 
 /**

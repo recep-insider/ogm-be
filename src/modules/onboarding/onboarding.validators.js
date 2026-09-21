@@ -42,7 +42,12 @@ const kimlik = Joi.object({
 const iletisim = Joi.object({
   telefon: Joi.string().pattern(phonePattern).optional().allow('', null),
   eposta: Joi.string().email().required(),
-  adres: Joi.string().min(10).max(500).required(),
+  // mobil §11: "İkamet Adresi" serbest metin alanı formdan KALKIYOR, yerini İl/İlçe
+  // alıyor — panelin bölge kapsamı il alanına dayanıyor ve serbest metin bu eşleşmeyi
+  // imkânsız kılıyordu. Alan geçiş süresince opsiyonel tutuluyor (eski mobil gönderiyor).
+  adres: Joi.string().min(10).max(500).optional(),
+  il: Joi.string().min(1).max(60).optional(),
+  ilce: Joi.string().min(1).max(60).optional(),
 });
 
 const KAN_GRUBU = ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', '0+', '0-'];

@@ -12,6 +12,8 @@ const { writeAudit } = require('../../shared/audit');
 const { sendPushToUser } = require('../../shared/push-provider');
 const readinessService = require('../users/readiness.service');
 const assemblyPoints = require('./assemblyPoints.service');
+const { regionForCity, regionLabel, applyRegionFilter } = require('../../shared/regions');
+const { coversTarget } = require('../../shared/geo-distance');
 
 function safeJson(value, fallback) {
   if (value == null) return fallback;
@@ -85,13 +87,14 @@ function mapActiveSummary(m, userStatus) {
   };
 }
 
-function mapActiveDetail(m, userStatus, announcements, { onSiteCount, trend, assemblyPoint, userId }) {
+function mapActiveDetail(m, userStatus, announcements, { onSiteCount, trend, assemblyPoint, userId, linkedMedia = [] }) {
   return {
     ...mapActiveSummary(m, userStatus),
     regionLabel: m.region_label || '',
     fullTitle: m.full_title || m.title,
     description: m.description || '',
-    gallery: safeJson(m.gallery, []).map(assetUrl),
+    // §5: bağlı ihbarların fotoğraf/videoları olayın medya havuzunu besler.
+    gallery: [...safeJson(m.gallery, []).map(assetUrl), ...linkedMedia.map((x) => x.url)],
     // §12 / mobil §6: tahmini alan, ihtiyaç listesi, kapsama yarıçapı, şiddet, hava
     // durumu ve ekip sayıları KALDIRILDI — merkez operatörünün doğrulayamayacağı saha
     // verisi. Sahadaki gönüllü sayısının tek kaynağı check-in'dir.
@@ -156,17 +159,19 @@ function qrPayloadFor(userId) {
 async function getActive(userId, id) {
   const m = await db('missions').where({ id, is_active: true }).first();
   if (!m || m.status === 'archived') throw errors.notFound('Görev bulunamadı', 'mission_not_found');
-  const [announcements, onSiteCount, trend, assemblyPoint] = await Promise.all([
+  const [announcements, onSiteCount, trend, assemblyPoint, linkedMedia] = await Promise.all([
     db('mission_announcements').where({ mission_id: id }).orderBy('published_at', 'asc'),
     sahadakiSayisi(id, m),
     checkInTrend(id),
     assemblyPointFor(id),
+    require('../fireReports/fireReports.service').mediaForMission(id),
   ]);
   return mapActiveDetail(m, await statusFor(userId, id), announcements, {
     onSiteCount,
     trend,
     assemblyPoint,
     userId,
+    linkedMedia,
   });
 }
 
@@ -457,6 +462,11 @@ function mapAdminMission(m) {
     fullTitle: m.full_title || m.title,
     shortLocation: m.short_location,
     regionLabel: m.region_label || '',
+    il: m.il || null,
+    ilce: m.ilce || null,
+    // §11: bölge il alanından türer; panel "Tüm Bölgeler" görünümünde bununla gruplar.
+    region: regionForCity(m.il),
+    regionName: regionLabel(regionForCity(m.il)),
     locationLabel: m.location_label || m.short_location,
     description: m.description || '',
     iconName: m.icon_name,
@@ -477,10 +487,12 @@ function mapAdminMission(m) {
 }
 
 /** Admin (panel) — görev listesi. @param {{status?:string, isActive?:boolean, page?:number, pageSize?:number}} params */
-async function adminList({ status, isActive, page = 1, pageSize = 20 } = {}) {
+async function adminList({ status, region, isActive, page = 1, pageSize = 20 } = {}) {
   const base = db('missions as m');
   if (status) base.where('m.status', status);
   if (isActive !== undefined) base.where('m.is_active', isActive);
+  // Kapsam yalnızca görünümü süzer (§11); "Tüm Bölgeler"de hiçbir kayıt elenmez.
+  applyRegionFilter(base, region, 'm.il');
 
   const [{ total }] = await base.clone().count({ total: 'm.id' });
   const rows = await base
@@ -553,6 +565,8 @@ async function adminCreate(body, actor = {}) {
       location_label: body.locationLabel || null,
       description: body.description || null,
       icon_name: body.iconName || 'helmet',
+      il: body.il || null,
+      ilce: body.ilce || null,
       status: 'active',
       lat: body.coordinates?.lat ?? null,
       lng: body.coordinates?.lng ?? null,
@@ -575,11 +589,12 @@ async function adminCreate(body, actor = {}) {
       updated_at: now,
     });
 
-    // İhbardan olay oluşturulduysa bağlanan ihbarlar "Doğrulandı" olur (§5, mobil §7).
+    // İhbardan olay oluşturulduysa bağ kalıcıdır ve ihbar "Doğrulandı" olur
+    // (§5, mobil §7); bağın tek sahibi fire_reports.mission_id'dir.
     if (body.linkedReportIds?.length) {
       await trx('fire_reports')
         .whereIn('id', body.linkedReportIds)
-        .update({ status: 'confirmed', updated_at: now });
+        .update({ mission_id: id, status: 'confirmed', updated_at: now });
     }
   });
 
@@ -601,33 +616,60 @@ async function adminCreate(body, actor = {}) {
 
 /**
  * Otomatik gönüllü çağrısı (§4) — olay Aktif olduğunda YALNIZCA `Hazır` gönüllülere
- * push gider; katılamayacak kişiye çağrı gönderilmez. Yarıçap admin'de girilmez,
- * gönüllünün kendi mesafe tercihi belirleyicidir.
+ * push gider; katılamayacak kişiye çağrı gönderilmez. Yarıçap admin'de GİRİLMEZ:
+ * gönüllünün kendi mesafe tercihi (baz konumundan ölçülür) tek belirleyicidir.
  * Gönüllüler bölgeye göre SÜZÜLMEZ (§11): "şu bölgenin gönüllüsü" diye bir kavram yok.
  */
 async function callReadyVolunteers(missionId, actor = {}) {
   const mission = await db('missions').where({ id: missionId }).first();
   if (!mission) throw errors.notFound('Görev bulunamadı', 'mission_not_found');
 
-  const candidates = await db('users')
-    .where({ is_guest: false, is_active: true })
-    .whereNull('deleted_at')
-    .pluck('id');
+  const target =
+    mission.lat != null && mission.lng != null
+      ? { lat: Number(mission.lat), lng: Number(mission.lng) }
+      : null;
+
+  // Gönüllüler bölgeye göre SÜZÜLMEZ (§11) — havuz her zaman tüm gönüllülerdir.
+  const candidates = await db('users as u')
+    .leftJoin('notification_preferences as np', 'np.user_id', 'u.id')
+    .where({ 'u.is_guest': false, 'u.is_active': true })
+    .whereNull('u.deleted_at')
+    .select('u.id', 'np.distance_km', 'np.base_lat', 'np.base_lng');
 
   const now = new Date();
   let called = 0;
-  for (const userId of candidates) {
+  let outOfRange = 0;
+  let notReady = 0;
+  let withoutBaseLocation = 0;
+
+  for (const candidate of candidates) {
     // eslint-disable-next-line no-await-in-loop
-    const { kisiDurumu } = await readinessService.getReadiness(userId);
-    if (kisiDurumu !== 'hazir') continue;
+    const { kisiDurumu } = await readinessService.getReadiness(candidate.id);
+    if (kisiDurumu !== 'hazir') {
+      notReady += 1;
+      continue;
+    }
+
+    const base =
+      candidate.base_lat != null && candidate.base_lng != null
+        ? { lat: Number(candidate.base_lat), lng: Number(candidate.base_lng) }
+        : null;
+    const reach = coversTarget(base, candidate.distance_km ?? null, target);
+    if (!reach.covered) {
+      outOfRange += 1;
+      continue;
+    }
+    if (!reach.measurable) withoutBaseLocation += 1;
 
     // eslint-disable-next-line no-await-in-loop
-    const existing = await db('mission_participants').where({ user_id: userId, mission_id: missionId }).first();
+    const existing = await db('mission_participants')
+      .where({ user_id: candidate.id, mission_id: missionId })
+      .first();
     if (!existing) {
       // eslint-disable-next-line no-await-in-loop
       await db('mission_participants').insert({
         id: uuidv4(),
-        user_id: userId,
+        user_id: candidate.id,
         mission_id: missionId,
         status: 'cagrildi',
         called_at: now,
@@ -636,7 +678,7 @@ async function callReadyVolunteers(missionId, actor = {}) {
     }
 
     // eslint-disable-next-line no-await-in-loop
-    await sendPushToUser(userId, {
+    await sendPushToUser(candidate.id, {
       topic: 'taskCalls',
       title: mission.title,
       body: 'Yeni bir yangın olayı için gönüllü çağrısı yapıldı.',
@@ -650,10 +692,12 @@ async function callReadyVolunteers(missionId, actor = {}) {
     action: 'missions.call',
     entity: 'mission',
     entityId: missionId,
-    payload: { called },
+    payload: { called, outOfRange, notReady, withoutBaseLocation },
   });
 
-  return { called };
+  // withoutBaseLocation: mesafesi ölçülemediği için kapsayıcı davranışla çağrılanlar —
+  // eksik veri sayı olarak görünür kalsın diye raporlanır.
+  return { called, outOfRange, notReady, withoutBaseLocation };
 }
 
 /**

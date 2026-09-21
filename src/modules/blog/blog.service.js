@@ -32,6 +32,8 @@ function mapPost(row) {
     cover: assetUrl(row.cover_path),
     publishedAt: toDateOnly(row.published_at),
     readTimeMin: row.read_time_min,
+    // mobil §9: kategoriler panelle birebir (Haber · Teknik · Eğitim) + "Tümü" filtresi.
+    category: row.category,
     themes: safeJson(row.themes, []),
     author: {
       name: row.author_name || '',
@@ -42,8 +44,10 @@ function mapPost(row) {
   };
 }
 
-async function list() {
-  const rows = await db('blog_posts').where({ is_active: true }).orderBy('published_at', 'desc');
+async function list({ category } = {}) {
+  const query = db('blog_posts').where({ is_active: true });
+  if (category && category !== 'tumu') query.where({ category });
+  const rows = await query.orderBy('published_at', 'desc');
   return rows.map(mapPost);
 }
 
@@ -95,6 +99,7 @@ function toRow(body) {
   if (body.publishedAt !== undefined) row.published_at = body.publishedAt;
   if (body.readTimeMin !== undefined) row.read_time_min = body.readTimeMin;
   if (body.themes !== undefined) row.themes = JSON.stringify(body.themes || []);
+  if (body.category !== undefined) row.category = body.category;
   if (body.authorName !== undefined) row.author_name = body.authorName || null;
   if (body.authorRole !== undefined) row.author_role = body.authorRole || null;
   if (body.content !== undefined) row.content = JSON.stringify(body.content || []);

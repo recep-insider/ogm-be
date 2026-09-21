@@ -3068,6 +3068,132 @@
         }
       }
     },
+    "/admin/regions": {
+      "get": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "Bölge listesi (kapsam menüsü)",
+        "description": "Faz 1 kırılımı: yedi coğrafi bölge, varsayılan Akdeniz. 81 il tam olarak bir bölgeye aittir; eşleşme il alanından yapılır. Kapsam yalnızca OLAY ve İHBAR kayıtlarını süzer — gönüllüler bölge kapsamına girmez.",
+        "security": [
+          {
+            "adminApiKey": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "{items:[{key,label,default,cities[]}]}"
+          }
+        }
+      }
+    },
+    "/admin/notifications": {
+      "post": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "Bildirim gönder (panel)",
+        "description": "Kanal KATEGORİDEN TÜRER, operatör seçmez: SMS yalnızca `acil` sınıfına gider, diğer her şey push. `acil` kapatılamaz ve gönüllünün bildirim tercihini bypass eder. Yarıçap admin'de girilmez. Olay bazlı gönderimde segment seçimi Hazır, Çağrıldı, Yolda, Sahada; genel gönderimde Hazır, Eğitim Bekleyenler, Tüm Gönüllüler. Gönderim denetim izine yazılır.",
+        "security": [
+          {
+            "adminApiKey": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "{ok, notificationId, channel, recipients, pushCount, smsCount}"
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "Bildirim gönderim geçmişi (panel)",
+        "security": [
+          {
+            "adminApiKey": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "items[] + total/page/pageSize"
+          }
+        }
+      }
+    },
+    "/admin/missions/{id}/reports": {
+      "post": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "İhbarı olaya bağla (\"Olaya Ekle\")",
+        "description": "Birden fazla ihbar TEK olay kaydına bağlanabilir. Bağın tek sahibi ihbar kaydıdır; bağlanan ihbar \"Doğrulandı\" olur ve medyası olayın galerisini besler.",
+        "security": [
+          {
+            "adminApiKey": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "{ok, missionId, linked[]}"
+          },
+          "404": {
+            "description": "mission_not_found | not_found"
+          }
+        }
+      }
+    },
+    "/admin/missions/{id}/reports/{reportId}": {
+      "delete": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "İhbarın olay bağını kaldır",
+        "description": "Bağ kaldırılan ihbar yeniden \"İnceleniyor\" durumuna döner.",
+        "security": [
+          {
+            "adminApiKey": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "reportId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "{ok, missionId, unlinked}"
+          },
+          "409": {
+            "description": "not_linked"
+          }
+        }
+      }
+    },
     "/auth/edevlet/initiate": {
       "post": {
         "tags": [

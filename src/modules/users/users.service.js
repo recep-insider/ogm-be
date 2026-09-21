@@ -11,6 +11,7 @@ const { assetUrl } = require('../../shared/asset-url');
 const { toDateOnly } = require('../../shared/dates');
 const { hasProtectiveEquipment } = require('../equipment/equipment.service');
 const readinessService = require('./readiness.service');
+const { regionForCity } = require('../../shared/regions');
 
 function safeJson(value, fallback) {
   if (value == null) return fallback;
@@ -69,6 +70,11 @@ async function getMe(userId) {
     phone: user.phone,
     eposta: user.eposta,
     adres: user.adres,
+    il: user.il || null,
+    ilce: user.ilce || null,
+    // §11: gönüllünün bölgesi bir YETKİ/KAPSAM alanı değildir — yalnızca il'den türeyen
+    // bilgi (gönüllüler hiçbir zaman bölgeye göre süzülmez).
+    region: regionForCity(user.il),
     kanGrubu: user.kan_grubu,
     ogrenim: user.ogrenim,
     meslek: user.meslek,
@@ -101,6 +107,8 @@ const PATCH_KEYS = {
   phone: 'phone',
   eposta: 'eposta',
   adres: 'adres',
+  il: 'il',
+  ilce: 'ilce',
   kanGrubu: 'kan_grubu',
   ogrenim: 'ogrenim',
   meslek: 'meslek',
