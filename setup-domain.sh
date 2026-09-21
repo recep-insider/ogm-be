@@ -10,7 +10,7 @@
 #
 # Önkoşullar:
 #   - Natro panelden recepbiyikli.com ve www.recepbiyikli.com için
-#     A kaydı = 94.73.180.124 zaten yapılmış olmalı (propagate olmuş).
+#     A kaydı = 185.22.187.88 zaten yapılmış olmalı (propagate olmuş).
 #   - deploy.sh ile sunucu kurulu ve çalışıyor olmalı.
 #
 # Script yaptıkları:
@@ -28,7 +28,7 @@ set -euo pipefail
 # ─── Argümanlar ──────────────────────────────────────────────
 DOMAIN="${1:-}"
 EMAIL="${2:-}"
-TARGET="${TARGET:-root@94.73.180.124}"
+TARGET="${TARGET:-root@185.22.187.88}"
 DEPLOY_DIR=/opt/ogm-gonullu
 LOCAL_REPO="$(cd "$(dirname "$0")" && pwd)"
 

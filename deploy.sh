@@ -3,7 +3,7 @@
 # OGM Gönüllü Yönetim Sistemi — Deploy Script
 #
 # Kullanım:
-#   ./deploy.sh                          # default: root@94.73.180.124
+#   ./deploy.sh                          # default: root@185.22.187.88
 #   ./deploy.sh root@host                # özel host
 #   ./deploy.sh root@host:2222           # özel port
 #   ./deploy.sh --fresh [root@host]      # SIFIRDAN kurulum (DB volume'ları SİLİNİR!)
@@ -54,7 +54,7 @@ for arg in "$@"; do
       ;;
   esac
 done
-TARGET="${TARGET:-root@94.73.180.124}"
+TARGET="${TARGET:-root@185.22.187.88}"
 DEPLOY_DIR=/opt/ogm-gonullu
 # Reverse geocode varsayılanı — hem fresh .env şablonu hem update modundaki
 # ensure_env_key buradan okur (self-hosted'a geçilince tek yer değişsin).
@@ -364,6 +364,7 @@ deploy.sh
 setup-domain.sh
 PRODUCTION-SECRETS.md
 certbot/
+frontend/
 EOF
 
 # ─── Deploy dizini hazırla ──────────────────────────────────────────────
