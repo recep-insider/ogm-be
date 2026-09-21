@@ -120,28 +120,73 @@ async function applySaha(userId, trainingId, audit = {}) {
   return { applicationId: id, status: 'approved', attendance: 'kayitli' };
 }
 
-// ── Aldığım Eğitimler (6.1 / 6.2) ───────────────────────────
-function mapCompleted(row) {
+// ── Aldığım Eğitimler (mobil §15) ───────────────────────────
+// Liste YOKLAMADAN gelir; elle işaretlenen bir "tamamladım" yoktur. Teorik ve
+// uygulamalı AYRI listelenir — biri diğerinin yerine geçmez (backend §7).
+// Tek kaynak: teorik için tamamlama kaydı, uygulamalı için yetkinlik bayraklı saha
+// eğitiminin yoklaması.
+
+function mapTheoryCompletion(row) {
   return {
-    id: row.id,
+    id: row.training_id,
+    kind: 'teorik',
     title: row.title,
     description: row.description || '',
     durationMin: row.duration_min,
-    completedAt: toDateOnly(row.completed_at),
-    instructorName: row.instructor_name || null,
-    progressPercent: row.progress_percent,
-    status: row.status,
+    delivery: row.delivery,
+    required: !!row.required,
+    completedAt: toIso(row.completed_at),
+    certificateUrl: assetUrl(row.certificate_path),
+  };
+}
+
+function mapFieldCompletion(row) {
+  return {
+    id: row.training_id,
+    kind: 'uygulamali',
+    title: row.title,
+    location: row.location,
+    instructorName: row.instructor_name,
+    // Yetkinlik kazandırmayan kayıtlar (buluşma, tanıtım) da listelenir ama
+    // müdahale kapısından geçirmedikleri bu bayraktan görünür.
+    grantsCompetency: !!row.grants_competency,
+    completedAt: toIso(row.attendance_at),
     certificateUrl: assetUrl(row.certificate_path),
   };
 }
 
 async function listCompleted(userId) {
-  const rows = await db('user_trainings').where({ user_id: userId }).orderBy('completed_at', 'desc');
-  return rows.map(mapCompleted);
+  const [theory, field] = await Promise.all([
+    db('online_training_progress as p')
+      .join('online_trainings as t', 't.id', 'p.training_id')
+      .where({ 'p.user_id': userId, 'p.status': 'completed' })
+      .orderBy('p.completed_at', 'desc')
+      .select('p.training_id', 'p.completed_at', 'p.certificate_path', 't.title', 't.description', 't.duration_min', 't.delivery', 't.required'),
+    db('saha_training_applications as a')
+      .join('saha_trainings as t', 't.id', 'a.training_id')
+      .where({ 'a.user_id': userId, 'a.attendance': 'katildi' })
+      .orderBy('a.attendance_at', 'desc')
+      .select('a.training_id', 'a.attendance_at', 'a.certificate_path', 't.title', 't.location', 't.instructor_name', 't.grants_competency'),
+  ]);
+
+  return {
+    teorik: theory.map(mapTheoryCompletion),
+    uygulamali: field.map(mapFieldCompletion),
+  };
 }
 
+/** Sertifika — teorik tamamlama veya saha yoklaması kaydından okunur. */
 async function getCertificate(userId, trainingId) {
-  const row = await db('user_trainings').where({ id: trainingId, user_id: userId }).first();
+  const theory = await db('online_training_progress')
+    .where({ user_id: userId, training_id: trainingId, status: 'completed' })
+    .first();
+  const field = theory
+    ? null
+    : await db('saha_training_applications')
+        .where({ user_id: userId, training_id: trainingId, attendance: 'katildi' })
+        .first();
+
+  const row = theory || field;
   if (!row) throw errors.notFound('Eğitim bulunamadı', 'not_found');
   if (!row.certificate_path) {
     throw errors.notFound('Sertifika henüz oluşturulmadı', 'certificate_not_issued');
@@ -402,7 +447,7 @@ async function adminRemoveSaha(id, actor = {}) {
 
 /** Admin — saha eğitimi başvuru listesi. @param {{status?:string}} params */
 async function adminListSahaApplications(trainingId, { status } = {}) {
-  const training = await db('saha_trainings').where({ id: trainingId }).first('id', 'title');
+  const training = await db('saha_trainings').where({ id: trainingId }).first('id', 'title', 'start_date', 'grants_competency');
   if (!training) throw errors.notFound('Eğitim bulunamadı', 'training_not_found');
 
   const query = db('saha_training_applications as a')
@@ -416,8 +461,18 @@ async function adminListSahaApplications(trainingId, { status } = {}) {
   if (status) query.where('a.status', status);
 
   const rows = await query;
+  // §8: eğitim tarihinden ÖNCE başvuru listesi, tarih geçince YOKLAMA listesi döner —
+  // panel aynı ekranı iki modda gösteriyor, kaynağı bu bayrak.
+  const today = toDateOnly(new Date());
+  const mode = toDateOnly(training.start_date) <= today ? 'yoklama' : 'basvuru';
   return {
-    training: { id: training.id, title: training.title },
+    training: {
+      id: training.id,
+      title: training.title,
+      startDate: toDateOnly(training.start_date),
+      grantsCompetency: !!training.grants_competency,
+    },
+    mode,
     items: rows.map((a) => ({
       applicationId: a.id,
       status: a.status,

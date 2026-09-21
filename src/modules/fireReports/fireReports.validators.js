@@ -14,9 +14,10 @@ const fireReportDataSchema = Joi.object({
   description: Joi.string().max(1000).allow('', null).optional(),
 });
 
+// §5: İhbar kapatma TEK SONUÇ üretir — "Yangın tespit edilmedi". Ret gerekçesi
+// ALINMAZ; panelde ayrı bir gerekçe alanı yoktur, bu yüzden API de kabul etmez.
 const adminStatusSchema = Joi.object({
   status: Joi.string().valid('confirmed', 'rejected').required(),
-  note: Joi.string().max(500).optional(),
 });
 
 module.exports = { fireReportDataSchema, adminStatusSchema };

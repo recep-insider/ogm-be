@@ -205,7 +205,12 @@ async function listVolunteers({ status, q, page = 1, pageSize = 20 } = {}) {
     .select(
       'u.id', 'u.ad', 'u.soyad', 'u.phone', 'u.eposta', 'u.profile_complete', 'u.is_active',
       'a.status as application_status', 'a.submitted_at',
-      db.raw("(select count(*) from user_trainings ut where ut.user_id = u.id and ut.status = 'completed') as completed_trainings"),
+      // mobil §15: tamamlanan eğitim sayısı elle doldurulan bir tablodan değil,
+      // gerçek kaynaklardan gelir — teorik tamamlama + saha yoklaması.
+      db.raw(`((select count(*) from online_training_progress p
+                  where p.user_id = u.id and p.status = 'completed')
+             + (select count(*) from saha_training_applications a
+                  where a.user_id = u.id and a.attendance = 'katildi')) as completed_trainings`),
       db.raw('(select count(*) from equipment e where e.user_id = u.id and e.type = ? and (e.expires_at is null or e.expires_at >= now())) as protective_equipment', [PROTECTIVE_TYPE]),
     )
     .orderBy([
@@ -239,7 +244,7 @@ async function getVolunteer(userId, actor = {}) {
 
   const [application, completed, hasEquipment, readiness, kkd] = await Promise.all([
     db('applications').where({ user_id: userId }).orderBy('submitted_at', 'desc').first(),
-    db('user_trainings').where({ user_id: userId, status: 'completed' }).count({ c: '*' }).first(),
+    db('online_training_progress').where({ user_id: userId, status: 'completed' }).count({ c: '*' }).first(),
     hasProtectiveEquipment(userId),
     readinessService.getReadiness(userId),
     readinessService.kkdSet(userId),

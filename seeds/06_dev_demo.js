@@ -70,32 +70,22 @@ exports.seed = async function seed(knex) {
     },
   ]);
 
-  await knex('user_trainings').insert([
-    {
-      id: 'ct_1',
-      user_id: DEMO_USER_ID,
-      title: 'Orman Yangınları',
-      description: 'Temel yangın davranışı',
-      duration_min: 45,
-      completed_at: null,
-      instructor_name: 'Ahmet Yıldız',
-      progress_percent: 65,
-      status: 'in_progress',
-      certificate_path: null,
-    },
-    {
-      id: 'ct_2',
-      user_id: DEMO_USER_ID,
-      title: 'İlkyardım',
-      description: 'Saha ilkyardım',
-      duration_min: 120,
-      completed_at: '2025-08-12',
-      instructor_name: 'Canan Aksoy',
-      progress_percent: 100,
-      status: 'completed',
-      certificate_path: 'seed/certs/ct_2.pdf',
-    },
-  ]);
+  // mobil §15: "Alınan Eğitimler" elle doldurulan bir tablodan DEĞİL, gerçek
+  // kaynaklardan gelir — teorik için tamamlama kaydı, uygulamalı için saha yoklaması.
+  await knex('online_training_progress')
+    .insert([
+      {
+        id: 'otp_demo_1',
+        user_id: DEMO_USER_ID,
+        training_id: 'ot_1',
+        status: 'completed',
+        progress_percent: 100,
+        completed_at: now,
+        certificate_path: 'seed/certs/ct_2.pdf',
+      },
+    ])
+    .onConflict(['user_id', 'training_id'])
+    .ignore();
 
   // Geçmiş görev katılımı (history) + aktif görevde accepted.
   await knex('mission_participants').insert([

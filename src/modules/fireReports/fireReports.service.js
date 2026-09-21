@@ -158,7 +158,7 @@ async function listMine(userId) {
 }
 
 // Admin (panel) — status geçişi + reporter'a push (mobil app çağırmaz).
-async function adminSetStatus(id, { status, note }, actor = {}) {
+async function adminSetStatus(id, { status }, actor = {}) {
   const row = await db('fire_reports').where({ id }).first();
   if (!row) throw errors.notFound('Bildirim bulunamadı', 'not_found');
 
@@ -169,7 +169,7 @@ async function adminSetStatus(id, { status, note }, actor = {}) {
     action: 'fire_reports.status',
     entity: 'fire_report',
     entityId: id,
-    payload: { status, note },
+    payload: { status },
   });
 
   if (row.user_id) {

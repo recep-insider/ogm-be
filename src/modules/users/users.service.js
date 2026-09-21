@@ -56,7 +56,9 @@ async function getMe(userId) {
 
   const [applicationStatus, completed, hasEquipment, readiness] = await Promise.all([
     getApplicationStatus(userId),
-    db('user_trainings').where({ user_id: userId, status: 'completed' }).count({ c: '*' }).first(),
+    // Gönüllü seviyesi tamamlanan TEORİK eğitim sayısından türer (mobil §15: elle
+    // işaretlenen "tamamladım" kaydı yoktur).
+    db('online_training_progress').where({ user_id: userId, status: 'completed' }).count({ c: '*' }).first(),
     hasProtectiveEquipment(userId),
     readinessService.getReadiness(userId),
   ]);

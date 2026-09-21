@@ -78,7 +78,7 @@ async function assemblyPointFor(missionId) {
 function mapActiveSummary(m, userStatus) {
   return {
     id: m.id,
-    category: m.category,
+    // mobil §5: görev adı ve rol etiketi YOK — olayın kendisi gösterilir.
     title: m.title,
     shortLocation: m.short_location,
     iconName: m.icon_name,
@@ -87,7 +87,7 @@ function mapActiveSummary(m, userStatus) {
   };
 }
 
-function mapActiveDetail(m, userStatus, announcements, { onSiteCount, trend, assemblyPoint, userId, linkedMedia = [] }) {
+function mapActiveDetail(m, userStatus, { onSiteCount, trend, assemblyPoint, userId, linkedMedia = [] }) {
   return {
     ...mapActiveSummary(m, userStatus),
     regionLabel: m.region_label || '',
@@ -108,12 +108,6 @@ function mapActiveDetail(m, userStatus, announcements, { onSiteCount, trend, ass
     assemblyPoint,
     // Gönüllünün sahaya girişini doğrulayan tek yol — "Vardınız mı?" onayı yoktur.
     qrPayload: qrPayloadFor(userId),
-    announcements: announcements.map((a) => ({
-      id: a.id,
-      message: a.message,
-      publishedAt: toIso(a.published_at),
-      severity: a.severity,
-    })),
   };
 }
 
@@ -159,14 +153,15 @@ function qrPayloadFor(userId) {
 async function getActive(userId, id) {
   const m = await db('missions').where({ id, is_active: true }).first();
   if (!m || m.status === 'archived') throw errors.notFound('Görev bulunamadı', 'mission_not_found');
-  const [announcements, onSiteCount, trend, assemblyPoint, linkedMedia] = await Promise.all([
-    db('mission_announcements').where({ mission_id: id }).orderBy('published_at', 'asc'),
+  // §12: "saha güncellemeleri akışı" kaldırıldı — merkez operatörünün doğrulayamayacağı
+  // saha verisiydi; duyurular artık Bildirim Merkezi'nden gider.
+  const [onSiteCount, trend, assemblyPoint, linkedMedia] = await Promise.all([
     sahadakiSayisi(id, m),
     checkInTrend(id),
     assemblyPointFor(id),
     require('../fireReports/fireReports.service').mediaForMission(id),
   ]);
-  return mapActiveDetail(m, await statusFor(userId, id), announcements, {
+  return mapActiveDetail(m, await statusFor(userId, id), {
     onSiteCount,
     trend,
     assemblyPoint,
@@ -457,7 +452,6 @@ async function getHistory(userId, id) {
 function mapAdminMission(m) {
   return {
     id: m.id,
-    category: m.category,
     title: m.title,
     fullTitle: m.full_title || m.title,
     shortLocation: m.short_location,
@@ -557,7 +551,6 @@ async function adminCreate(body, actor = {}) {
   await db.transaction(async (trx) => {
     await trx('missions').insert({
       id,
-      category: body.category || 'yangin',
       title: body.title,
       full_title: body.fullTitle || null,
       short_location: body.shortLocation,

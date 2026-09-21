@@ -1211,7 +1211,6 @@ const missionCreateSchema = Joi.object({
   regionLabel: Joi.string().max(120).optional(),
   locationLabel: Joi.string().max(200).optional(),
   description: Joi.string().max(4000).allow('', null).optional(),
-  category: Joi.string().max(64).optional(),
   iconName: Joi.string().max(32).optional(),
   coordinates: Joi.object({
     lat: Joi.number().min(-90).max(90).required(),

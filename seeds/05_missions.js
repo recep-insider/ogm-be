@@ -4,7 +4,6 @@ const MISSIONS = [
   {
     id: 'am_marmaris',
     // mobil §5: görev adı ve rol etiketi kaldırıldı — olayın kendisi gösterilir.
-    category: 'yangin',
     title: 'Marmaris Orman Yangını',
     full_title: 'Marmaris Orman Yangını',
     short_location: 'Muğla / Marmaris',
@@ -26,7 +25,6 @@ const MISSIONS = [
   },
   {
     id: 'am_fethiye',
-    category: 'yangin',
     title: 'Fethiye Orman Yangını',
     full_title: 'Fethiye Orman Yangını',
     short_location: 'Muğla / Fethiye',
@@ -48,7 +46,6 @@ const MISSIONS = [
   },
   {
     id: 'fm_marmaris_2025',
-    category: 'yangin',
     title: 'Marmaris Yangını',
     full_title: 'Marmaris Yangını 2025',
     short_location: 'Muğla / Marmaris',
@@ -80,11 +77,6 @@ const ASSEMBLY_POINTS = [
   { id: 'ap_fethiye', mission_id: 'am_fethiye', name: 'Fethiye Orman İşletme Müdürlüğü', address: 'Ölüdeniz, Fethiye', lat: 36.6, lng: 29.12 },
 ];
 
-const ANNOUNCEMENTS = [
-  { id: 'ann_1', mission_id: 'am_marmaris', message: "Kumanyalar 14:00'te dağıtılacak.", severity: 'info', published_at: '2026-05-20T11:00:00Z' },
-  { id: 'ann_2', mission_id: 'am_marmaris', message: 'Rüzgâr yön değiştirdi, doğu kanada dikkat.', severity: 'alert', published_at: '2026-05-20T12:30:00Z' },
-];
-
 exports.seed = async function seed(knex) {
   // Idempotent: missions'ı silme (FK CASCADE ile mission_participants/photos/announcements GİTMESİN).
   // Yalnızca eksik kayıtları ekle.
@@ -105,8 +97,4 @@ exports.seed = async function seed(knex) {
     .onConflict('id')
     .ignore();
 
-  await knex('mission_announcements')
-    .insert(ANNOUNCEMENTS.map((a) => ({ ...a, published_at: new Date(a.published_at) })))
-    .onConflict('id')
-    .ignore();
 };
