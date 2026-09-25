@@ -117,7 +117,10 @@ const env = {
     apiKey: process.env.ADMIN_API_KEY || '',
     // Saha amiri (officer) scan endpoint'i için ayrı anahtar; boşsa adminApiKey kullanılır.
     officerApiKey: process.env.OFFICER_API_KEY || '',
-    // QR imzalı token doğrulaması için opsiyonel HMAC secret (B.1).
+    // Opsiyonel HMAC secret (B.1). YALNIZCA çıplak `userId` gövdesine uygulanır: mobilin
+    // gösterdiği `OGM:VOL:{id}` QR'ı ve TC ile yedek giriş imza taşımaz, aynı id bu
+    // formatlarla imzasız gönderilebilir. Güven sınırı saha amiri kimlik doğrulamasıdır
+    // (officer key / role=officer); bu secret QR ve TC okutmaları için koruma sağlamaz.
     scanHmacSecret: process.env.SCAN_HMAC_SECRET || '',
   },
 

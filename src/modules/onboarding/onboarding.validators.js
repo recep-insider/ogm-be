@@ -2,6 +2,7 @@
 
 const Joi = require('joi');
 const { validateTcKimlik } = require('../../shared/validate-tc-kimlik');
+const { cityJoiValidator } = require('../../shared/regions');
 
 const phonePattern = /^\+\d{10,15}$/;
 const namePattern = /^[A-Za-zÇĞİÖŞÜçğıöşüâîû\s']+$/;
@@ -46,8 +47,15 @@ const iletisim = Joi.object({
   // alıyor — panelin bölge kapsamı il alanına dayanıyor ve serbest metin bu eşleşmeyi
   // imkânsız kılıyordu. Alan geçiş süresince opsiyonel tutuluyor (eski mobil gönderiyor).
   adres: Joi.string().min(10).max(500).optional(),
-  il: Joi.string().min(1).max(60).optional(),
-  ilce: Joi.string().min(1).max(60).optional(),
+  // İkamet ili 81 ilin kanonik adına normalize edilir; tanınmayan il 400.
+  il: Joi.string()
+    .trim()
+    .min(1)
+    .max(60)
+    .custom(cityJoiValidator)
+    .messages({ 'any.invalid': 'Geçersiz il adı' })
+    .optional(),
+  ilce: Joi.string().trim().min(1).max(60).optional(),
 });
 
 const KAN_GRUBU = ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', '0+', '0-'];

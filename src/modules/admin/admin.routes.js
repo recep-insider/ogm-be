@@ -782,6 +782,11 @@ const onlineBaseKeys = {
   delivery: Joi.string().valid('yuzyuze', 'online'),
   sortOrder: Joi.number().integer().min(0),
   videoPath: Joi.string().allow('', null).max(512),
+  // Yüz yüze teorik eğitimin oturum bilgisi (opsiyonel) — mobil GET /trainings/online'da
+  // yalnızca delivery=yuzyuze iken döner.
+  startsAt: Joi.date().iso().allow(null),
+  location: Joi.string().trim().max(200).allow('', null),
+  instructor: Joi.string().trim().max(120).allow('', null),
   isActive: Joi.boolean(),
 };
 const onlineCreateSchema = Joi.object({
@@ -801,7 +806,9 @@ const sahaBaseKeys = {
   instructorName: Joi.string().max(120),
   instructorAvatarPath: Joi.string().allow('', null).max(512),
   coverPath: Joi.string().allow('', null).max(512),
-  totalSeats: Joi.number().integer().min(0).max(10000),
+  // K4: kontenjan kesin sınırdır (applySaha dolu eğitime 410 döner) — 0 koltuklu eğitim
+  // hiç başvuru alamayacağı için en az 1 zorunlu.
+  totalSeats: Joi.number().integer().min(1).max(10000),
   // §8: yetkinlik bayrağı — yalnızca bayraklı eğitimin yoklaması uygulamalı adımı kapatır.
   grantsCompetency: Joi.boolean(),
   isActive: Joi.boolean(),
@@ -814,6 +821,7 @@ const sahaCreateSchema = Joi.object({
   startTime: sahaBaseKeys.startTime.required(),
   endTime: sahaBaseKeys.endTime.required(),
   instructorName: sahaBaseKeys.instructorName.required(),
+  totalSeats: sahaBaseKeys.totalSeats.required(),
 });
 const sahaUpdateSchema = Joi.object(sahaBaseKeys).min(1);
 
@@ -838,6 +846,11 @@ const sahaUpdateSchema = Joi.object(sahaBaseKeys).min(1);
  *               iconTone: { type: string, enum: [primary, tertiary] }
  *               sortOrder: { type: integer }
  *               videoPath: { type: string, description: 'POST /admin/content/media yanıtındaki path' }
+ *               required: { type: boolean }
+ *               delivery: { type: string, enum: [yuzyuze, online] }
+ *               startsAt: { type: string, format: date-time, nullable: true, description: 'Yüz yüze oturum başlangıcı' }
+ *               location: { type: string, nullable: true, description: 'Yüz yüze oturum yeri' }
+ *               instructor: { type: string, nullable: true, description: 'Yüz yüze oturum eğitmeni' }
  *               isActive: { type: boolean }
  *     responses:
  *       200: { description: 'Oluşturulan eğitim (admin görünümü, enrolled/completed dahil)' }
@@ -894,7 +907,7 @@ router.delete(
  *         application/json:
  *           schema:
  *             type: object
- *             required: [title, location, startDate, startTime, endTime, instructorName]
+ *             required: [title, location, startDate, startTime, endTime, instructorName, totalSeats]
  *             properties:
  *               title: { type: string }
  *               location: { type: string }
@@ -904,7 +917,7 @@ router.delete(
  *               instructorName: { type: string }
  *               instructorAvatarPath: { type: string }
  *               coverPath: { type: string }
- *               totalSeats: { type: integer }
+ *               totalSeats: { type: integer, minimum: 1, description: 'Kesin kontenjan — dolunca yeni başvuru 410 training_full alır' }
  *               isActive: { type: boolean }
  *     responses:
  *       200: { description: 'Oluşturulan eğitim (admin görünümü, başvuru sayaçlarıyla)' }
@@ -1264,8 +1277,9 @@ router.post(
  *     description: >-
  *       Durum geçişi operatör kararıdır, otomatik değişmez. Arşivlendi terminaldir:
  *       aynı kayıt tekrar Aktif'e alınamaz, yeniden alevlenirse YENİ olay kaydı açılır.
- *       Yeni gönüllü çağrısı durur, toplanma noktası kapanır, sahadaki gönüllüler
- *       `tamamladi` olur ve sahadaki sayı sıfırlanır (check-in kayıtları korunur).
+ *       Yeni gönüllü çağrısı durur, toplanma noktası kapanır, `yolda`/`sahada`
+ *       gönüllüler `tamamladi` olur ve sahadaki sayı sıfırlanır (check-in kayıtları
+ *       korunur). Yanıtsız `cagrildi` satırları değişmez, görev geçmişine girmez.
  *     security: [ { adminApiKey: [] } ]
  *     parameters:
  *       - { in: path, name: id, required: true, schema: { type: string } }

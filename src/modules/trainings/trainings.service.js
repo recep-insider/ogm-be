@@ -4,13 +4,26 @@ const { v4: uuidv4 } = require('uuid');
 const { db } = require('../../config/db');
 const { errors } = require('../../shared/errors');
 const { assetUrl } = require('../../shared/asset-url');
-const { toDateOnly, toIso } = require('../../shared/dates');
+const { toDateOnly, toLocalDateOnly, toIso } = require('../../shared/dates');
 const { writeAudit } = require('../../shared/audit');
 const { deliverKkdSet } = require('../equipment/equipment.service');
 
 const LAST_SEATS_THRESHOLD = 5;
 
 // ── Online (5.1) ────────────────────────────────────────────
+/**
+ * Yüz yüze (`delivery = 'yuzyuze'`) teorik eğitimin oturumu: ne zaman, nerede, kim.
+ * Alanlar opsiyoneldir; panel girmediyse null döner.
+ */
+function sessionFields(t) {
+  const faceToFace = t.delivery === 'yuzyuze';
+  return {
+    startsAt: faceToFace ? toIso(t.session_starts_at) : null,
+    location: faceToFace ? t.session_location || null : null,
+    instructor: faceToFace ? t.session_instructor || null : null,
+  };
+}
+
 async function listOnline(userId) {
   const trainings = await db('online_trainings')
     .where({ is_active: true })
@@ -30,6 +43,8 @@ async function listOnline(userId) {
       required: !!t.required,
       delivery: t.delivery,
       videoUrl: assetUrl(t.video_path),
+      // Yüz yüze teorik eğitimin oturum bilgisi — online eğitimde her zaman null.
+      ...sessionFields(t),
       status: p ? p.status : 'not_started',
       progressPercent: p ? p.progress_percent : 0,
     };
@@ -39,12 +54,14 @@ async function listOnline(userId) {
 // ── Saha (5.2) ──────────────────────────────────────────────
 /**
  * Katılım sayaçları — backend-gereksinimleri.md §8: "Kayıtlı 28/30 · Katılan 24".
- * Tek bir `enrolled` sayısı yetmez. Kontenjan yalnızca BİLGİ amaçlıdır; doluluk ne
- * başvuruyu engeller ne de bir "yedek" durumu üretir (yedek kavramı kaldırıldı).
+ * Tek bir `enrolled` sayısı yetmez. K4: kontenjan kesin sınırdır — `availableSeats` 0
+ * olan eğitime yeni başvuru alınmaz (applySaha → 410 training_full). "Yedek" durumu yoktur.
  */
 async function seatInfo(trainingId, totalSeats) {
   const rows = await db('saha_training_applications')
     .where({ training_id: trainingId })
+    // A rejected application holds no seat — otherwise a hard limit could fill up for good.
+    .whereNot({ status: 'rejected' })
     .select('attendance')
     .count({ c: '*' })
     .groupBy('attendance');
@@ -55,12 +72,38 @@ async function seatInfo(trainingId, totalSeats) {
     enrolled,
     attended,
     availableSeats: available,
+    // No 'full' value on purpose: released builds map seatStatus straight onto a badge
+    // variant and would break on an unknown one. Fullness is `availableSeats === 0`.
     seatStatus: available > 0 && available <= LAST_SEATS_THRESHOLD ? 'last_seats' : 'available',
   };
 }
 
+/**
+ * Today's calendar day in Turkey ('YYYY-MM-DD'). Field trainings are dated in local
+ * days, so "past" is judged against the Istanbul day, not the UTC one — otherwise a
+ * training would stay open until 03:00 the next morning.
+ */
+function todayLocal() {
+  return toLocalDateOnly(new Date());
+}
+
+/** True when the training's day is already over (strictly before today, Istanbul). */
+function isPastTraining(t) {
+  const day = toDateOnly(t.start_date);
+  return !!day && day < todayLocal();
+}
+
+/**
+ * Volunteer list of field trainings. Only active trainings dated today or later are
+ * listed: a training whose day has passed can no longer be attended, so offering it
+ * as applicable would only produce a 410 `training_past` on tap. Attended trainings
+ * remain visible under GET /users/me/trainings/completed.
+ */
 async function listSaha(userId) {
-  const trainings = await db('saha_trainings').where({ is_active: true }).orderBy('start_date', 'asc');
+  const trainings = await db('saha_trainings')
+    .where({ is_active: true })
+    .where('start_date', '>=', todayLocal())
+    .orderBy('start_date', 'asc');
   const myApps = await db('saha_training_applications').where({ user_id: userId }).pluck('training_id');
   const appliedSet = new Set(myApps);
 
@@ -89,23 +132,44 @@ async function listSaha(userId) {
   return out;
 }
 
+/**
+ * Saha eğitimine başvuru. K4 kararı: kontenjan KESİN sınırdır — dolu eğitime yeni başvuru
+ * 410 `training_full` alır. Zaten kayıtlı gönüllünün tekrar başvurusu önceki gibi 409
+ * `already_applied` döner (kontenjandan bağımsız). Past trainings (day before today,
+ * Europe/Istanbul) answer 410 `training_past`. Sayım ile ekleme aynı transaction'da,
+ * eğitim satırı kilitlenerek yapılır — eşzamanlı başvurular son koltuğu ikiye bölemez.
+ */
 async function applySaha(userId, trainingId, audit = {}) {
-  const t = await db('saha_trainings').where({ id: trainingId }).first();
-  if (!t) throw errors.notFound('Eğitim bulunamadı', 'not_found');
-  if (!t.is_active) throw errors.gone('Eğitim başvuruya kapalı', undefined, 'training_closed');
-
-  const existing = await db('saha_training_applications').where({ user_id: userId, training_id: trainingId }).first();
-  if (existing) throw errors.conflict('Bu eğitime zaten başvurdunuz', undefined, 'already_applied');
-
-  // §8: başvuru onayı OTOMATİKTİR — 1. fazda manuel onay kuyruğu yoktur ve kontenjan
-  // dolu diye ayrı bir "yedek" durumuna düşme yoktur. Kontenjan bilgi amaçlı kalır.
   const id = uuidv4();
-  await db('saha_training_applications').insert({
-    id,
-    user_id: userId,
-    training_id: trainingId,
-    status: 'approved',
-    attendance: 'kayitli',
+  await db.transaction(async (trx) => {
+    const t = await trx('saha_trainings').where({ id: trainingId }).forUpdate().first();
+    if (!t) throw errors.notFound('Eğitim bulunamadı', 'not_found');
+    if (!t.is_active) throw errors.gone('Eğitim başvuruya kapalı', undefined, 'training_closed');
+    // A stale list (or a direct call) must not register anyone for a day that is over.
+    if (isPastTraining(t)) throw errors.gone('Bu eğitimin tarihi geçti', undefined, 'training_past');
+
+    const existing = await trx('saha_training_applications')
+      .where({ user_id: userId, training_id: trainingId })
+      .first();
+    if (existing) throw errors.conflict('Bu eğitime zaten başvurdunuz', undefined, 'already_applied');
+
+    const counted = await trx('saha_training_applications')
+      .where({ training_id: trainingId })
+      .whereNot({ status: 'rejected' })
+      .count({ c: '*' })
+      .first();
+    if (Number(counted?.c || 0) >= Number(t.total_seats || 0)) {
+      throw errors.gone('Bu eğitim için kontenjan doldu', undefined, 'training_full');
+    }
+
+    // §8: başvuru onayı OTOMATİKTİR — manuel onay kuyruğu ve "yedek" durumu yoktur.
+    await trx('saha_training_applications').insert({
+      id,
+      user_id: userId,
+      training_id: trainingId,
+      status: 'approved',
+      attendance: 'kayitli',
+    });
   });
 
   await writeAudit({
@@ -231,6 +295,10 @@ function mapAdminOnlineRow(t) {
     delivery: t.delivery,
     sortOrder: t.sort_order,
     videoUrl: assetUrl(t.video_path),
+    // Panel roundtrip — delivery'den bağımsız ham değerler.
+    startsAt: toIso(t.session_starts_at),
+    location: t.session_location || null,
+    instructor: t.session_instructor || null,
     isActive: !!t.is_active,
     enrolled: Number(t.enrolled || 0),
     completed: Number(t.completed || 0),
@@ -264,7 +332,7 @@ async function adminListSaha({ isActive } = {}) {
 
 function sahaAdminCounts() {
   return [
-    db.raw('(select count(*) from saha_training_applications a where a.training_id = t.id) as enrolled_count'),
+    db.raw("(select count(*) from saha_training_applications a where a.training_id = t.id and a.status <> 'rejected') as enrolled_count"),
     db.raw("(select count(*) from saha_training_applications a where a.training_id = t.id and a.attendance = 'katildi') as attended_count"),
   ];
 }
@@ -316,6 +384,9 @@ function onlineToRow(body) {
   if (body.delivery !== undefined) row.delivery = body.delivery;
   if (body.sortOrder !== undefined) row.sort_order = body.sortOrder;
   if (body.videoPath !== undefined) row.video_path = body.videoPath || null;
+  if (body.startsAt !== undefined) row.session_starts_at = body.startsAt ? new Date(body.startsAt) : null;
+  if (body.location !== undefined) row.session_location = body.location || null;
+  if (body.instructor !== undefined) row.session_instructor = body.instructor || null;
   if (body.isActive !== undefined) row.is_active = body.isActive;
   return row;
 }

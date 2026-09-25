@@ -238,6 +238,31 @@ Status kodu eşlemeleri (`src/shared/errors.js`):
 - Konsol + `/app/logs/app-YYYY-MM-DD.log` (90 gün retention, gzip)
 - `LOG_LEVEL` env değişkeni ile seviye ayarlanır (`debug`, `info`, `warn`, `error`)
 
+## Sürüm Notları (2026-09-21 sözleşmesi)
+
+Deploy için ek adım gerekmez: `deploy.sh` güncelleme modunda migration'ları çalıştırır, seed
+çalıştırmaz. Bu sürümle gelen davranış değişiklikleri:
+
+1. **Saha eğitimi kontenjanı artık kesin sınır.** `saha_trainings.total_seats` `NOT NULL DEFAULT 0`;
+   kontenjan girilmeden kaydedilmiş eğitim her başvuruya 410 `training_full` verir. Mobil
+   uygulama `availableSeats === 0` olan eğitimi zaten listelemediği için gönüllü tarafında
+   görünür bir değişiklik yoktur; bu eğitimlere panelden kontenjan girildiğinde listelenirler.
+2. **Admin kontenjan alanı.** `POST/PUT /admin/trainings/saha` artık `totalSeats >= 1` ister
+   (oluştururken zorunlu). Panel API'ye bağlanırken kontenjan alanı zorunlu olmalı.
+3. **Blog kategori backfill'i** (`20260925120000`) temalardan kategori türetir ve hâlâ `haber`
+   olan her yazıyı günceller. `haber` varsayılan olduğu için editörün bilerek `haber` bıraktığı
+   bir yazı da temasına göre `teknik`/`egitim` olabilir; değişenler
+   `blog_category_backfill_log` tablosundadır ve `down` yalnızca onları geri alır. Migration
+   yarıda kalırsa yeniden çalıştırılabilir.
+4. **Arşivlenmiş eski olaylar.** Arşivleme artık yalnızca `yolda`/`sahada` katılımcıları
+   `tamamladi` yapar. Bu sürümden önce arşivlenen olaylarda yanıtsız `cagrildi` satırları da
+   `tamamladi` olmuştu ve o gönüllüler "Görev Aldığım Yangınlar"da görünmeye devam eder. Veri
+   düzeltmesi bilerek yapılmadı: `20260921120700` eski `accepted` satırlarını `responded_at`
+   boş bırakarak `yolda`'ya taşıdığı için, gerçekten katılmış bir gönüllü yanıtsız çağrıdan
+   güvenilir biçimde ayırt edilemiyor.
+5. **`SCAN_HMAC_SECRET`** yalnızca çıplak `userId` okutmasına uygulanır; mobil QR
+   (`OGM:VOL:{id}`) ve TC ile giriş imzasızdır. Güven sınırı saha amiri kimlik doğrulamasıdır.
+
 ## Bilinen TODO'lar
 
 - [ ] e-Devlet **kurumsal başvuru** (2-6 ay onay) — şimdiden başlatılmalı (`BACKEND_REQUIREMENTS.md §5.2`)

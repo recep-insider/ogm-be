@@ -16,4 +16,22 @@ function toIso(value) {
   return Number.isNaN(d.getTime()) ? String(value) : d.toISOString();
 }
 
-module.exports = { toDateOnly, toIso };
+// Olaylar Türkiye'de; tarih-only alan bir anlık değerden (TIMESTAMP) türetilirken gün
+// UTC'ye göre değil Türkiye saatine göre alınır — 00:00–03:00 arası başlayan yangın bir
+// önceki güne kaymasın.
+const LOCAL_DATE_FORMAT = new Intl.DateTimeFormat('en-CA', {
+  timeZone: 'Europe/Istanbul',
+  year: 'numeric',
+  month: '2-digit',
+  day: '2-digit',
+});
+
+/** Anlık değer (Date|ISO string) → Europe/Istanbul takvim günü 'YYYY-MM-DD'. */
+function toLocalDateOnly(value) {
+  if (value == null) return null;
+  const d = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(d.getTime())) return toDateOnly(value);
+  return LOCAL_DATE_FORMAT.format(d);
+}
+
+module.exports = { toDateOnly, toLocalDateOnly, toIso };

@@ -35,6 +35,7 @@ router.get('/online', asyncHandler(async (req, res) => {
  *   get:
  *     tags: [Trainings]
  *     summary: Saha eğitim listesi
+ *     description: Only active trainings dated today or later (Europe/Istanbul); past trainings are not listed.
  *     security: [ { bearerAuth: [] } ]
  *     responses:
  *       200:
@@ -72,7 +73,7 @@ router.get('/saha', asyncHandler(async (req, res) => {
  *                 applicationId: { type: string }
  *                 status: { type: string, example: pending }
  *       409: { description: 'already_applied' }
- *       410: { description: 'training_full | training_closed' }
+ *       410: { description: 'training_full | training_closed | training_past' }
  */
 router.post('/:id/applications', asyncHandler(async (req, res) => {
   const result = await service.applySaha(req.user.id, req.params.id, {

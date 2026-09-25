@@ -49,7 +49,31 @@ function mapReport(row, title) {
     statusLabel: STATUS_LABEL[row.status] || row.status,
     submittedAt: toIso(row.created_at),
     coordinates: { lat: Number(row.latitude), lng: Number(row.longitude) },
+    // §5: ihbarın bağlandığı olay — mobil, onaylanmış ihbar kartından görev detayına geçer.
+    missionId: row.mission_id || null,
   };
+}
+
+/** Mobilin ihbar sonucu için açtığı Android bildirim kanalı (notifications.ts). */
+const FIRE_REPORT_CHANNEL_ID = 'fire-report-confirmed';
+
+/**
+ * İhbar sahibine durum push'u. `missionId` yalnızca ihbar bir olaya bağlıysa taşınır
+ * (boş anahtar push data'sına hiç yazılmaz). Tercih filtresi `taskCalls` topic'ine
+ * göre işler, ama Android'de mobilin ihbar sonucu için açtığı ayrı kanala düşer —
+ * "Görev Çağrıları" kanalı yalnızca gerçek çağrılar için kalır.
+ */
+async function notifyReporter(row, status, missionId) {
+  if (!row.user_id) return;
+  const data = { type: 'fire_report_status', reportId: row.id, status };
+  if (missionId) data.missionId = missionId;
+  await sendPushToUser(row.user_id, {
+    topic: 'taskCalls',
+    channelId: FIRE_REPORT_CHANNEL_ID,
+    title: 'Yangın bildiriminiz güncellendi',
+    body: status === 'confirmed' ? 'Bildiriminiz onaylandı.' : 'Bildiriminiz değerlendirildi.',
+    data,
+  });
 }
 
 /**
@@ -172,14 +196,7 @@ async function adminSetStatus(id, { status }, actor = {}) {
     payload: { status },
   });
 
-  if (row.user_id) {
-    await sendPushToUser(row.user_id, {
-      topic: 'taskCalls',
-      title: 'Yangın bildiriminiz güncellendi',
-      body: status === 'confirmed' ? 'Bildiriminiz onaylandı.' : 'Bildiriminiz değerlendirildi.',
-      data: { type: 'fire_report_status', reportId: id, status },
-    });
-  }
+  await notifyReporter(row, status, row.mission_id);
 
   const updated = await db('fire_reports').where({ id }).first();
   return { ok: true, report: await titleFor(updated) };
@@ -297,6 +314,13 @@ async function linkToMission(missionId, reportIds, actor = {}) {
     userAgent: actor.userAgent,
     payload: { reportIds },
   });
+
+  // Bağlama ihbarı "Doğrulandı" yapar — ihbarcı bunu push ile öğrenir. Zaten bu olaya
+  // bağlı ve onaylı olan ihbar için tekrar bildirim gönderilmez.
+  for (const row of rows) {
+    if (row.mission_id === missionId && row.status === 'confirmed') continue;
+    await notifyReporter(row, 'confirmed', missionId);
+  }
 
   return { ok: true, missionId, linked: reportIds };
 }

@@ -18,7 +18,7 @@ let firebaseMessaging = null;
 function getFirebaseMessaging() {
   if (firebaseMessaging) return firebaseMessaging;
   // firebase-admin yalnızca gerçek sağlayıcıda yüklenir (opsiyonel bağımlılık).
-  // eslint-disable-next-line global-require, import/no-extraneous-dependencies
+  // eslint-disable-next-line global-require
   const admin = require('firebase-admin');
   if (!admin.apps.length) {
     admin.initializeApp({
@@ -36,28 +36,48 @@ async function deliver(tokens, payload) {
   const provider = env.push.provider.toLowerCase();
   if (provider === 'firebase') {
     const messaging = getFirebaseMessaging();
-    const res = await messaging.sendEachForMulticast({
-      tokens,
-      notification: { title: payload.title, body: payload.body },
-      data: stringifyData(payload.data),
-    });
+    const res = await messaging.sendEachForMulticast(buildMulticast(tokens, payload));
     return { sent: res.successCount, failed: res.failureCount };
   }
   logger.info('PUSH [MOCK] gönderildi', { tokenCount: tokens.length, ...payload });
   return { sent: tokens.length, failed: 0, mock: true };
 }
 
+/**
+ * FCM data değerleri string olmak zorunda. Boş (undefined/null) anahtarlar hiç yazılmaz —
+ * aksi halde istemciye "undefined"/"null" metni gider.
+ */
 function stringifyData(data) {
   if (!data) return undefined;
   const out = {};
-  for (const [k, v] of Object.entries(data)) out[k] = String(v);
+  for (const [k, v] of Object.entries(data)) {
+    if (v === undefined || v === null) continue;
+    out[k] = String(v);
+  }
   return out;
+}
+
+/**
+ * FCM multicast mesajı. Android kanalı varsayılan olarak topic adıyla birebir aynıdır
+ * (acil | taskCalls | trainings | announcements) — mobil bu kanalları önceden açar.
+ * `channelId` verilirse o kullanılır: tercih filtresi topic'e göre işlerken bildirim
+ * mobilin ayrı açtığı bir kanala düşebilir (ör. `fire-report-confirmed`).
+ */
+function buildMulticast(tokens, payload) {
+  const message = {
+    tokens,
+    notification: { title: payload.title, body: payload.body },
+    data: stringifyData(payload.data),
+  };
+  const channelId = payload.channelId || payload.topic;
+  if (channelId) message.android = { notification: { channelId } };
+  return message;
 }
 
 /**
  * Tek kullanıcıya, topic opt-in'ine saygı göstererek push gönderir.
  * @param {string} userId
- * @param {{topic: 'acil'|'taskCalls'|'trainings'|'announcements', title: string, body: string, data?: object}} payload
+ * @param {{topic: 'acil'|'taskCalls'|'trainings'|'announcements', channelId?: string, title: string, body: string, data?: object}} payload
  */
 async function sendPushToUser(userId, payload) {
   const column = TOPIC_COLUMN[payload.topic];
@@ -81,4 +101,4 @@ async function sendPushToUser(userId, payload) {
   }
 }
 
-module.exports = { sendPushToUser };
+module.exports = { sendPushToUser, stringifyData, buildMulticast };

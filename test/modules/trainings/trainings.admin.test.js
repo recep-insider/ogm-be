@@ -28,6 +28,24 @@ const { adminListOnline, adminListSaha } = require('../../../src/modules/trainin
 describe('trainings.service — adminListOnline', () => {
   beforeEach(() => { mockQueue.length = 0; });
 
+  test('exposes the raw face-to-face session fields for panel roundtrip', async () => {
+    mockQueue.push([
+      {
+        id: 't2', title: 'Yüz Yüze Temel', duration_min: 120, delivery: 'yuzyuze', is_active: 1,
+        session_starts_at: new Date('2026-10-01T07:00:00Z'), session_location: 'Salon A',
+        session_instructor: 'Ayşe Demir', enrolled: 0, completed: 0,
+      },
+      { id: 't3', title: 'Online', duration_min: 30, delivery: 'online', is_active: 1 },
+    ]);
+
+    const { items } = await adminListOnline({});
+
+    expect(items[0]).toMatchObject({
+      startsAt: '2026-10-01T07:00:00.000Z', location: 'Salon A', instructor: 'Ayşe Demir',
+    });
+    expect(items[1]).toMatchObject({ startsAt: null, location: null, instructor: null });
+  });
+
   test('aggregate sayaçları Number\'a çevirip panel sözleşmesine mapler', async () => {
     mockQueue.push([
       {
@@ -86,5 +104,17 @@ describe('trainings.service — adminListSaha', () => {
 
     const result = await adminListSaha({});
     expect(result.items[0].availableSeats).toBe(0);
+  });
+
+  test('the enrolled count leaves rejected applications out, so they hold no seat', async () => {
+    const { db } = require('../../../src/config/db');
+    mockQueue.push([]);
+
+    await adminListSaha({});
+
+    const enrolledSql = db.raw.mock.calls
+      .map(([sql]) => sql)
+      .find((sql) => sql.includes('as enrolled_count'));
+    expect(enrolledSql).toMatch(/status <> 'rejected'/);
   });
 });

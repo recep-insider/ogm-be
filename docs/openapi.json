@@ -14,11 +14,11 @@
   },
   "servers": [
     {
-      "url": "https://surfaces-acer-munich-completed.trycloudflare.com/v1",
+      "url": "http://localhost:3001/v1",
       "description": "API v1"
     },
     {
-      "url": "https://surfaces-acer-munich-completed.trycloudflare.com",
+      "url": "http://localhost:3001",
       "description": "Kök (health vb.)"
     }
   ],
@@ -636,10 +636,6 @@
           "id": {
             "type": "string"
           },
-          "category": {
-            "type": "string",
-            "example": "LOJİSTİK DESTEK"
-          },
           "title": {
             "type": "string"
           },
@@ -676,6 +672,37 @@
           }
         }
       },
+      "AssemblyPoint": {
+        "type": "object",
+        "nullable": true,
+        "description": "Olay başına TEK toplanma noktası; nokta değişirse sunucu otomatik bildirir.",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "address": {
+            "type": "string",
+            "nullable": true
+          },
+          "coordinates": {
+            "type": "object",
+            "properties": {
+              "lat": {
+                "type": "number"
+              },
+              "lng": {
+                "type": "number"
+              }
+            }
+          },
+          "isOpen": {
+            "type": "boolean"
+          }
+        }
+      },
       "ActiveMissionDetail": {
         "allOf": [
           {
@@ -700,20 +727,24 @@
                   "format": "uri"
                 }
               },
-              "needs": {
-                "type": "array",
-                "items": {
-                  "type": "string"
-                }
-              },
               "stats": {
                 "type": "object",
+                "description": "Sahadaki gönüllü sayısının tek kaynağı check-in kaydıdır.",
                 "properties": {
                   "volunteers": {
                     "type": "integer"
+                  }
+                }
+              },
+              "checkInTrend": {
+                "type": "object",
+                "properties": {
+                  "windowMinutes": {
+                    "type": "integer",
+                    "example": 15
                   },
-                  "hectares": {
-                    "type": "number"
+                  "count": {
+                    "type": "integer"
                   }
                 }
               },
@@ -722,7 +753,13 @@
               },
               "startedAt": {
                 "type": "string",
-                "format": "date-time"
+                "format": "date-time",
+                "nullable": true
+              },
+              "archivedAt": {
+                "type": "string",
+                "format": "date-time",
+                "nullable": true
               },
               "coordinates": {
                 "type": "object",
@@ -735,44 +772,13 @@
                   }
                 }
               },
-              "coverageRadiusKm": {
-                "type": "number"
+              "assemblyPoint": {
+                "$ref": "#/components/schemas/AssemblyPoint"
               },
-              "operational": {
-                "type": "object",
-                "properties": {
-                  "meetingPoint": {
-                    "type": "string"
-                  },
-                  "requiredEquipment": {
-                    "type": "string"
-                  }
-                }
-              },
-              "announcements": {
-                "type": "array",
-                "items": {
-                  "type": "object",
-                  "properties": {
-                    "id": {
-                      "type": "string"
-                    },
-                    "message": {
-                      "type": "string"
-                    },
-                    "publishedAt": {
-                      "type": "string",
-                      "format": "date-time"
-                    },
-                    "severity": {
-                      "type": "string",
-                      "enum": [
-                        "info",
-                        "alert"
-                      ]
-                    }
-                  }
-                }
+              "qrPayload": {
+                "type": "string",
+                "nullable": true,
+                "example": "OGM:VOL:8f3c..."
               }
             }
           }
@@ -780,6 +786,7 @@
       },
       "FireMissionSummary": {
         "type": "object",
+        "description": "Görev Aldığım Yangınlar — yalnızca userStatus yolda | sahada | tamamladi olan olaylar.",
         "properties": {
           "id": {
             "type": "string"
@@ -792,17 +799,28 @@
           },
           "startDate": {
             "type": "string",
-            "format": "date"
+            "format": "date",
+            "nullable": true,
+            "description": "start_date yoksa olayın başladığı an (started_at) kullanılır"
           },
           "endDate": {
             "type": "string",
-            "format": "date"
+            "format": "date",
+            "nullable": true
           },
           "status": {
             "type": "string",
             "enum": [
               "active",
-              "completed"
+              "archived"
+            ]
+          },
+          "userStatus": {
+            "type": "string",
+            "enum": [
+              "yolda",
+              "sahada",
+              "tamamladi"
             ]
           },
           "cover": {
@@ -837,9 +855,6 @@
               "stats": {
                 "type": "object",
                 "properties": {
-                  "hectares": {
-                    "type": "number"
-                  },
                   "volunteers": {
                     "type": "integer"
                   }
@@ -871,10 +886,36 @@
               "tertiary"
             ]
           },
+          "required": {
+            "type": "boolean"
+          },
+          "delivery": {
+            "type": "string",
+            "enum": [
+              "yuzyuze",
+              "online"
+            ]
+          },
           "videoUrl": {
             "type": "string",
             "format": "uri",
             "nullable": true
+          },
+          "startsAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true,
+            "description": "Yüz yüze oturumun başlangıcı — delivery=online ise her zaman null"
+          },
+          "location": {
+            "type": "string",
+            "nullable": true,
+            "description": "Yüz yüze oturum yeri"
+          },
+          "instructor": {
+            "type": "string",
+            "nullable": true,
+            "description": "Yüz yüze oturum eğitmeni"
           },
           "status": {
             "type": "string",
@@ -928,8 +969,18 @@
             "format": "uri",
             "nullable": true
           },
-          "availableSeats": {
+          "grantsCompetency": {
+            "type": "boolean"
+          },
+          "enrolled": {
             "type": "integer"
+          },
+          "attended": {
+            "type": "integer"
+          },
+          "availableSeats": {
+            "type": "integer",
+            "description": "K4: kontenjan kesin sınırdır — 0 ise başvuru 410 training_full alır"
           },
           "seatStatus": {
             "type": "string",
@@ -1123,11 +1174,39 @@
           "id": {
             "type": "string"
           },
+          "title": {
+            "type": "string",
+            "nullable": true,
+            "example": "[48700] Muğla, Marmaris 001",
+            "description": "Posta kodu + il/ilçeden türer; açık adres gösterilmez"
+          },
+          "postalCode": {
+            "type": "string",
+            "nullable": true
+          },
+          "il": {
+            "type": "string",
+            "nullable": true
+          },
+          "ilce": {
+            "type": "string",
+            "nullable": true
+          },
           "locationName": {
             "type": "string"
           },
           "regionLabel": {
             "type": "string"
+          },
+          "region": {
+            "type": "string",
+            "nullable": true,
+            "example": "ege"
+          },
+          "regionName": {
+            "type": "string",
+            "nullable": true,
+            "example": "Ege"
           },
           "status": {
             "type": "string",
@@ -1135,6 +1214,14 @@
               "reviewing",
               "confirmed",
               "rejected"
+            ]
+          },
+          "statusLabel": {
+            "type": "string",
+            "enum": [
+              "İnceleniyor",
+              "Doğrulandı",
+              "Reddedildi"
             ]
           },
           "submittedAt": {
@@ -1152,10 +1239,113 @@
               }
             }
           },
-          "needs": {
+          "missionId": {
+            "type": "string",
+            "nullable": true,
+            "description": "İhbarın bağlandığı olay (bağlıysa) — görev detayına geçiş için"
+          }
+        }
+      },
+      "Readiness": {
+        "type": "object",
+        "properties": {
+          "zincir": {
+            "type": "object",
+            "properties": {
+              "steps": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "key": {
+                      "type": "string",
+                      "enum": [
+                        "komisyon",
+                        "teorik",
+                        "uygulamali",
+                        "kkd"
+                      ]
+                    },
+                    "label": {
+                      "type": "string"
+                    },
+                    "done": {
+                      "type": "boolean"
+                    },
+                    "state": {
+                      "type": "string",
+                      "nullable": true
+                    }
+                  }
+                }
+              },
+              "komisyon": {
+                "type": "string",
+                "example": "approved"
+              },
+              "eksikAdimlar": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "siradakiAdim": {
+                "type": "string",
+                "nullable": true
+              },
+              "kkdDurumu": {
+                "type": "string"
+              },
+              "tamam": {
+                "type": "boolean"
+              }
+            }
+          },
+          "kisiDurumu": {
+            "type": "string",
+            "enum": [
+              "basvuru",
+              "hazir",
+              "pasif"
+            ]
+          },
+          "mudahaleYetkisi": {
+            "type": "boolean"
+          },
+          "engeller": {
             "type": "array",
             "items": {
-              "type": "string"
+              "type": "object",
+              "properties": {
+                "key": {
+                  "type": "string"
+                },
+                "label": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "komisyon": {
+            "type": "object",
+            "properties": {
+              "decision": {
+                "type": "string",
+                "example": "pending"
+              },
+              "decidedAt": {
+                "type": "string",
+                "format": "date-time",
+                "nullable": true
+              },
+              "decidedBy": {
+                "type": "string",
+                "nullable": true
+              },
+              "decisionNo": {
+                "type": "string",
+                "nullable": true
+              }
             }
           }
         }
@@ -1843,6 +2033,32 @@
                     "type": "string",
                     "description": "POST /admin/content/media yanıtındaki path"
                   },
+                  "required": {
+                    "type": "boolean"
+                  },
+                  "delivery": {
+                    "type": "string",
+                    "enum": [
+                      "yuzyuze",
+                      "online"
+                    ]
+                  },
+                  "startsAt": {
+                    "type": "string",
+                    "format": "date-time",
+                    "nullable": true,
+                    "description": "Yüz yüze oturum başlangıcı"
+                  },
+                  "location": {
+                    "type": "string",
+                    "nullable": true,
+                    "description": "Yüz yüze oturum yeri"
+                  },
+                  "instructor": {
+                    "type": "string",
+                    "nullable": true,
+                    "description": "Yüz yüze oturum eğitmeni"
+                  },
                   "isActive": {
                     "type": "boolean"
                   }
@@ -1907,7 +2123,8 @@
                   "startDate",
                   "startTime",
                   "endTime",
-                  "instructorName"
+                  "instructorName",
+                  "totalSeats"
                 ],
                 "properties": {
                   "title": {
@@ -1938,7 +2155,9 @@
                     "type": "string"
                   },
                   "totalSeats": {
-                    "type": "integer"
+                    "type": "integer",
+                    "minimum": 1,
+                    "description": "Kesin kontenjan — dolunca yeni başvuru 410 training_full alır"
                   },
                   "isActive": {
                     "type": "boolean"
@@ -2926,7 +3145,7 @@
           "Admin"
         ],
         "summary": "Olayı arşivle (panel) — TERMİNAL",
-        "description": "Durum geçişi operatör kararıdır, otomatik değişmez. Arşivlendi terminaldir: aynı kayıt tekrar Aktif'e alınamaz, yeniden alevlenirse YENİ olay kaydı açılır. Yeni gönüllü çağrısı durur, toplanma noktası kapanır, sahadaki gönüllüler `tamamladi` olur ve sahadaki sayı sıfırlanır (check-in kayıtları korunur).",
+        "description": "Durum geçişi operatör kararıdır, otomatik değişmez. Arşivlendi terminaldir: aynı kayıt tekrar Aktif'e alınamaz, yeniden alevlenirse YENİ olay kaydı açılır. Yeni gönüllü çağrısı durur, toplanma noktası kapanır, `yolda`/`sahada` gönüllüler `tamamladi` olur ve sahadaki sayı sıfırlanır (check-in kayıtları korunur). Yanıtsız `cagrildi` satırları değişmez, görev geçmişine girmez.",
         "security": [
           {
             "adminApiKey": []
@@ -4301,7 +4520,7 @@
           "Missions"
         ],
         "summary": "Yangın sahası giriş kaydı — QR check-in (userStatus → sahada)",
-        "description": "Mobil uygulamadan ÇAĞRILMAZ. Saha amiri (officer) `x-api-key` veya\n`role=officer` token ile çağırır. Opsiyonel `token` HMAC imzasıdır (B.1).\n\nbackend §13: Gönüllü QR'ı `OGM:VOL:{id}` formatındadır; okutulamazsa TC kimlik\nnumarasıyla manuel kayıt yedek yöntemdir. Hazırlık zincirinde eksik varsa\ncheck-in ENGELLENİR — yalnızca uyarı değil, kayıt oluşmaz ve sahadaki sayıya\ngirmez. Arama bölge kapsamıyla sınırlı değildir. Sahadaki gönüllü sayısının tek\nkaynağı bu kayıttır.\n",
+        "description": "Mobil uygulamadan ÇAĞRILMAZ. Saha amiri (officer) `x-api-key` veya\n`role=officer` token ile çağırır. `qr` (`OGM:VOL:{id}`) ve `tcKimlik` imza\nTAŞIMAZ — güven kaynağı saha amirinin doğrulanmış cihazı ve seçtiği olaydır.\n`SCAN_HMAC_SECRET` doluysa `token` (HMAC `${userId}:${missionId}`) yalnızca\nçıplak `userId` formatında zorunludur (B.1); geçersiz/yanlış uzunlukta token\n400 `invalid_qr` döner.\n\nbackend §13: Gönüllü QR'ı `OGM:VOL:{id}` formatındadır; okutulamazsa TC kimlik\nnumarasıyla manuel kayıt yedek yöntemdir. Hazırlık zincirinde eksik varsa\ncheck-in ENGELLENİR — yalnızca uyarı değil, kayıt oluşmaz ve sahadaki sayıya\ngirmez. Arama bölge kapsamıyla sınırlı değildir. Sahadaki gönüllü sayısının tek\nkaynağı bu kayıttır.\n",
         "security": [
           {
             "officerApiKey": []
@@ -4341,7 +4560,7 @@
                   },
                   "token": {
                     "type": "string",
-                    "description": "opsiyonel HMAC imzası"
+                    "description": "HMAC imzası — yalnızca userId formatında, SCAN_HMAC_SECRET doluysa"
                   }
                 }
               }
@@ -4351,6 +4570,9 @@
         "responses": {
           "200": {
             "description": "Giriş kaydedildi — künye (ad, soyad, maskeli TC, kişi/KKD/eğitim durumu, STK) döner"
+          },
+          "400": {
+            "description": "invalid_qr — userId formatında imza eksik/geçersiz"
           },
           "403": {
             "description": "readiness_incomplete — katılım engeli, kayıt OLUŞMAZ"
@@ -5050,6 +5272,7 @@
           "Trainings"
         ],
         "summary": "Saha eğitim listesi",
+        "description": "Only active trainings dated today or later (Europe/Istanbul); past trainings are not listed.",
         "security": [
           {
             "bearerAuth": []
@@ -5117,7 +5340,7 @@
             "description": "already_applied"
           },
           "410": {
-            "description": "training_full | training_closed"
+            "description": "training_full | training_closed | training_past"
           }
         }
       }
@@ -5683,7 +5906,14 @@
         ],
         "responses": {
           "200": {
-            "description": "{zincir:{steps[],eksikAdimlar,siradakiAdim,tamam}, kisiDurumu, mudahaleYetkisi, engeller[], komisyon}"
+            "description": "Hazırlık zinciri, kişi durumu, müdahale yetkisi ve engeller",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Readiness"
+                }
+              }
+            }
           }
         }
       }
