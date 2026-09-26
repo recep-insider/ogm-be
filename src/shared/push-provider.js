@@ -14,6 +14,8 @@ const TOPIC_COLUMN = {
   announcements: 'announcements',
 };
 
+const URGENT_TOPICS = new Set(['acil', 'taskCalls']);
+
 let firebaseMessaging = null;
 function getFirebaseMessaging() {
   if (firebaseMessaging) return firebaseMessaging;
@@ -32,12 +34,40 @@ function getFirebaseMessaging() {
   return firebaseMessaging;
 }
 
+// FCM HTTP v1'in "bu token bu uygulamaya ait değil" cevabı (uygulama silindi, token döndü).
+const DEAD_TOKEN_CODE = 'messaging/registration-token-not-registered';
+// Bozuk/biçimsiz token da v1'de `invalid-argument` döner — ama aynı kod bozuk bir
+// *payload* için de her token'a döner. Bu yüzden yalnızca aynı gönderimde en az bir
+// token başarılıysa (payload sağlamsa) token'a ait sayılır.
+const MALFORMED_TOKEN_CODE = 'messaging/invalid-argument';
+
+/** Gönderim sonucundan ölü token'ları ayıklar. */
+function deadTokens(tokens, responses) {
+  const payloadAccepted = responses.some((r) => r && r.success);
+  return tokens.filter((_, i) => {
+    const code = responses[i] && !responses[i].success ? responses[i].error?.code : undefined;
+    return code === DEAD_TOKEN_CODE || (payloadAccepted && code === MALFORMED_TOKEN_CODE);
+  });
+}
+
 async function deliver(tokens, payload) {
   const provider = env.push.provider.toLowerCase();
   if (provider === 'firebase') {
     const messaging = getFirebaseMessaging();
     const res = await messaging.sendEachForMulticast(buildMulticast(tokens, payload));
-    return { sent: res.successCount, failed: res.failureCount };
+    const result = { sent: res.successCount, failed: res.failureCount };
+    // Temizlik en iyi çaba: devices tablosundaki bir hata, gerçekten teslim edilmiş
+    // bir push'u "gönderilemedi" diye raporlatmamalı.
+    const dead = deadTokens(tokens, res.responses || []);
+    if (dead.length) {
+      try {
+        await db('devices').whereIn('fcm_token', dead).del();
+        logger.info('Push: geçersiz token kayıtları silindi', { count: dead.length });
+      } catch (err) {
+        logger.warn('Push: geçersiz token temizliği başarısız', { count: dead.length, error: err.message });
+      }
+    }
+    return result;
   }
   logger.info('PUSH [MOCK] gönderildi', { tokenCount: tokens.length, ...payload });
   return { sent: tokens.length, failed: 0, mock: true };
@@ -71,6 +101,11 @@ function buildMulticast(tokens, payload) {
   };
   const channelId = payload.channelId || payload.topic;
   if (channelId) message.android = { notification: { channelId } };
+  // Acil durumlar ve görev çağrıları Android'de Doze'u delip hemen düşmeli;
+  // eğitim/duyuru bildirimleri normal öncelikte kalır.
+  if (URGENT_TOPICS.has(payload.topic)) message.android = { ...message.android, priority: 'high' };
+  // iOS'ta `sound` verilmezse bildirim sessiz gelir.
+  message.apns = { payload: { aps: { sound: 'default' } } };
   return message;
 }
 
@@ -101,4 +136,33 @@ async function sendPushToUser(userId, payload) {
   }
 }
 
-module.exports = { sendPushToUser, stringifyData, buildMulticast };
+/**
+ * Açılışta push sağlayıcısını doğrular. Gerçek sağlayıcıda anahtar dosyası
+ * okunamıyorsa bu, ilk acil bildirimde değil burada, tek ve açık bir hatayla görünür.
+ */
+function verifyPushProvider() {
+  const provider = env.push.provider.toLowerCase();
+  if (provider !== 'firebase') {
+    logger.info('Push sağlayıcısı: mock (gerçek bildirim gönderilmez)');
+    return { provider, ok: true };
+  }
+  // Anahtar yolu boşsa firebase-admin "varsayılan kimlik"e (GCE metadata) düşer ve
+  // hata vermeden başlar; bu sunucuda o kimlik yok, her gönderim sonradan patlar.
+  if (!env.firebase.credentialsPath) {
+    logger.error('Push sağlayıcısı firebase ama FIREBASE_CREDENTIALS_PATH boş — bildirimler GİTMEYECEK');
+    return { provider, ok: false };
+  }
+  try {
+    getFirebaseMessaging();
+    logger.info('Push sağlayıcısı: firebase', { projectId: env.firebase.projectId || undefined });
+    return { provider, ok: true };
+  } catch (err) {
+    logger.error('Push sağlayıcısı firebase ama başlatılamadı — bildirimler GİTMEYECEK', {
+      credentialsPath: env.firebase.credentialsPath || undefined,
+      error: err.message,
+    });
+    return { provider, ok: false };
+  }
+}
+
+module.exports = { sendPushToUser, stringifyData, buildMulticast, deadTokens, verifyPushProvider };

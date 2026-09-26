@@ -5,6 +5,7 @@ const env = require('./config/env');
 const logger = require('./config/logger');
 const { pingDb, closeDb } = require('./config/db');
 const { connectRedis, pingRedis, closeRedis } = require('./config/redis');
+const { verifyPushProvider } = require('./shared/push-provider');
 
 async function bootstrap() {
   try {
@@ -21,6 +22,8 @@ async function bootstrap() {
   } catch (err) {
     logger.error('Redis bağlantısı başarısız', { error: err.message });
   }
+
+  verifyPushProvider();
 
   const server = app.listen(env.port, () => {
     logger.info(`OGM Gönüllü API başladı`, {

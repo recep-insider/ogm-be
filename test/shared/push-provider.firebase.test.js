@@ -20,10 +20,21 @@ jest.mock('../../src/config/env', () => ({
   firebase: { credentialsPath: '', projectId: 'ogm-test' },
 }));
 jest.mock('../../src/config/logger', () => ({ info: jest.fn(), warn: jest.fn(), debug: jest.fn() }));
+const mockDeleted = [];
+const mockDbState = { failDelete: false };
 jest.mock('../../src/config/db', () => ({
   db: jest.fn(() => {
     const c = {
       where: jest.fn(() => c),
+      whereIn: jest.fn((_col, values) => {
+        c.pending = values;
+        return c;
+      }),
+      del: jest.fn(async () => {
+        if (mockDbState.failDelete) throw new Error('Lock wait timeout exceeded');
+        mockDeleted.push(...c.pending);
+        return c.pending.length;
+      }),
       first: jest.fn(async () => undefined),
       pluck: jest.fn(async () => ['tok-1', 'tok-2']),
     };
@@ -37,6 +48,8 @@ const { sendPushToUser, buildMulticast } = require('../../src/shared/push-provid
 describe('push-provider — firebase delivery', () => {
   beforeEach(() => {
     mockMessaging.sendEachForMulticast.mockReset();
+    mockDbState.failDelete = false;
+    mockDeleted.length = 0;
   });
 
   it('sends the buildMulticast output to sendEachForMulticast', async () => {
@@ -71,5 +84,139 @@ describe('push-provider — firebase delivery', () => {
     await sendPushToUser('u1', { topic: 'acil', title: 'T', body: 'B' });
 
     expect(admin.initializeApp).toHaveBeenCalledWith({ credential: 'adc', projectId: 'ogm-test' });
+  });
+
+  it('deletes the device rows FCM reports as unregistered', async () => {
+    mockDeleted.length = 0;
+    mockMessaging.sendEachForMulticast.mockResolvedValue({
+      successCount: 1,
+      failureCount: 1,
+      responses: [
+        { success: true },
+        { success: false, error: { code: 'messaging/registration-token-not-registered' } },
+      ],
+    });
+
+    await sendPushToUser('u1', { topic: 'acil', title: 'T', body: 'B' });
+
+    expect(mockDeleted).toEqual(['tok-2']);
+  });
+
+  it('deletes dead tokens from the devices table by the fcm_token column', async () => {
+    mockMessaging.sendEachForMulticast.mockResolvedValue({
+      successCount: 1,
+      failureCount: 1,
+      responses: [
+        { success: true },
+        { success: false, error: { code: 'messaging/registration-token-not-registered' } },
+      ],
+    });
+    const { db } = require('../../src/config/db');
+    db.mockClear();
+
+    await sendPushToUser('u1', { topic: 'acil', title: 'T', body: 'B' });
+
+    const deleteBuilder = db.mock.results.find((r) => r.value.del.mock.calls.length > 0);
+    const deleteCallIndex = db.mock.results.indexOf(deleteBuilder);
+    expect(db.mock.calls[deleteCallIndex]).toEqual(['devices']);
+    expect(deleteBuilder.value.whereIn).toHaveBeenCalledWith('fcm_token', ['tok-2']);
+  });
+
+  it('still reports the FCM counts after a dead-token cleanup', async () => {
+    mockMessaging.sendEachForMulticast.mockResolvedValue({
+      successCount: 1,
+      failureCount: 1,
+      responses: [
+        { success: true },
+        { success: false, error: { code: 'messaging/registration-token-not-registered' } },
+      ],
+    });
+
+    const result = await sendPushToUser('u1', { topic: 'acil', title: 'T', body: 'B' });
+
+    expect(result).toEqual({ sent: 1, failed: 1 });
+  });
+
+  it('runs no delete when every failure is transient', async () => {
+    mockMessaging.sendEachForMulticast.mockResolvedValue({
+      successCount: 0,
+      failureCount: 2,
+      responses: [
+        { success: false, error: { code: 'messaging/internal-error' } },
+        { success: false, error: { code: 'messaging/server-unavailable' } },
+      ],
+    });
+    const { db } = require('../../src/config/db');
+    db.mockClear();
+
+    await sendPushToUser('u1', { topic: 'acil', title: 'T', body: 'B' });
+
+    const deleted = db.mock.results.filter((r) => r.value.del.mock.calls.length > 0);
+    expect(deleted).toHaveLength(0);
+  });
+
+  it('reports a delivered push as sent even when the dead-token cleanup fails', async () => {
+    mockDbState.failDelete = true;
+    mockMessaging.sendEachForMulticast.mockResolvedValue({
+      successCount: 1,
+      failureCount: 1,
+      responses: [
+        { success: true },
+        { success: false, error: { code: 'messaging/registration-token-not-registered' } },
+      ],
+    });
+
+    const res = await sendPushToUser('u1', { topic: 'taskCalls', title: 'T', body: 'B' });
+
+    expect(res).toEqual({ sent: 1, failed: 1 });
+  });
+
+  it('logs a warning with the dead-token count and error when the cleanup fails', async () => {
+    const logger = require('../../src/config/logger');
+    logger.warn.mockClear();
+    mockDbState.failDelete = true;
+    mockMessaging.sendEachForMulticast.mockResolvedValue({
+      successCount: 1,
+      failureCount: 1,
+      responses: [
+        { success: true },
+        { success: false, error: { code: 'messaging/registration-token-not-registered' } },
+      ],
+    });
+
+    await sendPushToUser('u1', { topic: 'taskCalls', title: 'T', body: 'B' });
+
+    expect(logger.warn).toHaveBeenCalledWith(expect.any(String), {
+      count: 1,
+      error: 'Lock wait timeout exceeded',
+    });
+  });
+
+  it('reports a delivered push as sent when a failed response carries no error object', async () => {
+    mockMessaging.sendEachForMulticast.mockResolvedValue({
+      successCount: 1,
+      failureCount: 1,
+      responses: [{ success: true }, { success: false }],
+    });
+
+    const res = await sendPushToUser('u1', { topic: 'acil', title: 'T', body: 'B' });
+
+    expect(res).toEqual({ sent: 1, failed: 1 });
+  });
+
+  it('records how many dead device rows a send removed', async () => {
+    const logger = require('../../src/config/logger');
+    mockMessaging.sendEachForMulticast.mockResolvedValue({
+      successCount: 1,
+      failureCount: 1,
+      responses: [
+        { success: true },
+        { success: false, error: { code: 'messaging/registration-token-not-registered' } },
+      ],
+    });
+
+    await sendPushToUser('u1', { topic: 'taskCalls', title: 'T', body: 'B' });
+
+    expect(logger.info).toHaveBeenCalledWith(expect.stringContaining('silindi'), { count: 1 });
   });
 });
