@@ -3,6 +3,7 @@
 jest.mock('../../src/config/db', () => ({ db: jest.fn() }));
 jest.mock('../../src/config/logger', () => ({ info: jest.fn(), warn: jest.fn(), debug: jest.fn() }));
 
+const logger = require('../../src/config/logger');
 const { stringifyData, buildMulticast, deadTokens, verifyPushProvider } = require('../../src/shared/push-provider');
 
 describe('push-provider — stringifyData', () => {
@@ -106,5 +107,11 @@ describe('push-provider — deadTokens', () => {
 describe('push-provider — verifyPushProvider (mock)', () => {
   it('reports the mock provider as ok without loading firebase-admin', () => {
     expect(verifyPushProvider()).toEqual({ provider: 'mock', ok: true });
+  });
+
+  it('logs at boot that the mock provider sends no real notifications', () => {
+    logger.info.mockClear();
+    verifyPushProvider();
+    expect(logger.info).toHaveBeenCalledWith(expect.stringContaining('mock'));
   });
 });
