@@ -35,6 +35,9 @@ services:
     volumes:
       - ./logs:/app/logs
       - ./uploads:/app/uploads
+      # Server-only key files (Firebase service account). Never in git or the
+      # image; deploy.sh ships them from the operator's local secrets/.
+      - ./secrets:/app/secrets:ro
     depends_on:
       mysql:
         condition: service_healthy

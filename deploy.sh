@@ -365,6 +365,7 @@ setup-domain.sh
 PRODUCTION-SECRETS.md
 certbot/
 frontend/
+secrets/
 EOF
 
 # ─── Deploy dizini hazırla ──────────────────────────────────────────────
@@ -433,6 +434,38 @@ else
   # Nominatim'e giden User-Agent'taki iletişim adresi buradan geliyor; eksikse
   # env.js 'http://localhost'a düşer ve OSM'in istediği adres işe yaramaz olur.
   ensure_env_key APP_URL "http://$SSH_HOST"
+fi
+
+# ─── Push (FCM) ──────────────────────────────────────────────────────────────
+# Gerçek push için Firebase service account gerekir. Anahtar repoda ve imajda
+# yoktur; operatörün makinesindeki secrets/firebase-sa.json varsa sunucuya
+# gönderilir ve push sağlayıcısı firebase'e çevrilir. Dosya yoksa .env'deki
+# PUSH_PROVIDER'a dokunulmaz (mock kalır).
+set_env_key() {
+  local key="$1" val="$2"
+  if run_ssh "grep -q '^${key}=' $DEPLOY_DIR/.env"; then
+    run_ssh "sed -i 's|^${key}=.*|${key}=${val}|' $DEPLOY_DIR/.env"
+  else
+    run_ssh "printf '\n%s\n' '${key}=${val}' >> $DEPLOY_DIR/.env"
+  fi
+  run_ssh "grep -q '^${key}=${val}\$' $DEPLOY_DIR/.env" || die "$key yazılamadı — .env'i sunucuda elle kontrol edin"
+}
+
+FIREBASE_SA_LOCAL="$LOCAL_REPO/secrets/firebase-sa.json"
+if [ -f "$FIREBASE_SA_LOCAL" ]; then
+  FIREBASE_PROJECT=$(grep -o '"project_id"[[:space:]]*:[[:space:]]*"[^"]*"' "$FIREBASE_SA_LOCAL" | sed 's/.*"\([^"]*\)"$/\1/')
+  [ -n "$FIREBASE_PROJECT" ] || die "secrets/firebase-sa.json içinde project_id yok"
+  log "Firebase service account gönderiliyor (proje: $FIREBASE_PROJECT)"
+  run_ssh "mkdir -p $DEPLOY_DIR/secrets"
+  run_rsync -az "$FIREBASE_SA_LOCAL" "$TARGET:$DEPLOY_DIR/secrets/firebase-sa.json"
+  # Container içindeki node kullanıcısı (uid 1000) okuyabilmeli, başkası değil.
+  run_ssh "chown -R 1000:1000 $DEPLOY_DIR/secrets && chmod 700 $DEPLOY_DIR/secrets && chmod 400 $DEPLOY_DIR/secrets/firebase-sa.json"
+  set_env_key PUSH_PROVIDER firebase
+  set_env_key FIREBASE_PROJECT_ID "$FIREBASE_PROJECT"
+  set_env_key FIREBASE_CREDENTIALS_PATH /app/secrets/firebase-sa.json
+  ok "Push sağlayıcısı: firebase"
+else
+  warn "secrets/firebase-sa.json yok — PUSH_PROVIDER değiştirilmedi"
 fi
 
 # ─── Volume dizinleri (node user uid 1000 için) ──────────────────────────────────────

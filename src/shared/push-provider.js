@@ -32,11 +32,31 @@ function getFirebaseMessaging() {
   return firebaseMessaging;
 }
 
+// FCM'in "bu token artık bu uygulamaya ait değil" dediği hatalar (uygulama silindi,
+// token döndü). Bu token'lara bir daha gönderilmez; kayıt silinir.
+const DEAD_TOKEN_CODES = new Set([
+  'messaging/registration-token-not-registered',
+  'messaging/invalid-registration-token',
+]);
+
+/** Gönderim sonucundan ölü token'ları ayıklar. */
+function deadTokens(tokens, responses) {
+  return tokens.filter((_, i) => {
+    const r = responses[i];
+    return r && !r.success && DEAD_TOKEN_CODES.has(r.error?.code);
+  });
+}
+
 async function deliver(tokens, payload) {
   const provider = env.push.provider.toLowerCase();
   if (provider === 'firebase') {
     const messaging = getFirebaseMessaging();
     const res = await messaging.sendEachForMulticast(buildMulticast(tokens, payload));
+    const dead = deadTokens(tokens, res.responses || []);
+    if (dead.length) {
+      await db('devices').whereIn('fcm_token', dead).del();
+      logger.info('Push: geçersiz token kayıtları silindi', { count: dead.length });
+    }
     return { sent: res.successCount, failed: res.failureCount };
   }
   logger.info('PUSH [MOCK] gönderildi', { tokenCount: tokens.length, ...payload });
@@ -71,6 +91,10 @@ function buildMulticast(tokens, payload) {
   };
   const channelId = payload.channelId || payload.topic;
   if (channelId) message.android = { notification: { channelId } };
+  // Acil çağrılar Android'de Doze'u delip hemen düşmeli.
+  if (payload.topic === 'acil') message.android = { ...message.android, priority: 'high' };
+  // iOS'ta `sound` verilmezse bildirim sessiz gelir.
+  message.apns = { payload: { aps: { sound: 'default' } } };
   return message;
 }
 
@@ -101,4 +125,4 @@ async function sendPushToUser(userId, payload) {
   }
 }
 
-module.exports = { sendPushToUser, stringifyData, buildMulticast };
+module.exports = { sendPushToUser, stringifyData, buildMulticast, deadTokens };

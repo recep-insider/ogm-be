@@ -20,10 +20,19 @@ jest.mock('../../src/config/env', () => ({
   firebase: { credentialsPath: '', projectId: 'ogm-test' },
 }));
 jest.mock('../../src/config/logger', () => ({ info: jest.fn(), warn: jest.fn(), debug: jest.fn() }));
+const mockDeleted = [];
 jest.mock('../../src/config/db', () => ({
   db: jest.fn(() => {
     const c = {
       where: jest.fn(() => c),
+      whereIn: jest.fn((_col, values) => {
+        c.pending = values;
+        return c;
+      }),
+      del: jest.fn(async () => {
+        mockDeleted.push(...c.pending);
+        return c.pending.length;
+      }),
       first: jest.fn(async () => undefined),
       pluck: jest.fn(async () => ['tok-1', 'tok-2']),
     };
@@ -71,5 +80,21 @@ describe('push-provider — firebase delivery', () => {
     await sendPushToUser('u1', { topic: 'acil', title: 'T', body: 'B' });
 
     expect(admin.initializeApp).toHaveBeenCalledWith({ credential: 'adc', projectId: 'ogm-test' });
+  });
+
+  it('deletes the device rows FCM reports as unregistered', async () => {
+    mockDeleted.length = 0;
+    mockMessaging.sendEachForMulticast.mockResolvedValue({
+      successCount: 1,
+      failureCount: 1,
+      responses: [
+        { success: true },
+        { success: false, error: { code: 'messaging/registration-token-not-registered' } },
+      ],
+    });
+
+    await sendPushToUser('u1', { topic: 'acil', title: 'T', body: 'B' });
+
+    expect(mockDeleted).toEqual(['tok-2']);
   });
 });

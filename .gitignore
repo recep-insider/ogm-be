@@ -41,3 +41,5 @@ uploads/
 
 # Deploy secrets (never commit)
 PRODUCTION-SECRETS.md
+# Firebase service account and other server-only key files
+secrets/

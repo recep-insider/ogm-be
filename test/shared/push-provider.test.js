@@ -3,7 +3,7 @@
 jest.mock('../../src/config/db', () => ({ db: jest.fn() }));
 jest.mock('../../src/config/logger', () => ({ info: jest.fn(), warn: jest.fn(), debug: jest.fn() }));
 
-const { stringifyData, buildMulticast } = require('../../src/shared/push-provider');
+const { stringifyData, buildMulticast, deadTokens } = require('../../src/shared/push-provider');
 
 describe('push-provider — stringifyData', () => {
   it('drops undefined/null keys instead of sending "undefined"/"null" strings', () => {
@@ -28,10 +28,22 @@ describe('push-provider — buildMulticast', () => {
         tokens: ['t1'],
         notification: { title: 'T', body: 'B' },
         data: { a: '1' },
-        android: { notification: { channelId: topic } },
+        android: topic === 'acil'
+          ? { notification: { channelId: topic }, priority: 'high' }
+          : { notification: { channelId: topic } },
+        apns: { payload: { aps: { sound: 'default' } } },
       });
     },
   );
+
+  it('sends high priority only for the acil topic', () => {
+    expect(buildMulticast(['t1'], { topic: 'acil', title: 'T', body: 'B' }).android.priority).toBe('high');
+    expect(buildMulticast(['t1'], { topic: 'taskCalls', title: 'T', body: 'B' }).android).not.toHaveProperty('priority');
+  });
+
+  it('always asks iOS to play the default sound', () => {
+    expect(buildMulticast(['t1'], { title: 'T', body: 'B' }).apns).toEqual({ payload: { aps: { sound: 'default' } } });
+  });
 
   it('prefers an explicit channelId over the topic, which still drives opt-out', () => {
     const msg = buildMulticast(['t1'], {
@@ -43,5 +55,22 @@ describe('push-provider — buildMulticast', () => {
   it('leaves out the android block when neither a channelId nor a topic is given', () => {
     const msg = buildMulticast(['t1'], { title: 'T', body: 'B' });
     expect(msg).not.toHaveProperty('android');
+  });
+});
+
+describe('push-provider — deadTokens', () => {
+  it('picks only tokens FCM reports as unregistered or invalid', () => {
+    const tokens = ['ok', 'gone', 'bad', 'flaky'];
+    const responses = [
+      { success: true },
+      { success: false, error: { code: 'messaging/registration-token-not-registered' } },
+      { success: false, error: { code: 'messaging/invalid-registration-token' } },
+      { success: false, error: { code: 'messaging/internal-error' } },
+    ];
+    expect(deadTokens(tokens, responses)).toEqual(['gone', 'bad']);
+  });
+
+  it('keeps every token when the responses are missing', () => {
+    expect(deadTokens(['a'], [])).toEqual([]);
   });
 });
