@@ -108,6 +108,19 @@ describe('applySaha — hard capacity (K4)', () => {
     mockState.training.is_active = 0;
     await expect(applySaha('u1', 's1')).rejects.toMatchObject({ code: 'training_closed' });
   });
+
+  it('answers 404 not_found for an unknown training and records nothing', async () => {
+    mockState.training = null;
+    await expect(applySaha('u1', 'missing')).rejects.toMatchObject({ status: 404, code: 'not_found' });
+    expect(mockState.inserts).toHaveLength(0);
+  });
+
+  it('answers 410 training_full for a 0-seat (legacy default) training', async () => {
+    mockState.training.total_seats = 0;
+    mockState.enrolled = 0;
+    await expect(applySaha('u1', 's1')).rejects.toMatchObject({ status: 410, code: 'training_full' });
+    expect(mockState.inserts).toHaveLength(0);
+  });
 });
 
 describe('listOnline — face-to-face session fields', () => {

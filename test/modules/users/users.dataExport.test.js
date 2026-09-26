@@ -50,6 +50,7 @@ jest.mock('../../../src/modules/fireReports/fireReports.service', () => ({
 }));
 
 const { dataExport } = require('../../../src/modules/users/users.service');
+const { titlesFor } = require('../../../src/modules/fireReports/fireReports.service');
 
 describe('users.service — dataExport fire reports', () => {
   it('selects the location columns and adds the computed title', async () => {
@@ -66,5 +67,27 @@ describe('users.service — dataExport fire reports', () => {
       ilce: 'Marmaris',
       title: '[48700] Muğla, Marmaris',
     });
+  });
+
+  it('skips titlesFor and returns an empty list when the user has no fire reports', async () => {
+    const saved = mockTables.fire_reports;
+    mockTables.fire_reports = [];
+    titlesFor.mockClear();
+    try {
+      const out = await dataExport('u1');
+
+      expect(titlesFor).not.toHaveBeenCalled();
+      expect(out.fireReports).toEqual([]);
+    } finally {
+      mockTables.fire_reports = saved;
+    }
+  });
+
+  it('sets title to null when titlesFor has no entry for a report', async () => {
+    titlesFor.mockResolvedValueOnce(new Map());
+
+    const out = await dataExport('u1');
+
+    expect(out.fireReports[0]).toMatchObject({ id: 'fr1', title: null });
   });
 });

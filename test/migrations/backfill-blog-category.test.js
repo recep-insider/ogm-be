@@ -15,6 +15,11 @@ describe('blog category backfill — categoryFromThemes', () => {
     [null, null],
     ['{bozuk', null],
     [['Doğa'], null],
+    // Non-string entries are skipped, so a later string theme still decides.
+    [[42, { name: 'Eğitim' }, 'Kurs Duyurusu'], 'egitim'],
+    // Valid JSON that is not an array carries no themes.
+    ['{"themes":["Eğitim"]}', null],
+    ['"Eğitim"', null],
   ])('%p -> %p', (themes, expected) => {
     expect(categoryFromThemes(themes)).toBe(expected);
   });

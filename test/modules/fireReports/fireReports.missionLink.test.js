@@ -91,6 +91,20 @@ describe('linkToMission — reporter push', () => {
     await service.linkToMission('m1', ['fr1'], {});
     expect(sendPushToUser).not.toHaveBeenCalled();
   });
+
+  it('notifies again when a confirmed report is re-linked to a different mission', async () => {
+    mockState.reports = [report({ mission_id: 'm0', status: 'confirmed' })];
+    await service.linkToMission('m1', ['fr1'], {});
+    expect(sendPushToUser).toHaveBeenCalledWith('u1', expect.objectContaining({
+      data: expect.objectContaining({ missionId: 'm1' }),
+    }));
+  });
+
+  it('notifies when an unconfirmed report is already linked to the same mission', async () => {
+    mockState.reports = [report({ mission_id: 'm1', status: 'reviewing' })];
+    await service.linkToMission('m1', ['fr1'], {});
+    expect(sendPushToUser).toHaveBeenCalledTimes(1);
+  });
 });
 
 describe('adminSetStatus — push data', () => {

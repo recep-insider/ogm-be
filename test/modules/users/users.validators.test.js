@@ -37,6 +37,24 @@ describe('PATCH /users/me — il', () => {
   });
 });
 
+describe('PATCH /users/me — stkText', () => {
+  it('accepts free-text NGO membership up to 200 characters', () => {
+    const { error, value } = patchMeSchema.validate({ stkText: 'TEMA Vakfı' }, OPTS);
+    expect(error).toBeUndefined();
+    expect(value.stkText).toBe('TEMA Vakfı');
+  });
+
+  it('rejects stkText longer than 200 characters', () => {
+    const { error } = patchMeSchema.validate({ stkText: 'x'.repeat(201) }, OPTS);
+    expect(error.details[0].path).toEqual(['stkText']);
+  });
+
+  it('allows clearing stkText with null or empty string', () => {
+    expect(patchMeSchema.validate({ stkText: null }, OPTS).error).toBeUndefined();
+    expect(patchMeSchema.validate({ stkText: '' }, OPTS).error).toBeUndefined();
+  });
+});
+
 describe('onboarding iletisim — il', () => {
   const payload = (il) => ({
     kimlik: { tcKimlik: '10000000146', ad: 'Ali', soyad: 'Yılmaz', dogumTarihi: '1990-05-15' },
