@@ -86,6 +86,13 @@ describe('push-provider — deadTokens', () => {
     expect(deadTokens(['a', 'b'], responses)).toEqual([]);
   });
 
+  it('drops a not-registered token even when no token in the send succeeded', () => {
+    const responses = [
+      { success: false, error: { code: 'messaging/registration-token-not-registered' } },
+    ];
+    expect(deadTokens(['only-device'], responses)).toEqual(['only-device']);
+  });
+
   it('keeps every token when the responses are missing', () => {
     expect(deadTokens(['a'], [])).toEqual([]);
   });
