@@ -39,4 +39,9 @@ describe('push-provider — buildMulticast', () => {
     });
     expect(msg.android).toEqual({ notification: { channelId: 'fire-report-confirmed' } });
   });
+
+  it('leaves out the android block when neither a channelId nor a topic is given', () => {
+    const msg = buildMulticast(['t1'], { title: 'T', body: 'B' });
+    expect(msg).not.toHaveProperty('android');
+  });
 });

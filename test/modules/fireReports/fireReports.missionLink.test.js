@@ -105,6 +105,20 @@ describe('linkToMission — reporter push', () => {
     await service.linkToMission('m1', ['fr1'], {});
     expect(sendPushToUser).toHaveBeenCalledTimes(1);
   });
+
+  it('keeps notifying the rest of a mixed batch after skipping an already-confirmed report', async () => {
+    // The already-confirmed report comes first: a `break` in place of the skip would drop fr2.
+    mockState.reports = [
+      report({ id: 'fr1', user_id: 'u1', mission_id: 'm1', status: 'confirmed' }),
+      report({ id: 'fr2', user_id: 'u2', mission_id: null, status: 'reviewing' }),
+    ];
+    await service.linkToMission('m1', ['fr1', 'fr2'], {});
+
+    expect(sendPushToUser).toHaveBeenCalledTimes(1);
+    expect(sendPushToUser).toHaveBeenCalledWith('u2', expect.objectContaining({
+      data: { type: 'fire_report_status', reportId: 'fr2', status: 'confirmed', missionId: 'm1' },
+    }));
+  });
 });
 
 describe('adminSetStatus — push data', () => {

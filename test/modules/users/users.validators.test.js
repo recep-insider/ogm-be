@@ -26,6 +26,11 @@ describe('PATCH /users/me — il', () => {
     expect(error.details[0]).toMatchObject({ path: ['il'], type: 'any.invalid' });
   });
 
+  it('reports an unknown province with the Turkish "Geçersiz il adı" message', () => {
+    const { error } = patchMeSchema.validate({ il: 'Atlantis' }, OPTS);
+    expect(error.details[0].message).toBe('Geçersiz il adı');
+  });
+
   it('still allows clearing il with null or empty string', () => {
     expect(patchMeSchema.validate({ il: null }, OPTS).error).toBeUndefined();
     expect(patchMeSchema.validate({ il: '' }, OPTS).error).toBeUndefined();

@@ -140,6 +140,42 @@ describe('blog category backfill — up/down', () => {
     expect(rows.map((r) => r.category)).toEqual(['haber', 'haber', 'haber']);
   });
 
+  it('creates the log table keyed by post_id so onConflict(post_id).ignore() dedupes re-runs', async () => {
+    const { knex } = makeKnex([]);
+
+    await migration.up(knex);
+
+    expect(knex.schema.createTable).toHaveBeenCalledTimes(1);
+    const [tableName, build] = knex.schema.createTable.mock.calls[0];
+    expect(tableName).toBe('blog_category_backfill_log');
+
+    // Run the schema callback against a recording table builder.
+    const columns = {};
+    const t = {
+      string: jest.fn((name, length) => {
+        const col = { type: 'string', length, modifiers: [] };
+        columns[name] = col;
+        const chain = {
+          primary: jest.fn(() => {
+            col.modifiers.push('primary');
+            return chain;
+          }),
+          notNullable: jest.fn(() => {
+            col.modifiers.push('notNullable');
+            return chain;
+          }),
+        };
+        return chain;
+      }),
+    };
+    build(t);
+
+    expect(columns).toEqual({
+      post_id: { type: 'string', length: 36, modifiers: ['primary'] },
+      category: { type: 'string', length: 16, modifiers: ['notNullable'] },
+    });
+  });
+
   it('rollback is a no-op when the backfill log table is missing', async () => {
     const rows = [{ id: 'x', category: 'egitim', themes: '["Eğitim"]' }];
     const { knex, updates } = makeKnex(rows);

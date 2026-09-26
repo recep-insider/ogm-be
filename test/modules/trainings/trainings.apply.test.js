@@ -4,11 +4,13 @@
 // trainings expose their session (startsAt, location, instructor) on GET /trainings/online.
 // Past field trainings (day before today, Europe/Istanbul) are neither listed nor applicable.
 
-const mockState = { training: null, existing: null, enrolled: 0, rejected: 0, inserts: [], online: [], progress: [], saha: [], whereCalls: [] };
+const mockState = { training: null, existing: null, enrolled: 0, rejected: 0, inserts: [], online: [], progress: [], saha: [], whereCalls: [], ops: [] };
 
 jest.mock('../../../src/config/db', () => {
-  const makeChain = (table) => {
+  // `via` tells a transaction-bound query (trx) apart from one on the bare pool (db).
+  const makeChain = (table, via = 'db') => {
     let counting = false;
+    const log = (op) => mockState.ops.push({ via, table, op });
     let excludesRejected = false;
     // Rejected applications only reach a count that forgets to leave them out.
     const heldSeats = () => mockState.enrolled + (excludesRejected ? 0 : mockState.rejected);
@@ -25,12 +27,17 @@ jest.mock('../../../src/config/db', () => {
       select: jest.fn(() => c),
       groupBy: jest.fn(async () => (heldSeats() ? [{ attendance: 'kayitli', c: heldSeats() }] : [])),
       orderBy: jest.fn(() => c),
-      forUpdate: jest.fn(() => c),
+      forUpdate: jest.fn(() => {
+        log('forUpdate');
+        return c;
+      }),
       count: jest.fn(() => {
+        log('count');
         counting = true;
         return c;
       }),
       first: jest.fn(async () => {
+        log('first');
         if (table === 'saha_trainings') return mockState.training;
         if (table === 'saha_training_applications') {
           return counting ? { c: heldSeats() } : mockState.existing;
@@ -38,6 +45,7 @@ jest.mock('../../../src/config/db', () => {
         return undefined;
       }),
       insert: jest.fn(async (row) => {
+        log('insert');
         mockState.inserts.push(row);
         return [1];
       }),
@@ -52,7 +60,7 @@ jest.mock('../../../src/config/db', () => {
     };
     return c;
   };
-  const trx = jest.fn((t) => makeChain(t));
+  const trx = jest.fn((t) => makeChain(t, 'trx'));
   const db = Object.assign(jest.fn((t) => makeChain(t)), {
     raw: jest.fn(),
     transaction: jest.fn(async (cb) => cb(trx)),
@@ -75,6 +83,7 @@ beforeEach(() => {
   mockState.progress = [];
   mockState.saha = [];
   mockState.whereCalls = [];
+  mockState.ops = [];
 });
 
 describe('applySaha — hard capacity (K4)', () => {
@@ -120,6 +129,35 @@ describe('applySaha — hard capacity (K4)', () => {
     mockState.enrolled = 0;
     await expect(applySaha('u1', 's1')).rejects.toMatchObject({ status: 410, code: 'training_full' });
     expect(mockState.inserts).toHaveLength(0);
+  });
+});
+
+describe('applySaha — row lock against concurrent applications', () => {
+  const opsOn = (table) => mockState.ops.filter((o) => o.table === table);
+
+  it('reads the training row under FOR UPDATE inside the transaction', async () => {
+    await applySaha('u1', 's1');
+
+    // The lock must be taken before the row is read, on the transaction connection.
+    expect(opsOn('saha_trainings')).toEqual([
+      { via: 'trx', table: 'saha_trainings', op: 'forUpdate' },
+      { via: 'trx', table: 'saha_trainings', op: 'first' },
+    ]);
+  });
+
+  it('counts held seats on the same transaction that holds the lock', async () => {
+    await applySaha('u1', 's1');
+
+    const counts = opsOn('saha_training_applications').filter((o) => o.op === 'count');
+    expect(counts).toEqual([{ via: 'trx', table: 'saha_training_applications', op: 'count' }]);
+  });
+
+  it('inserts the application on the same transaction, never on the bare pool', async () => {
+    await applySaha('u1', 's1');
+
+    const inserts = opsOn('saha_training_applications').filter((o) => o.op === 'insert');
+    expect(inserts).toEqual([{ via: 'trx', table: 'saha_training_applications', op: 'insert' }]);
+    expect(mockState.ops.filter((o) => o.via === 'db')).toEqual([]);
   });
 });
 

@@ -13,6 +13,7 @@ const mockState = {
   updates: {},
   historyRows: [],
   whereInCalls: [],
+  orderCalls: [],
 };
 
 jest.mock('../../../src/config/db', () => {
@@ -24,8 +25,14 @@ jest.mock('../../../src/config/db', () => {
         mockState.whereInCalls.push([table, col, values]);
         return c;
       }),
-      orderBy: jest.fn(() => c),
-      orderByRaw: jest.fn(() => c),
+      orderBy: jest.fn((...args) => {
+        mockState.orderCalls.push([table, 'orderBy', ...args]);
+        return c;
+      }),
+      orderByRaw: jest.fn((...args) => {
+        mockState.orderCalls.push([table, 'orderByRaw', ...args]);
+        return c;
+      }),
       count: jest.fn(() => c),
       join: jest.fn(() => c),
       select: jest.fn(() => c),
@@ -83,6 +90,7 @@ const reset = () => {
   mockState.updates = {};
   mockState.historyRows = [];
   mockState.whereInCalls = [];
+  mockState.orderCalls = [];
   env.admin.scanHmacSecret = '';
   jest.clearAllMocks();
 };
@@ -240,6 +248,15 @@ describe('history — missions the volunteer actually took part in', () => {
     expect(list).toHaveLength(1);
     expect(list[0].userStatus).toBe('tamamladi');
     expect(list[0].startDate).toBe('2026-08-01');
+  });
+
+  it('orders newest first, falling back to started_at when start_date is missing', async () => {
+    await service.listHistory('u1');
+
+    // A plain orderBy('missions.start_date') would sink missions without a start_date.
+    expect(mockState.orderCalls).toEqual([
+      ['missions', 'orderByRaw', 'COALESCE(missions.start_date, missions.started_at) DESC'],
+    ]);
   });
 
   it('detail rejects a volunteer who was only called (cagrildi)', async () => {
