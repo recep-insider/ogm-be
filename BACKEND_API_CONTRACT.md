@@ -543,6 +543,7 @@ WGS84 datum. Frontend `react-native-maps` ile uyumlu.
 ---
 
 ### 5.2 GET /trainings/saha
+- **Filter:** only active trainings with `startDate` today or later (Europe/Istanbul) are listed.
 - **Kullanıldığı yer:** `src/services/api/endpoints/trainings.ts:30`, `src/screens/Egitimler/hooks/useTrainings.ts:37`
 - **Auth:** Evet
 - **Success Response (200):**
@@ -569,6 +570,8 @@ WGS84 datum. Frontend `react-native-maps` ile uyumlu.
 - **Notlar:**
   - `instructorAvatar` / `cover`: **URL string** (mock'ta `require()`'lu asset — bkz. Bölüm 0.8).
   - `seatStatus: 'last_seats'` → frontend kırmızı rozet gösterir.
+  - **Doluluk `availableSeats === 0` ile anlaşılır.** Dolu eğitimde `seatStatus` `available` döner; ayrı bir `full` değeri bilerek yoktur (yayındaki sürümler `seatStatus`'u doğrudan rozet varyantına eşler, bilinmeyen değer onları bozar). İstemci `availableSeats > 0 || applied` olmayan kaydı göstermemelidir; gösterirse başvuru 410 `training_full` alır.
+  - Kontenjan kesin sınırdır; `rejected` başvurular koltuk tutmaz (`enrolled`/`availableSeats` sayımına girmez).
   - `applied: true` → kullanıcının önceden başvurduğu kayıt.
 
 ---
@@ -582,7 +585,7 @@ WGS84 datum. Frontend `react-native-maps` ile uyumlu.
 ```json
 { "applicationId": "app_t_1", "status": "pending" }
 ```
-- **Error cases:** `409 already_applied`, `410 training_full`, `410 training_closed`
+- **Error cases:** `409 already_applied`, `410 training_full`, `410 training_closed`, `410 training_past` (training day is before today, Europe/Istanbul)
 - **TS tipi:** `TrainingApplyResponse` (`types.ts:233-236`)
 - **Mock:** `mocks.ts:mockApi.applyTraining`
 
@@ -776,6 +779,7 @@ WGS84 datum. Frontend `react-native-maps` ile uyumlu.
 ```
 - **Frontend sync:** Push notification (taskCalls topic) + React Query invalidation ile sync. Bu endpoint mobile app'ten doğrudan çağrılmaz — push tetiklenir, frontend `/missions/active/{id}` yeniden fetch eder.
 - **Notlar (Ek B):** Backend QR validation şeması (HMAC? signed token?) ve admin/officer auth modeli backend kararıdır.
+- **Güncel karar (2026-09-21 sözleşmesi):** Mobil QR `OGM:VOL:{userId}` taşır ve **imzasızdır**. Güven sınırı saha amirinin kimlik doğrulamasıdır (`OFFICER_API_KEY` / `role=officer`) ve seçtiği olaydır. `SCAN_HMAC_SECRET` yalnızca çıplak `userId` gövdesine uygulanır; aynı gönüllü `qr: "OGM:VOL:{id}"` veya `tcKimlik` ile imzasız okutulabildiği için secret'ı açmak QR/TC okutmalarına koruma **eklemez** — fiilen emekliye ayrılmıştır.
 
 ---
 

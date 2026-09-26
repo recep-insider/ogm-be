@@ -112,7 +112,11 @@ router.post(
  *     summary: Yangın sahası giriş kaydı — QR check-in (userStatus → sahada)
  *     description: |
  *       Mobil uygulamadan ÇAĞRILMAZ. Saha amiri (officer) `x-api-key` veya
- *       `role=officer` token ile çağırır. Opsiyonel `token` HMAC imzasıdır (B.1).
+ *       `role=officer` token ile çağırır. `qr` (`OGM:VOL:{id}`) ve `tcKimlik` imza
+ *       TAŞIMAZ — güven kaynağı saha amirinin doğrulanmış cihazı ve seçtiği olaydır.
+ *       `SCAN_HMAC_SECRET` doluysa `token` (HMAC `${userId}:${missionId}`) yalnızca
+ *       çıplak `userId` formatında zorunludur (B.1); geçersiz/yanlış uzunlukta token
+ *       400 `invalid_qr` döner.
  *
  *       backend §13: Gönüllü QR'ı `OGM:VOL:{id}` formatındadır; okutulamazsa TC kimlik
  *       numarasıyla manuel kayıt yedek yöntemdir. Hazırlık zincirinde eksik varsa
@@ -136,10 +140,11 @@ router.post(
  *               userId: { type: string }
  *               tcKimlik: { type: string, description: 'QR okutulamazsa yedek yöntem' }
  *               scannedAt: { type: string, format: date-time }
- *               token: { type: string, description: 'opsiyonel HMAC imzası' }
+ *               token: { type: string, description: 'HMAC imzası — yalnızca userId formatında, SCAN_HMAC_SECRET doluysa' }
  *     responses:
  *       200:
  *         description: 'Giriş kaydedildi — künye (ad, soyad, maskeli TC, kişi/KKD/eğitim durumu, STK) döner'
+ *       400: { description: 'invalid_qr — userId formatında imza eksik/geçersiz' }
  *       403: { description: 'readiness_incomplete — katılım engeli, kayıt OLUŞMAZ' }
  *       404: { description: 'volunteer_not_found | mission_not_found' }
  *       409: { description: 'mission_archived' }

@@ -1,6 +1,7 @@
 'use strict';
 
 const Joi = require('joi');
+const { cityJoiValidator } = require('../../shared/regions');
 
 const KAN_GRUBU = ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', '0+', '0-'];
 const OGRENIM = ['Lise', 'Ön Lisans', 'Lisans', 'Yüksek Lisans', 'Doktora', 'Diğer'];
@@ -20,8 +21,16 @@ const patchMeSchema = Joi.object({
   eposta: Joi.string().email().optional(),
   adres: Joi.string().min(10).max(500).optional(),
   // mobil §11: il/ilçe dropdown — bölge kapsamı (backend §11) bu alandan eşleşir.
-  il: Joi.string().max(60).allow(null, '').optional(),
-  ilce: Joi.string().max(60).allow(null, '').optional(),
+  // il 81 ilin kanonik adına normalize edilir (büyük/küçük harf, diakritik farkı kabul);
+  // tanınmayan il 400 validation_error. İlçe serbest metin kalır.
+  il: Joi.string()
+    .trim()
+    .max(60)
+    .allow(null, '')
+    .custom(cityJoiValidator)
+    .messages({ 'any.invalid': 'Geçersiz il adı' })
+    .optional(),
+  ilce: Joi.string().trim().max(60).allow(null, '').optional(),
   kanGrubu: Joi.string().valid(...KAN_GRUBU).optional(),
   ogrenim: Joi.string().valid(...OGRENIM).optional(),
   meslek: Joi.string().valid(...MESLEK).optional(),

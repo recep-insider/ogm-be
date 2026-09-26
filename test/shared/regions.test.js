@@ -9,6 +9,8 @@ const {
   regionForCity,
   citiesOfRegion,
   applyRegionFilter,
+  canonicalCity,
+  cityJoiValidator,
 } = require('../../src/shared/regions');
 
 describe('bölge tanımı', () => {
@@ -82,5 +84,42 @@ describe('applyRegionFilter — kapsam yalnızca görünümü süzer', () => {
     const q = makeQuery();
     applyRegionFilter(q, 'atlantis', 'fr.il');
     expect(q.calls).toHaveLength(0);
+  });
+});
+
+describe('canonicalCity', () => {
+  it.each([
+    ['istanbul', 'İstanbul'],
+    ['HAKKARI', 'Hakkâri'],
+    ['  kahramanmaras ', 'Kahramanmaraş'],
+  ])('maps %p to %p', (input, expected) => {
+    expect(canonicalCity(input)).toBe(expected);
+  });
+
+  it('returns null for an unknown or empty province', () => {
+    expect(canonicalCity('Atlantis')).toBeNull();
+    expect(canonicalCity('')).toBeNull();
+    expect(canonicalCity(null)).toBeNull();
+  });
+});
+
+describe('cityJoiValidator', () => {
+  const helpers = { error: jest.fn((code) => ({ __error: code })) };
+
+  beforeEach(() => helpers.error.mockClear());
+
+  it('returns the canonical spelling for a known province', () => {
+    expect(cityJoiValidator('mugla', helpers)).toBe('Muğla');
+    expect(helpers.error).not.toHaveBeenCalled();
+  });
+
+  it('reports any.invalid for an unknown province', () => {
+    expect(cityJoiValidator('Gotham', helpers)).toEqual({ __error: 'any.invalid' });
+  });
+
+  it('passes null and empty string through untouched', () => {
+    expect(cityJoiValidator(null, helpers)).toBeNull();
+    expect(cityJoiValidator('', helpers)).toBe('');
+    expect(helpers.error).not.toHaveBeenCalled();
   });
 });

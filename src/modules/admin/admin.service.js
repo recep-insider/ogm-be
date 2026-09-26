@@ -195,7 +195,9 @@ async function listVolunteers({ status, q, page = 1, pageSize = 20 } = {}) {
       b.where('u.ad', 'like', like)
         .orWhere('u.soyad', 'like', like)
         .orWhere('u.phone', 'like', like)
-        .orWhere('u.eposta', 'like', like);
+        .orWhere('u.eposta', 'like', like)
+        // Panel QR okutulamayan gönüllüyü TC kimlik numarasıyla eşleştirir.
+        .orWhere('u.tc_kimlik', 'like', like);
     });
   }
 

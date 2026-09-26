@@ -7,7 +7,7 @@ const { db } = require('../../config/db');
 const env = require('../../config/env');
 const { errors } = require('../../shared/errors');
 const { assetUrl } = require('../../shared/asset-url');
-const { toIso, toDateOnly } = require('../../shared/dates');
+const { toIso, toDateOnly, toLocalDateOnly } = require('../../shared/dates');
 const { writeAudit } = require('../../shared/audit');
 const { sendPushToUser } = require('../../shared/push-provider');
 const readinessService = require('../users/readiness.service');
@@ -111,22 +111,41 @@ function mapActiveDetail(m, userStatus, { onSiteCount, trend, assemblyPoint, use
   };
 }
 
+/**
+ * Olayın başlangıç günü: girilmişse `start_date`, yoksa `started_at` anının
+ * Türkiye saatindeki takvim günü (UTC günü değil).
+ */
+function missionStartDate(m) {
+  return m.start_date ? toDateOnly(m.start_date) : toLocalDateOnly(m.started_at);
+}
+
+// "Görev Aldığım Yangınlar" yalnızca gönüllünün gerçekten yola çıktığı / sahaya girdiği
+// olayları içerir. Otomatik çağrının açtığı `cagrildi` ve reddedilen `katilamiyor`
+// satırları geçmiş sayılmaz.
+const HISTORY_STATUSES = ['yolda', 'sahada', 'tamamladi'];
+
+// Arşivde `tamamladi`ya taşınan durumlar — yalnızca gerçekten katılanlar. `cagrildi`
+// buraya girerse yanıtsız çağrılar arşivle birlikte geçmişe sızar.
+const ARCHIVE_COMPLETES = ['yolda', 'sahada'];
+
 // FireMissionSummary (kontrat 8.1) — geçmiş/katılınan görevler.
-function mapHistorySummary(m) {
+function mapHistorySummary(m, userStatus = m.user_status) {
   return {
     id: m.id,
     title: m.full_title || m.title,
     location: m.location_label || m.short_location,
-    startDate: toDateOnly(m.start_date),
+    // Başlangıç tarihi girilmeden açılan olaylarda olayın başladığı an kullanılır.
+    startDate: missionStartDate(m),
     endDate: toDateOnly(m.end_date),
     status: m.status,
+    userStatus: userStatus || null,
     cover: assetUrl(m.cover_path),
   };
 }
 
-function mapHistoryDetail(m, volunteers) {
+function mapHistoryDetail(m, volunteers, userStatus) {
   return {
-    ...mapHistorySummary(m),
+    ...mapHistorySummary(m, userStatus),
     subtitle: m.subtitle || null,
     gallery: safeJson(m.gallery, []).map(assetUrl),
     summary: m.summary || '',
@@ -232,14 +251,23 @@ async function respond(userId, id, decision, audit = {}) {
   return { ok: true, userStatus: decision };
 }
 
+/**
+ * Opsiyonel HMAC imza kontrolü (B.1) — yalnızca çıplak `userId` ile gelen okutmalara
+ * uygulanır. `OGM:VOL:{id}` QR'ı ve TC kimlikle yedek giriş imza TAŞIMAZ: güven kaynağı
+ * saha amirinin kimliği doğrulanmış cihazı ve ekranda seçtiği olaydır.
+ * Yanlış uzunluktaki token `timingSafeEqual`'ı patlatmasın diye önce uzunluk kontrol edilir.
+ */
 function verifyScanToken(token, userId, missionId) {
   if (!env.admin.scanHmacSecret) return true; // HMAC kapalıysa officer-auth'a güven
-  if (!token) return false;
+  if (typeof token !== 'string' || !token) return false;
   const expected = crypto
     .createHmac('sha256', env.admin.scanHmacSecret)
     .update(`${userId}:${missionId}`)
     .digest('hex');
-  return crypto.timingSafeEqual(Buffer.from(token), Buffer.from(expected));
+  const given = Buffer.from(token);
+  const want = Buffer.from(expected);
+  if (given.length !== want.length) return false;
+  return crypto.timingSafeEqual(given, want);
 }
 
 /** QR içeriğini çözer — format `OGM:VOL:{gönüllü id}` (§13). */
@@ -270,17 +298,21 @@ async function scan(missionId, body, actor = {}) {
   }
 
   // Kimlik üç yoldan gelebilir: QR içeriği, doğrudan userId, TC kimlik (yedek yöntem).
-  let userId = parseVolunteerQr(body.qr) || body.userId || null;
+  const qrUserId = parseVolunteerQr(body.qr);
+  let userId = qrUserId || body.userId || null;
   let method = body.qr || body.userId ? 'qr' : null;
+  // İmzasız formatlar (OGM:VOL QR, TC ile yedek giriş) HMAC kontrolünden muaftır.
+  let signed = !qrUserId && !!body.userId;
   if (!userId && body.tcKimlik) {
     const found = await db('users').where({ tc_kimlik: body.tcKimlik }).whereNull('deleted_at').first('id');
     if (!found) throw errors.notFound('Gönüllü bulunamadı', 'volunteer_not_found');
     userId = found.id;
     method = 'tc_manual';
+    signed = false;
   }
   if (!userId) throw errors.validation('QR, userId veya TC kimlik zorunlu', { field: 'qr|userId|tcKimlik' });
 
-  if (!verifyScanToken(body.token, userId, missionId)) {
+  if (signed && !verifyScanToken(body.token, userId, missionId)) {
     throw errors.make(400, 'invalid_qr', 'QR doğrulaması başarısız');
   }
 
@@ -411,9 +443,10 @@ async function listHistory(userId) {
   const rows = await db('missions')
     .join('mission_participants', 'missions.id', 'mission_participants.mission_id')
     .where('mission_participants.user_id', userId)
-    .orderBy('missions.start_date', 'desc')
-    .select('missions.*');
-  return rows.map(mapHistorySummary);
+    .whereIn('mission_participants.status', HISTORY_STATUSES)
+    .orderByRaw('COALESCE(missions.start_date, missions.started_at) DESC')
+    .select('missions.*', 'mission_participants.status as user_status');
+  return rows.map((m) => mapHistorySummary(m));
 }
 
 // Admin (panel) — görev fotoğrafı moderasyonu (kontrat 7.5 notu, mobil çağırmaz).
@@ -443,9 +476,11 @@ async function getHistory(userId, id) {
   const m = await db('missions').where({ id }).first();
   if (!m) throw errors.notFound('Görev bulunamadı', 'mission_not_found');
   const participant = await db('mission_participants').where({ user_id: userId, mission_id: id }).first();
-  if (!participant) throw errors.make(403, 'not_participated', 'Bu görevde yer almadınız');
+  if (!participant || !HISTORY_STATUSES.includes(participant.status)) {
+    throw errors.make(403, 'not_participated', 'Bu görevde yer almadınız');
+  }
   const volunteers = await db('check_ins').where({ mission_id: id }).count({ c: '*' }).first();
-  return mapHistoryDetail(m, Number(volunteers?.c || 0));
+  return mapHistoryDetail(m, Number(volunteers?.c || 0), participant.status);
 }
 
 // Admin (panel) görünümü — tüm alanlar camelCase + cover URL + bekleyen foto sayısı.
@@ -466,7 +501,8 @@ function mapAdminMission(m) {
     iconName: m.icon_name,
     status: m.status,
     isActive: !!m.is_active,
-    startDate: toDateOnly(m.start_date),
+    // Türetilen gün Türkiye saatine göredir; panel bunu düzenlemede geri yazsa da doğru gün yazılır.
+    startDate: missionStartDate(m),
     endDate: toDateOnly(m.end_date),
     startedAt: toIso(m.started_at),
     endedAt: toIso(m.ended_at),
@@ -696,8 +732,10 @@ async function callReadyVolunteers(missionId, actor = {}) {
 /**
  * Arşivleme (§2) — operatör kararıdır, otomatik değişmez ve TERMİNALDİR: aynı kayıt
  * tekrar Aktif'e alınamaz. Yeniden alevlenirse yeni bir olay kaydı açılır.
- * Yeni gönüllü çağrısı durur, toplanma noktası kapanır, sahadaki gönüllüler `tamamladi`
- * olur ve görev geçmişine işlenir.
+ * Yeni gönüllü çağrısı durur, toplanma noktası kapanır, yola çıkmış / sahadaki gönüllüler
+ * (`yolda`, `sahada`) `tamamladi` olur ve görev geçmişine işlenir. Çağrıya hiç yanıt
+ * vermemiş `cagrildi` satırları olduğu gibi kalır: katılmamış biri "Görev Aldığım
+ * Yangınlar"da görünmemeli (bkz. HISTORY_STATUSES).
  */
 async function adminArchive(missionId, actor = {}) {
   const mission = await db('missions').where({ id: missionId }).first();
@@ -716,7 +754,7 @@ async function adminArchive(missionId, actor = {}) {
     });
     await trx('mission_participants')
       .where({ mission_id: missionId })
-      .whereIn('status', ['cagrildi', 'yolda', 'sahada'])
+      .whereIn('status', ARCHIVE_COMPLETES)
       .update({ status: 'tamamladi', completed_at: now, updated_at: now });
     await assemblyPoints.close(missionId, trx);
   });
@@ -780,6 +818,7 @@ module.exports = {
   moderatePhoto,
   listHistory,
   getHistory,
+  HISTORY_STATUSES,
   adminList,
   adminListPhotos,
   mapAdminMission,

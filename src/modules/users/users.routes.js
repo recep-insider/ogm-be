@@ -6,6 +6,7 @@ const validate = require('../../middlewares/validate');
 const { requireAuth } = require('../../middlewares/auth');
 const { avatarUpload } = require('../../middlewares/upload');
 const controller = require('./users.controller');
+const readinessService = require('./readiness.service');
 const {
   patchMeSchema,
   acilSchema,
@@ -284,7 +285,10 @@ router.post(
  *     security: [ { bearerAuth: [] } ]
  *     responses:
  *       200:
- *         description: '{zincir:{steps[],eksikAdimlar,siradakiAdim,tamam}, kisiDurumu, mudahaleYetkisi, engeller[], komisyon}'
+ *         description: Hazırlık zinciri, kişi durumu, müdahale yetkisi ve engeller
+ *         content:
+ *           application/json:
+ *             schema: { $ref: '#/components/schemas/Readiness' }
  */
 router.get('/me/readiness', asyncHandler(async (req, res) => {
   res.status(200).json(await readinessService.getReadiness(req.user.id));

@@ -268,6 +268,7 @@ async function dataExport(userId, audit = {}) {
     db('devices').where({ user_id: userId }).select('id', 'platform', 'app_version', 'last_seen_at', 'created_at'),
     db('fire_reports').where({ user_id: userId }).select(
       'id', 'latitude', 'longitude', 'description', 'status', 'created_at',
+      'location_name', 'postal_code', 'il', 'ilce',
     ),
   ]);
 
@@ -282,6 +283,11 @@ async function dataExport(userId, audit = {}) {
     userAgent: audit.userAgent,
   });
 
+  // Madde 11 çıktısı ihbarı kullanıcının uygulamada gördüğü başlıkla birlikte verir;
+  // başlık mobil/panel ile aynı havuz numaralandırmasından türer.
+  const { titlesFor } = require('../fireReports/fireReports.service');
+  const reportTitles = fireReports.length ? await titlesFor(fireReports) : new Map();
+
   return {
     exportedAt: new Date().toISOString(),
     legalReference: 'KVKK Madde 11',
@@ -295,7 +301,7 @@ async function dataExport(userId, audit = {}) {
     })),
     consents,
     devices,
-    fireReports,
+    fireReports: fireReports.map((r) => ({ ...r, title: reportTitles.get(r.id) ?? null })),
   };
 }
 

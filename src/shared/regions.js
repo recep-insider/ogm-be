@@ -93,6 +93,29 @@ for (const region of REGIONS) {
   for (const city of region.cities) CITY_TO_REGION.set(normalizeCity(city), region.key);
 }
 
+const CANONICAL_CITY = new Map();
+for (const region of REGIONS) {
+  for (const city of region.cities) CANONICAL_CITY.set(normalizeCity(city), city);
+}
+
+/**
+ * Serbest yazılmış il adını 81 ilin kanonik yazımına çevirir ('istanbul', 'HAKKARI' →
+ * 'İstanbul', 'Hakkâri'). Tanınmayan il için null — çağıran reddeder.
+ */
+function canonicalCity(city) {
+  return CANONICAL_CITY.get(normalizeCity(city)) || null;
+}
+
+/**
+ * Joi `.custom()` doğrulayıcısı — il alanını kanonik ada normalize eder, 81 il dışını
+ * `any.invalid` ile reddeder. Boş değerler (null/'') şemanın `allow` kuralına bırakılır.
+ */
+function cityJoiValidator(value, helpers) {
+  if (value == null || value === '') return value;
+  const canonical = canonicalCity(value);
+  return canonical || helpers.error('any.invalid');
+}
+
 /** İl adından bölge anahtarı; tanınmayan/boş il için null (kayıt elenmez, gruplanamaz). */
 function regionForCity(city) {
   return CITY_TO_REGION.get(normalizeCity(city)) || null;
@@ -139,4 +162,6 @@ module.exports = {
   isRegionKey,
   applyRegionFilter,
   normalizeCity,
+  canonicalCity,
+  cityJoiValidator,
 };
