@@ -379,6 +379,17 @@ run_rsync -az --delete \
   "$LOCAL_REPO/" "$TARGET:$DEPLOY_DIR/"
 ok "Transfer tamam"
 
+# grep rc: 0 = eşleşti, 1 = eşleşmedi, diğer = ssh/dosya hatası. Hata "yok"
+# sayılırsa anahtar mükerrer yazılır ve operatörün değeri sessizce değişir.
+_env_has() {
+  local pattern="$1" rc=0
+  run_ssh "grep -q '$pattern' $DEPLOY_DIR/.env" || rc=$?
+  case "$rc" in
+    0|1) return "$rc" ;;
+    *) die ".env okunamadı (ssh/grep çıkış kodu $rc) — dosyaya dokunulmadı" ;;
+  esac
+}
+
 # ─── .env gönder (sadece fresh — update'te sunucudaki .env'e dokunulmaz) ─────
 if [ "$MODE" = "fresh" ]; then
   log ".env transfer"
@@ -391,17 +402,7 @@ else
   # Sunucudaki .env korunduğu için yeni sürümle gelen anahtarlar oraya kendi
   # başına ulaşmaz — eksikse eklenir, MEVCUT DEĞER ASLA EZİLMEZ.
   # Buraya yalnızca secret OLMAYAN, varsayılanı güvenle yazılabilen anahtarlar girer.
-  # grep rc: 0 = eşleşti, 1 = eşleşmedi, diğer = ssh/dosya hatası. Hata "yok"
-  # sayılırsa anahtar mükerrer yazılır ve operatörün değeri sessizce değişir.
-  _env_has() {
-    local pattern="$1" rc=0
-    run_ssh "grep -q '$pattern' $DEPLOY_DIR/.env" || rc=$?
-    case "$rc" in
-      0|1) return "$rc" ;;
-      *) die ".env okunamadı (ssh/grep çıkış kodu $rc) — dosyaya dokunulmadı" ;;
-    esac
-  }
-
+  # (_env_has yukarıda tanımlı — push ayarları da aynı güvenli okumayı kullanır.)
   ensure_env_key() {
     local key="$1" val="$2"
     # Eski şablon anahtarı BOŞ yazıyordu ('NOMINATIM_URL='). Sadece '^key='
@@ -443,12 +444,14 @@ fi
 # PUSH_PROVIDER'a dokunulmaz (mock kalır).
 set_env_key() {
   local key="$1" val="$2"
-  if run_ssh "grep -q '^${key}=' $DEPLOY_DIR/.env"; then
-    run_ssh "sed -i 's|^${key}=.*|${key}=${val}|' $DEPLOY_DIR/.env"
+  # sed replacement'ında '&' tüm eşleşme demek; kaçışlanmazsa değer bozulur.
+  local val_esc=${val//&/\\&}
+  if _env_has "^${key}="; then
+    run_ssh "sed -i 's|^${key}=.*|${key}=${val_esc}|' $DEPLOY_DIR/.env"
   else
-    run_ssh "printf '\n%s\n' '${key}=${val}' >> $DEPLOY_DIR/.env"
+    run_ssh "printf '\\n%s\\n' '${key}=${val}' >> $DEPLOY_DIR/.env"
   fi
-  run_ssh "grep -q '^${key}=${val}\$' $DEPLOY_DIR/.env" || die "$key yazılamadı — .env'i sunucuda elle kontrol edin"
+  _env_has "^${key}=${val}\$" || die "$key yazılamadı — .env'i sunucuda elle kontrol edin"
 }
 
 FIREBASE_SA_LOCAL="$LOCAL_REPO/secrets/firebase-sa.json"

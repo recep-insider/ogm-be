@@ -3,7 +3,7 @@
 jest.mock('../../src/config/db', () => ({ db: jest.fn() }));
 jest.mock('../../src/config/logger', () => ({ info: jest.fn(), warn: jest.fn(), debug: jest.fn() }));
 
-const { stringifyData, buildMulticast, deadTokens } = require('../../src/shared/push-provider');
+const { stringifyData, buildMulticast, deadTokens, verifyPushProvider } = require('../../src/shared/push-provider');
 
 describe('push-provider — stringifyData', () => {
   it('drops undefined/null keys instead of sending "undefined"/"null" strings', () => {
@@ -77,5 +77,11 @@ describe('push-provider — deadTokens', () => {
   it('keeps a token whose failed response carries no error object', () => {
     expect(() => deadTokens(['a', 'b'], [{ success: false }, { success: false }])).not.toThrow();
     expect(deadTokens(['a', 'b'], [{ success: false }, { success: false }])).toEqual([]);
+  });
+});
+
+describe('push-provider — verifyPushProvider (mock)', () => {
+  it('reports the mock provider as ok without loading firebase-admin', () => {
+    expect(verifyPushProvider()).toEqual({ provider: 'mock', ok: true });
   });
 });

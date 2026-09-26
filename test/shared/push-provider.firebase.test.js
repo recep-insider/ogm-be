@@ -21,6 +21,7 @@ jest.mock('../../src/config/env', () => ({
 }));
 jest.mock('../../src/config/logger', () => ({ info: jest.fn(), warn: jest.fn(), debug: jest.fn() }));
 const mockDeleted = [];
+const mockDbState = { failDelete: false };
 jest.mock('../../src/config/db', () => ({
   db: jest.fn(() => {
     const c = {
@@ -30,6 +31,7 @@ jest.mock('../../src/config/db', () => ({
         return c;
       }),
       del: jest.fn(async () => {
+        if (mockDbState.failDelete) throw new Error('Lock wait timeout exceeded');
         mockDeleted.push(...c.pending);
         return c.pending.length;
       }),
@@ -41,7 +43,7 @@ jest.mock('../../src/config/db', () => ({
 }));
 
 const admin = require('firebase-admin');
-const { sendPushToUser, buildMulticast } = require('../../src/shared/push-provider');
+const { sendPushToUser, buildMulticast, verifyPushProvider } = require('../../src/shared/push-provider');
 
 describe('push-provider — firebase delivery', () => {
   beforeEach(() => {
@@ -149,5 +151,26 @@ describe('push-provider — firebase delivery', () => {
 
     const deleted = db.mock.results.filter((r) => r.value.del.mock.calls.length > 0);
     expect(deleted).toHaveLength(0);
+  });
+
+  it('reports a delivered push as sent even when the dead-token cleanup fails', async () => {
+    mockDbState.failDelete = true;
+    mockMessaging.sendEachForMulticast.mockResolvedValue({
+      successCount: 1,
+      failureCount: 1,
+      responses: [
+        { success: true },
+        { success: false, error: { code: 'messaging/registration-token-not-registered' } },
+      ],
+    });
+
+    const res = await sendPushToUser('u1', { topic: 'taskCalls', title: 'T', body: 'B' });
+    mockDbState.failDelete = false;
+
+    expect(res).toEqual({ sent: 1, failed: 1 });
+  });
+
+  it('confirms the firebase provider at startup', () => {
+    expect(verifyPushProvider()).toEqual({ provider: 'firebase', ok: true });
   });
 });

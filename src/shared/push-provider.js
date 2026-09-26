@@ -52,12 +52,19 @@ async function deliver(tokens, payload) {
   if (provider === 'firebase') {
     const messaging = getFirebaseMessaging();
     const res = await messaging.sendEachForMulticast(buildMulticast(tokens, payload));
+    const result = { sent: res.successCount, failed: res.failureCount };
+    // Temizlik en iyi çaba: devices tablosundaki bir hata, gerçekten teslim edilmiş
+    // bir push'u "gönderilemedi" diye raporlatmamalı.
     const dead = deadTokens(tokens, res.responses || []);
     if (dead.length) {
-      await db('devices').whereIn('fcm_token', dead).del();
-      logger.info('Push: geçersiz token kayıtları silindi', { count: dead.length });
+      try {
+        await db('devices').whereIn('fcm_token', dead).del();
+        logger.info('Push: geçersiz token kayıtları silindi', { count: dead.length });
+      } catch (err) {
+        logger.warn('Push: geçersiz token temizliği başarısız', { count: dead.length, error: err.message });
+      }
     }
-    return { sent: res.successCount, failed: res.failureCount };
+    return result;
   }
   logger.info('PUSH [MOCK] gönderildi', { tokenCount: tokens.length, ...payload });
   return { sent: tokens.length, failed: 0, mock: true };
@@ -125,4 +132,27 @@ async function sendPushToUser(userId, payload) {
   }
 }
 
-module.exports = { sendPushToUser, stringifyData, buildMulticast, deadTokens };
+/**
+ * Açılışta push sağlayıcısını doğrular. Gerçek sağlayıcıda anahtar dosyası
+ * okunamıyorsa bu, ilk acil bildirimde değil burada, tek ve açık bir hatayla görünür.
+ */
+function verifyPushProvider() {
+  const provider = env.push.provider.toLowerCase();
+  if (provider !== 'firebase') {
+    logger.info('Push sağlayıcısı: mock (gerçek bildirim gönderilmez)');
+    return { provider, ok: true };
+  }
+  try {
+    getFirebaseMessaging();
+    logger.info('Push sağlayıcısı: firebase', { projectId: env.firebase.projectId || undefined });
+    return { provider, ok: true };
+  } catch (err) {
+    logger.error('Push sağlayıcısı firebase ama başlatılamadı — bildirimler GİTMEYECEK', {
+      credentialsPath: env.firebase.credentialsPath || undefined,
+      error: err.message,
+    });
+    return { provider, ok: false };
+  }
+}
+
+module.exports = { sendPushToUser, stringifyData, buildMulticast, deadTokens, verifyPushProvider };

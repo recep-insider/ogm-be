@@ -2985,7 +2985,7 @@ services:
       - "3000"
     volumes:
       - ./logs:/app/logs             # Log dosyaları host'a yazılır
-      - ./firebase-sa.json:/app/firebase-sa.json:ro
+      - ./secrets:/app/secrets:ro
     depends_on:
       mysql:
         condition: service_healthy
@@ -3191,7 +3191,7 @@ API_URL=https://api.ogm-gonullu.gov.tr
 
 # ── Firebase (outbound internet gerektirir) ────
 FIREBASE_PROJECT_ID=ogm-gonullu
-FIREBASE_CREDENTIALS_PATH=/app/firebase-sa.json
+FIREBASE_CREDENTIALS_PATH=/app/secrets/firebase-sa.json
 
 # ── Nominatim (opsiyonel, on-premise container) ─
 NOMINATIM_URL=http://nominatim:8080
@@ -3355,7 +3355,7 @@ nano .env    # Gerçek değerleri gir
 cp server.crt server.key docker/nginx/ssl/
 
 # 5. Firebase service account dosyasını kopyala
-cp firebase-sa.json ./
+mkdir -p secrets && cp firebase-sa.json secrets/   # deploy.sh bunu yerel secrets/ klasöründen kendisi gönderir
 
 # 6. Tüm servisleri başlat
 docker compose up -d
