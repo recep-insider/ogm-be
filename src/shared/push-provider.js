@@ -146,6 +146,12 @@ function verifyPushProvider() {
     logger.info('Push sağlayıcısı: mock (gerçek bildirim gönderilmez)');
     return { provider, ok: true };
   }
+  // Anahtar yolu boşsa firebase-admin "varsayılan kimlik"e (GCE metadata) düşer ve
+  // hata vermeden başlar; bu sunucuda o kimlik yok, her gönderim sonradan patlar.
+  if (!env.firebase.credentialsPath) {
+    logger.error('Push sağlayıcısı firebase ama FIREBASE_CREDENTIALS_PATH boş — bildirimler GİTMEYECEK');
+    return { provider, ok: false };
+  }
   try {
     getFirebaseMessaging();
     logger.info('Push sağlayıcısı: firebase', { projectId: env.firebase.projectId || undefined });

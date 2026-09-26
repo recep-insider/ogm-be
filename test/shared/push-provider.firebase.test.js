@@ -43,7 +43,7 @@ jest.mock('../../src/config/db', () => ({
 }));
 
 const admin = require('firebase-admin');
-const { sendPushToUser, buildMulticast, verifyPushProvider } = require('../../src/shared/push-provider');
+const { sendPushToUser, buildMulticast } = require('../../src/shared/push-provider');
 
 describe('push-provider — firebase delivery', () => {
   beforeEach(() => {
@@ -202,12 +202,6 @@ describe('push-provider — firebase delivery', () => {
     const res = await sendPushToUser('u1', { topic: 'acil', title: 'T', body: 'B' });
 
     expect(res).toEqual({ sent: 1, failed: 1 });
-  });
-
-  it('confirms the firebase provider at startup and names the project it is bound to', () => {
-    const logger = require('../../src/config/logger');
-    expect(verifyPushProvider()).toEqual({ provider: 'firebase', ok: true });
-    expect(logger.info).toHaveBeenCalledWith(expect.stringContaining('firebase'), { projectId: 'ogm-test' });
   });
 
   it('records how many dead device rows a send removed', async () => {

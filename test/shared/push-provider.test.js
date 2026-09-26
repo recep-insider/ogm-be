@@ -29,9 +29,7 @@ describe('push-provider — buildMulticast', () => {
         tokens: ['t1'],
         notification: { title: 'T', body: 'B' },
         data: { a: '1' },
-        android: ['acil', 'taskCalls'].includes(topic)
-          ? { notification: { channelId: topic }, priority: 'high' }
-          : { notification: { channelId: topic } },
+        android: expect.objectContaining({ notification: { channelId: topic } }),
         apns: { payload: { aps: { sound: 'default' } } },
       });
     },

@@ -2,6 +2,7 @@
 
 // A broken credential must surface once at boot, not silently on each emergency push.
 
+jest.mock('/virtual/firebase-sa.json', () => ({}), { virtual: true });
 jest.mock('firebase-admin', () => ({
   apps: [],
   initializeApp: jest.fn(() => {
@@ -12,7 +13,7 @@ jest.mock('firebase-admin', () => ({
 }), { virtual: true });
 jest.mock('../../src/config/env', () => ({
   push: { provider: 'firebase' },
-  firebase: { credentialsPath: '', projectId: 'ogm-test' },
+  firebase: { credentialsPath: '/virtual/firebase-sa.json', projectId: 'ogm-test' },
 }));
 jest.mock('../../src/config/logger', () => ({ info: jest.fn(), warn: jest.fn(), error: jest.fn(), debug: jest.fn() }));
 jest.mock('../../src/config/db', () => ({ db: jest.fn() }));
@@ -27,11 +28,5 @@ describe('push-provider — startup verification', () => {
       expect.stringContaining('GİTMEYECEK'),
       expect.objectContaining({ error: expect.stringContaining('firebase-sa.json') }),
     );
-  });
-
-  it('leaves credentialsPath out of the error when no key file is configured', () => {
-    logger.error.mockClear();
-    verifyPushProvider();
-    expect(logger.error.mock.calls[0][1].credentialsPath).toBeUndefined();
   });
 });

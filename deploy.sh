@@ -390,6 +390,20 @@ _env_has() {
   esac
 }
 
+# Tek .env yazıcısı: anahtar varsa değerini değiştirir, yoksa ekler, sonra doğrular.
+# Karar (ez / koru) çağıranındır. sed replacement'ında '&' tüm eşleşme demek;
+# kaçışlanmazsa değer sessizce bozulur. (Hedef Ubuntu/Debian: GNU sed.)
+_env_write() {
+  local key="$1" val="$2"
+  local val_esc=${val//&/\\&}
+  if _env_has "^${key}="; then
+    run_ssh "sed -i 's|^${key}=.*|${key}=${val_esc}|' $DEPLOY_DIR/.env"
+  else
+    run_ssh "printf '\\n%s\\n' '${key}=${val}' >> $DEPLOY_DIR/.env"
+  fi
+  _env_has "^${key}=${val}\$" || die "$key yazılamadı — .env'i sunucuda elle kontrol edin"
+}
+
 # ─── .env gönder (sadece fresh — update'te sunucudaki .env'e dokunulmaz) ─────
 if [ "$MODE" = "fresh" ]; then
   log ".env transfer"
@@ -413,21 +427,13 @@ else
       return
     fi
 
+    # Boş satır doldurulur, eksik anahtar eklenir (mükerrer satır yazılmaz).
     if _env_has "^${key}="; then
-      # Boş satırı doldur — append edilirse mükerrer anahtar kalırdı.
-      # (Hedef Ubuntu/Debian: GNU sed.) sed'in replacement'ında '&' tüm eşleşme
-      # demek; kaçışlanmazsa değer sessizce bozulur.
-      local val_esc=${val//&/\\&}
-      run_ssh "sed -i 's|^${key}=.*|${key}=${val_esc}|' $DEPLOY_DIR/.env"
-      warn "  $key: boştu, dolduruldu → $val"
+      warn "  $key: boştu, dolduruluyor → $val"
     else
-      run_ssh "printf '\n%s\n' '${key}=${val}' >> $DEPLOY_DIR/.env"
-      warn "  $key: eksikti, eklendi → $val"
+      warn "  $key: eksikti, ekleniyor → $val"
     fi
-
-    # Yazımın tuttuğunu doğrula: sessiz no-op, düzeltmenin sunucuya hiç
-    # ulaşmadığını fark etmeden deploy'u "başarılı" göstermek demek.
-    _env_has "^${key}=..*" || die "$key yazılamadı — .env'i sunucuda elle kontrol edin"
+    _env_write "$key" "$val"
   }
   log "Yeni env anahtarları kontrol ediliyor"
   # Boş kalırsa yangın ihbarı konumu 'Bilinmeyen Konum' olarak yazılır.
@@ -443,17 +449,6 @@ fi
 # gönderilir. Sunucudaki mevcut değerler korunur: yalnızca mock/boş sağlayıcı
 # firebase'e çevrilir, boş anahtarlar doldurulur. Sunucu zaten başka bir Firebase
 # projesine bağlıysa (ör. staging anahtarıyla prod'a deploy) durulur.
-_env_set() {
-  local key="$1" val="$2"
-  # sed replacement'ında '&' tüm eşleşme demek; kaçışlanmazsa değer bozulur.
-  local val_esc=${val//&/\\&}
-  if _env_has "^${key}="; then
-    run_ssh "sed -i 's|^${key}=.*|${key}=${val_esc}|' $DEPLOY_DIR/.env"
-  else
-    run_ssh "printf '\\n%s\\n' '${key}=${val}' >> $DEPLOY_DIR/.env"
-  fi
-  _env_has "^${key}=${val}\$" || die "$key yazılamadı — .env'i sunucuda elle kontrol edin"
-}
 
 FIREBASE_SA_LOCAL="$LOCAL_REPO/secrets/firebase-sa.json"
 FIREBASE_SA_PATH=/app/secrets/firebase-sa.json
@@ -471,17 +466,17 @@ if [ -f "$FIREBASE_SA_LOCAL" ]; then
   # Container içindeki node kullanıcısı (uid 1000) okuyabilmeli, başkası değil.
   run_ssh "chown -R 1000:1000 $DEPLOY_DIR/secrets && chmod 700 $DEPLOY_DIR/secrets && chmod 400 $DEPLOY_DIR/secrets/firebase-sa.json"
 
-  _env_has "^FIREBASE_PROJECT_ID=..*" || _env_set FIREBASE_PROJECT_ID "$FIREBASE_PROJECT"
+  _env_has "^FIREBASE_PROJECT_ID=..*" || _env_write FIREBASE_PROJECT_ID "$FIREBASE_PROJECT"
   if _env_has "^FIREBASE_CREDENTIALS_PATH=..*"; then
     _env_has "^FIREBASE_CREDENTIALS_PATH=${FIREBASE_SA_PATH}\$" \
       || warn "FIREBASE_CREDENTIALS_PATH sunucuda farklı bir yolu gösteriyor — dokunulmadı"
   else
-    _env_set FIREBASE_CREDENTIALS_PATH "$FIREBASE_SA_PATH"
+    _env_write FIREBASE_CREDENTIALS_PATH "$FIREBASE_SA_PATH"
   fi
   if _env_has "^PUSH_PROVIDER=firebase\$"; then
     ok "Push sağlayıcısı zaten firebase"
   elif _env_has "^PUSH_PROVIDER=\(mock\)\?\$" || ! _env_has "^PUSH_PROVIDER="; then
-    _env_set PUSH_PROVIDER firebase
+    _env_write PUSH_PROVIDER firebase
     ok "Push sağlayıcısı: mock → firebase"
   else
     warn "PUSH_PROVIDER sunucuda farklı bir değerde — dokunulmadı"
@@ -538,9 +533,12 @@ ok "Backend healthy"
 
 # Push sağlayıcısının gerçekten başladığını açılış logundan doğrula — anahtar
 # bozuk/okunamaz ise deploy "başarılı" görünürken acil bildirimler gitmez.
+PUSH_BROKEN=0
 PUSH_BOOT_LINE=$(run_ssh "cd $DEPLOY_DIR && docker compose logs --tail 300 backend 2>/dev/null | grep 'Push sağlayıcısı' | tail -1" || true)
 case "$PUSH_BOOT_LINE" in
-  *GİTMEYECEK*) err "Push sağlayıcısı başlatılamadı — bildirimler GİTMEYECEK: $PUSH_BOOT_LINE" ;;
+  *GİTMEYECEK*)
+    err "Push sağlayıcısı başlatılamadı — bildirimler GİTMEYECEK: $PUSH_BOOT_LINE"
+    PUSH_BROKEN=1 ;;
   *firebase*) ok "Push: firebase aktif" ;;
   *mock*) warn "Push: mock (gerçek bildirim gönderilmez)" ;;
   *) warn "Push sağlayıcısı durumu logda görülemedi" ;;
@@ -647,6 +645,12 @@ fi
 # ─── Özet ──────────────────────────────────────────────
 echo
 ok "═══════════════════════════════════════════════════════"
+
+# Kod yayında ama acil bildirimler gitmiyorsa deploy "başarılı" bitmemeli.
+if [ "$PUSH_BROKEN" = "1" ]; then
+  die "Deploy tamamlandı ama push sağlayıcısı başlatılamadı — secrets/firebase-sa.json'ı ve .env'deki FIREBASE_* değerlerini kontrol edin"
+fi
+
 if [ "$MODE" = "fresh" ]; then
   ok "Deploy başarılı (sıfırdan kurulum)"
 else
