@@ -96,6 +96,11 @@ describe('push-provider — deadTokens', () => {
   it('keeps every token when the responses are missing', () => {
     expect(deadTokens(['a'], [])).toEqual([]);
   });
+
+  it('treats a failed response without an error object as transient', () => {
+    const responses = [{ success: true }, { success: false }];
+    expect(deadTokens(['ok', 'no-error'], responses)).toEqual([]);
+  });
 });
 
 describe('push-provider — verifyPushProvider (mock)', () => {

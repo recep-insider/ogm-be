@@ -28,4 +28,10 @@ describe('push-provider — startup verification', () => {
       expect.objectContaining({ error: expect.stringContaining('firebase-sa.json') }),
     );
   });
+
+  it('leaves credentialsPath out of the error when no key file is configured', () => {
+    logger.error.mockClear();
+    verifyPushProvider();
+    expect(logger.error.mock.calls[0][1].credentialsPath).toBeUndefined();
+  });
 });

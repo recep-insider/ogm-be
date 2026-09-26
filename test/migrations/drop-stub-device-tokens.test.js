@@ -21,6 +21,16 @@ describe('migration — drop stub device tokens', () => {
     expect(query.del).toHaveBeenCalledTimes(1);
   });
 
+  it('logs how many stub rows it removed, for the operator running the deploy', async () => {
+    const log = jest.spyOn(console, 'log').mockImplementation(() => {});
+    const query = { where: jest.fn(() => query), del: jest.fn(async () => 7) };
+
+    await migration.up(jest.fn(() => query));
+
+    expect(log).toHaveBeenCalledWith(expect.stringContaining('7 stub'));
+    log.mockRestore();
+  });
+
   it('has a no-op down (the placeholder tokens are not worth restoring)', async () => {
     await expect(migration.down()).resolves.toBeUndefined();
   });

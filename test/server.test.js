@@ -54,4 +54,18 @@ describe('server — bootstrap', () => {
     expect(verifyPushProvider).toHaveBeenCalledTimes(1);
     expect(calls).toEqual(['verifyPushProvider', 'listen']);
   });
+
+  it('keeps serving the API when the push provider could not start', async () => {
+    const { verifyPushProvider } = require('../src/shared/push-provider');
+    verifyPushProvider.mockImplementationOnce(() => {
+      calls.push('verifyPushProvider');
+      return { provider: 'firebase', ok: false };
+    });
+    jest.isolateModules(() => {
+      require('../src/server');
+    });
+    await flush();
+
+    expect(calls).toEqual(['verifyPushProvider', 'listen']);
+  });
 });

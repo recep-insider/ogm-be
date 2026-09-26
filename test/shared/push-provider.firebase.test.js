@@ -171,7 +171,58 @@ describe('push-provider — firebase delivery', () => {
     expect(res).toEqual({ sent: 1, failed: 1 });
   });
 
-  it('confirms the firebase provider at startup', () => {
+  it('logs a warning with the dead-token count and error when the cleanup fails', async () => {
+    const logger = require('../../src/config/logger');
+    logger.warn.mockClear();
+    mockDbState.failDelete = true;
+    mockMessaging.sendEachForMulticast.mockResolvedValue({
+      successCount: 1,
+      failureCount: 1,
+      responses: [
+        { success: true },
+        { success: false, error: { code: 'messaging/registration-token-not-registered' } },
+      ],
+    });
+
+    await sendPushToUser('u1', { topic: 'taskCalls', title: 'T', body: 'B' });
+
+    expect(logger.warn).toHaveBeenCalledWith(expect.any(String), {
+      count: 1,
+      error: 'Lock wait timeout exceeded',
+    });
+  });
+
+  it('reports a delivered push as sent when a failed response carries no error object', async () => {
+    mockMessaging.sendEachForMulticast.mockResolvedValue({
+      successCount: 1,
+      failureCount: 1,
+      responses: [{ success: true }, { success: false }],
+    });
+
+    const res = await sendPushToUser('u1', { topic: 'acil', title: 'T', body: 'B' });
+
+    expect(res).toEqual({ sent: 1, failed: 1 });
+  });
+
+  it('confirms the firebase provider at startup and names the project it is bound to', () => {
+    const logger = require('../../src/config/logger');
     expect(verifyPushProvider()).toEqual({ provider: 'firebase', ok: true });
+    expect(logger.info).toHaveBeenCalledWith(expect.stringContaining('firebase'), { projectId: 'ogm-test' });
+  });
+
+  it('records how many dead device rows a send removed', async () => {
+    const logger = require('../../src/config/logger');
+    mockMessaging.sendEachForMulticast.mockResolvedValue({
+      successCount: 1,
+      failureCount: 1,
+      responses: [
+        { success: true },
+        { success: false, error: { code: 'messaging/registration-token-not-registered' } },
+      ],
+    });
+
+    await sendPushToUser('u1', { topic: 'taskCalls', title: 'T', body: 'B' });
+
+    expect(logger.info).toHaveBeenCalledWith(expect.stringContaining('silindi'), { count: 1 });
   });
 });
