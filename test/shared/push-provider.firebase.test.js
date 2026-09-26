@@ -97,4 +97,57 @@ describe('push-provider — firebase delivery', () => {
 
     expect(mockDeleted).toEqual(['tok-2']);
   });
+
+  it('deletes dead tokens from the devices table by the fcm_token column', async () => {
+    mockMessaging.sendEachForMulticast.mockResolvedValue({
+      successCount: 1,
+      failureCount: 1,
+      responses: [
+        { success: true },
+        { success: false, error: { code: 'messaging/invalid-registration-token' } },
+      ],
+    });
+    const { db } = require('../../src/config/db');
+    db.mockClear();
+
+    await sendPushToUser('u1', { topic: 'acil', title: 'T', body: 'B' });
+
+    const deleteBuilder = db.mock.results.find((r) => r.value.del.mock.calls.length > 0);
+    const deleteCallIndex = db.mock.results.indexOf(deleteBuilder);
+    expect(db.mock.calls[deleteCallIndex]).toEqual(['devices']);
+    expect(deleteBuilder.value.whereIn).toHaveBeenCalledWith('fcm_token', ['tok-2']);
+  });
+
+  it('still reports the FCM counts after a dead-token cleanup', async () => {
+    mockMessaging.sendEachForMulticast.mockResolvedValue({
+      successCount: 1,
+      failureCount: 1,
+      responses: [
+        { success: true },
+        { success: false, error: { code: 'messaging/registration-token-not-registered' } },
+      ],
+    });
+
+    const result = await sendPushToUser('u1', { topic: 'acil', title: 'T', body: 'B' });
+
+    expect(result).toEqual({ sent: 1, failed: 1 });
+  });
+
+  it('runs no delete when every failure is transient', async () => {
+    mockMessaging.sendEachForMulticast.mockResolvedValue({
+      successCount: 0,
+      failureCount: 2,
+      responses: [
+        { success: false, error: { code: 'messaging/internal-error' } },
+        { success: false, error: { code: 'messaging/server-unavailable' } },
+      ],
+    });
+    const { db } = require('../../src/config/db');
+    db.mockClear();
+
+    await sendPushToUser('u1', { topic: 'acil', title: 'T', body: 'B' });
+
+    const deleted = db.mock.results.filter((r) => r.value.del.mock.calls.length > 0);
+    expect(deleted).toHaveLength(0);
+  });
 });

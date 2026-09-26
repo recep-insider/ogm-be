@@ -73,4 +73,9 @@ describe('push-provider — deadTokens', () => {
   it('keeps every token when the responses are missing', () => {
     expect(deadTokens(['a'], [])).toEqual([]);
   });
+
+  it('keeps a token whose failed response carries no error object', () => {
+    expect(() => deadTokens(['a', 'b'], [{ success: false }, { success: false }])).not.toThrow();
+    expect(deadTokens(['a', 'b'], [{ success: false }, { success: false }])).toEqual([]);
+  });
 });
