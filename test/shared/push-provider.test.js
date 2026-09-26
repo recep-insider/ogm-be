@@ -28,7 +28,7 @@ describe('push-provider — buildMulticast', () => {
         tokens: ['t1'],
         notification: { title: 'T', body: 'B' },
         data: { a: '1' },
-        android: topic === 'acil'
+        android: ['acil', 'taskCalls'].includes(topic)
           ? { notification: { channelId: topic }, priority: 'high' }
           : { notification: { channelId: topic } },
         apns: { payload: { aps: { sound: 'default' } } },
@@ -36,9 +36,10 @@ describe('push-provider — buildMulticast', () => {
     },
   );
 
-  it('sends high priority only for the acil topic', () => {
+  it('sends high priority for emergencies and mission calls only', () => {
     expect(buildMulticast(['t1'], { topic: 'acil', title: 'T', body: 'B' }).android.priority).toBe('high');
-    expect(buildMulticast(['t1'], { topic: 'taskCalls', title: 'T', body: 'B' }).android).not.toHaveProperty('priority');
+    expect(buildMulticast(['t1'], { topic: 'taskCalls', title: 'T', body: 'B' }).android.priority).toBe('high');
+    expect(buildMulticast(['t1'], { topic: 'trainings', title: 'T', body: 'B' }).android).not.toHaveProperty('priority');
   });
 
   it('always asks iOS to play the default sound', () => {
@@ -49,7 +50,7 @@ describe('push-provider — buildMulticast', () => {
     const msg = buildMulticast(['t1'], {
       topic: 'taskCalls', channelId: 'fire-report-confirmed', title: 'T', body: 'B',
     });
-    expect(msg.android).toEqual({ notification: { channelId: 'fire-report-confirmed' } });
+    expect(msg.android).toEqual({ notification: { channelId: 'fire-report-confirmed' }, priority: 'high' });
   });
 
   it('leaves out the android block when neither a channelId nor a topic is given', () => {
@@ -59,24 +60,34 @@ describe('push-provider — buildMulticast', () => {
 });
 
 describe('push-provider — deadTokens', () => {
-  it('picks only tokens FCM reports as unregistered or invalid', () => {
-    const tokens = ['ok', 'gone', 'bad', 'flaky'];
+  it('picks tokens FCM reports as no longer registered', () => {
+    const tokens = ['ok', 'gone', 'flaky'];
     const responses = [
       { success: true },
       { success: false, error: { code: 'messaging/registration-token-not-registered' } },
-      { success: false, error: { code: 'messaging/invalid-registration-token' } },
       { success: false, error: { code: 'messaging/internal-error' } },
     ];
-    expect(deadTokens(tokens, responses)).toEqual(['gone', 'bad']);
+    expect(deadTokens(tokens, responses)).toEqual(['gone']);
+  });
+
+  it('treats invalid-argument as a malformed token when the payload reached other devices', () => {
+    const responses = [
+      { success: true },
+      { success: false, error: { code: 'messaging/invalid-argument' } },
+    ];
+    expect(deadTokens(['ok', 'broken'], responses)).toEqual(['broken']);
+  });
+
+  it('keeps every token when invalid-argument hit all of them (a bad payload, not bad tokens)', () => {
+    const responses = [
+      { success: false, error: { code: 'messaging/invalid-argument' } },
+      { success: false, error: { code: 'messaging/invalid-argument' } },
+    ];
+    expect(deadTokens(['a', 'b'], responses)).toEqual([]);
   });
 
   it('keeps every token when the responses are missing', () => {
     expect(deadTokens(['a'], [])).toEqual([]);
-  });
-
-  it('keeps a token whose failed response carries no error object', () => {
-    expect(() => deadTokens(['a', 'b'], [{ success: false }, { success: false }])).not.toThrow();
-    expect(deadTokens(['a', 'b'], [{ success: false }, { success: false }])).toEqual([]);
   });
 });
 

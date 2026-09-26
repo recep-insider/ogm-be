@@ -48,6 +48,8 @@ const { sendPushToUser, buildMulticast, verifyPushProvider } = require('../../sr
 describe('push-provider — firebase delivery', () => {
   beforeEach(() => {
     mockMessaging.sendEachForMulticast.mockReset();
+    mockDbState.failDelete = false;
+    mockDeleted.length = 0;
   });
 
   it('sends the buildMulticast output to sendEachForMulticast', async () => {
@@ -106,7 +108,7 @@ describe('push-provider — firebase delivery', () => {
       failureCount: 1,
       responses: [
         { success: true },
-        { success: false, error: { code: 'messaging/invalid-registration-token' } },
+        { success: false, error: { code: 'messaging/registration-token-not-registered' } },
       ],
     });
     const { db } = require('../../src/config/db');
@@ -165,7 +167,6 @@ describe('push-provider — firebase delivery', () => {
     });
 
     const res = await sendPushToUser('u1', { topic: 'taskCalls', title: 'T', body: 'B' });
-    mockDbState.failDelete = false;
 
     expect(res).toEqual({ sent: 1, failed: 1 });
   });

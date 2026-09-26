@@ -14,6 +14,8 @@ const TOPIC_COLUMN = {
   announcements: 'announcements',
 };
 
+const URGENT_TOPICS = new Set(['acil', 'taskCalls']);
+
 let firebaseMessaging = null;
 function getFirebaseMessaging() {
   if (firebaseMessaging) return firebaseMessaging;
@@ -32,18 +34,19 @@ function getFirebaseMessaging() {
   return firebaseMessaging;
 }
 
-// FCM'in "bu token artık bu uygulamaya ait değil" dediği hatalar (uygulama silindi,
-// token döndü). Bu token'lara bir daha gönderilmez; kayıt silinir.
-const DEAD_TOKEN_CODES = new Set([
-  'messaging/registration-token-not-registered',
-  'messaging/invalid-registration-token',
-]);
+// FCM HTTP v1'in "bu token bu uygulamaya ait değil" cevabı (uygulama silindi, token döndü).
+const DEAD_TOKEN_CODE = 'messaging/registration-token-not-registered';
+// Bozuk/biçimsiz token da v1'de `invalid-argument` döner — ama aynı kod bozuk bir
+// *payload* için de her token'a döner. Bu yüzden yalnızca aynı gönderimde en az bir
+// token başarılıysa (payload sağlamsa) token'a ait sayılır.
+const MALFORMED_TOKEN_CODE = 'messaging/invalid-argument';
 
 /** Gönderim sonucundan ölü token'ları ayıklar. */
 function deadTokens(tokens, responses) {
+  const payloadAccepted = responses.some((r) => r && r.success);
   return tokens.filter((_, i) => {
-    const r = responses[i];
-    return r && !r.success && DEAD_TOKEN_CODES.has(r.error?.code);
+    const code = responses[i] && !responses[i].success ? responses[i].error?.code : undefined;
+    return code === DEAD_TOKEN_CODE || (payloadAccepted && code === MALFORMED_TOKEN_CODE);
   });
 }
 
@@ -98,8 +101,9 @@ function buildMulticast(tokens, payload) {
   };
   const channelId = payload.channelId || payload.topic;
   if (channelId) message.android = { notification: { channelId } };
-  // Acil çağrılar Android'de Doze'u delip hemen düşmeli.
-  if (payload.topic === 'acil') message.android = { ...message.android, priority: 'high' };
+  // Acil durumlar ve görev çağrıları Android'de Doze'u delip hemen düşmeli;
+  // eğitim/duyuru bildirimleri normal öncelikte kalır.
+  if (URGENT_TOPICS.has(payload.topic)) message.android = { ...message.android, priority: 'high' };
   // iOS'ta `sound` verilmezse bildirim sessiz gelir.
   message.apns = { payload: { aps: { sound: 'default' } } };
   return message;

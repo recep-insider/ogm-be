@@ -440,9 +440,10 @@ fi
 # ─── Push (FCM) ──────────────────────────────────────────────────────────────
 # Gerçek push için Firebase service account gerekir. Anahtar repoda ve imajda
 # yoktur; operatörün makinesindeki secrets/firebase-sa.json varsa sunucuya
-# gönderilir ve push sağlayıcısı firebase'e çevrilir. Dosya yoksa .env'deki
-# PUSH_PROVIDER'a dokunulmaz (mock kalır).
-set_env_key() {
+# gönderilir. Sunucudaki mevcut değerler korunur: yalnızca mock/boş sağlayıcı
+# firebase'e çevrilir, boş anahtarlar doldurulur. Sunucu zaten başka bir Firebase
+# projesine bağlıysa (ör. staging anahtarıyla prod'a deploy) durulur.
+_env_set() {
   local key="$1" val="$2"
   # sed replacement'ında '&' tüm eşleşme demek; kaçışlanmazsa değer bozulur.
   local val_esc=${val//&/\\&}
@@ -455,20 +456,38 @@ set_env_key() {
 }
 
 FIREBASE_SA_LOCAL="$LOCAL_REPO/secrets/firebase-sa.json"
+FIREBASE_SA_PATH=/app/secrets/firebase-sa.json
 if [ -f "$FIREBASE_SA_LOCAL" ]; then
   FIREBASE_PROJECT=$(grep -o '"project_id"[[:space:]]*:[[:space:]]*"[^"]*"' "$FIREBASE_SA_LOCAL" | sed 's/.*"\([^"]*\)"$/\1/')
   [ -n "$FIREBASE_PROJECT" ] || die "secrets/firebase-sa.json içinde project_id yok"
+
+  if _env_has "^FIREBASE_PROJECT_ID=..*" && ! _env_has "^FIREBASE_PROJECT_ID=${FIREBASE_PROJECT}\$"; then
+    die "Sunucu başka bir Firebase projesine bağlı; yerel anahtar '$FIREBASE_PROJECT' için. Yanlış ortama deploy olabilir — .env'i sunucuda kontrol edin."
+  fi
+
   log "Firebase service account gönderiliyor (proje: $FIREBASE_PROJECT)"
   run_ssh "mkdir -p $DEPLOY_DIR/secrets"
   run_rsync -az "$FIREBASE_SA_LOCAL" "$TARGET:$DEPLOY_DIR/secrets/firebase-sa.json"
   # Container içindeki node kullanıcısı (uid 1000) okuyabilmeli, başkası değil.
   run_ssh "chown -R 1000:1000 $DEPLOY_DIR/secrets && chmod 700 $DEPLOY_DIR/secrets && chmod 400 $DEPLOY_DIR/secrets/firebase-sa.json"
-  set_env_key PUSH_PROVIDER firebase
-  set_env_key FIREBASE_PROJECT_ID "$FIREBASE_PROJECT"
-  set_env_key FIREBASE_CREDENTIALS_PATH /app/secrets/firebase-sa.json
-  ok "Push sağlayıcısı: firebase"
+
+  _env_has "^FIREBASE_PROJECT_ID=..*" || _env_set FIREBASE_PROJECT_ID "$FIREBASE_PROJECT"
+  if _env_has "^FIREBASE_CREDENTIALS_PATH=..*"; then
+    _env_has "^FIREBASE_CREDENTIALS_PATH=${FIREBASE_SA_PATH}\$" \
+      || warn "FIREBASE_CREDENTIALS_PATH sunucuda farklı bir yolu gösteriyor — dokunulmadı"
+  else
+    _env_set FIREBASE_CREDENTIALS_PATH "$FIREBASE_SA_PATH"
+  fi
+  if _env_has "^PUSH_PROVIDER=firebase\$"; then
+    ok "Push sağlayıcısı zaten firebase"
+  elif _env_has "^PUSH_PROVIDER=\(mock\)\?\$" || ! _env_has "^PUSH_PROVIDER="; then
+    _env_set PUSH_PROVIDER firebase
+    ok "Push sağlayıcısı: mock → firebase"
+  else
+    warn "PUSH_PROVIDER sunucuda farklı bir değerde — dokunulmadı"
+  fi
 else
-  warn "secrets/firebase-sa.json yok — PUSH_PROVIDER değiştirilmedi"
+  warn "secrets/firebase-sa.json yok — push ayarlarına dokunulmadı"
 fi
 
 # ─── Volume dizinleri (node user uid 1000 için) ──────────────────────────────────────
@@ -516,6 +535,16 @@ if [ "$STATUS" != "healthy" ]; then
   die "Deploy başarısız."
 fi
 ok "Backend healthy"
+
+# Push sağlayıcısının gerçekten başladığını açılış logundan doğrula — anahtar
+# bozuk/okunamaz ise deploy "başarılı" görünürken acil bildirimler gitmez.
+PUSH_BOOT_LINE=$(run_ssh "cd $DEPLOY_DIR && docker compose logs --tail 300 backend 2>/dev/null | grep 'Push sağlayıcısı' | tail -1" || true)
+case "$PUSH_BOOT_LINE" in
+  *GİTMEYECEK*) err "Push sağlayıcısı başlatılamadı — bildirimler GİTMEYECEK: $PUSH_BOOT_LINE" ;;
+  *firebase*) ok "Push: firebase aktif" ;;
+  *mock*) warn "Push: mock (gerçek bildirim gönderilmez)" ;;
+  *) warn "Push sağlayıcısı durumu logda görülemedi" ;;
+esac
 
 # ─── Migration + seed ──────────────────────────────────────────────
 log "Knex migration"

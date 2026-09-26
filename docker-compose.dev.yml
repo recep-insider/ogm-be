@@ -20,6 +20,8 @@ services:
       - ./knexfile.js:/app/knexfile.js
       - ./logs:/app/logs
       - ./uploads:/app/uploads
+      # Firebase service account (git-ignored) — same path as prod, see .env.example.
+      - ./secrets:/app/secrets:ro
       - /app/node_modules
     depends_on:
       mysql:
