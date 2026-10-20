@@ -50,6 +50,49 @@ describe('panelAuth.service refresh', () => {
   });
 });
 
+describe('panelAuth.service refresh yarışı', () => {
+  it('okuma ile rotasyon arasında şifre değişimiyle kapanan token refresh_invalid döner, diğer oturum kalır', async () => {
+    const future = new Date(Date.now() + 3600 * 1000);
+    seed({
+      tokens: [
+        { id: 't1', user_id: 'u1', token_hash: sha256('cihaz'), expires_at: future, revoked_at: null },
+        { id: 't2', user_id: 'u1', token_hash: sha256('korunan'), expires_at: future, revoked_at: null },
+      ],
+    });
+    // Kullanıcı okunurken t1'i kapatmak, eşzamanlı bir changePassword'ün araya girmesini taklit eder.
+    const [t1] = db.rows('panel_refresh_tokens');
+    const [userRow] = db.rows('panel_users');
+    Object.defineProperty(userRow, 'status', {
+      enumerable: true,
+      get() {
+        t1.revoked_at = new Date();
+        return 'active';
+      },
+    });
+
+    await expect(service.refresh('cihaz')).rejects.toMatchObject({ code: 'refresh_invalid' });
+    expect(db.rows('panel_refresh_tokens').find((t) => t.id === 't2').revoked_at).toBeNull();
+    expect(db.rows('panel_user_audit').map((a) => a.action)).not.toContain('auth.refresh_reused');
+  });
+});
+
+describe('panelAuth.service logout', () => {
+  it('iptal edilmiş eski token diğer oturumları kapatmaz', async () => {
+    const future = new Date(Date.now() + 3600 * 1000);
+    seed({
+      tokens: [
+        { id: 't1', user_id: 'u1', token_hash: sha256('eski'), expires_at: future, revoked_at: new Date(), replaced_by: 't2' },
+        { id: 't2', user_id: 'u1', token_hash: sha256('canli'), expires_at: future, revoked_at: null },
+      ],
+    });
+
+    await service.logout('eski');
+
+    expect(db.rows('panel_refresh_tokens').find((t) => t.id === 't2').revoked_at).toBeNull();
+    expect(db.rows('panel_user_audit')).toHaveLength(0);
+  });
+});
+
 describe('panelAuth.service writePanelAudit', () => {
   it('audit yazılamazsa giriş yine oturum döner ve uyarı loglanır', async () => {
     seed();

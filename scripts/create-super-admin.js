@@ -30,6 +30,9 @@ async function createSuperAdmin({ db, auth, email, name = DEFAULT_NAME, reset = 
 
   const existing = await db('panel_users').where({ email: normalized }).first();
   if (existing && !reset) return { status: 'exists', id: existing.id };
+  if (existing && existing.role !== 'super_admin') {
+    throw new Error(`Bu e-posta bir süper admine ait değil (rol: ${existing.role}); --reset yalnız süper adminde çalışır`);
+  }
 
   const password = generateTempPassword();
   const passwordHash = await auth.hashPassword(password);

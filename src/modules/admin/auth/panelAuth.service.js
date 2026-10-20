@@ -187,7 +187,11 @@ async function refresh(rawToken, meta = {}) {
     .where({ id: row.id })
     .whereNull('revoked_at')
     .update({ revoked_at: new Date(), replaced_by: newId });
-  if (!updated) throw await reused();
+  if (!updated) {
+    const current = await db('panel_refresh_tokens').where({ id: row.id }).first();
+    if (current && current.replaced_by) throw await reused();
+    throw errors.unauthorized('Oturum bulunamadı', 'refresh_invalid');
+  }
 
   const refreshToken = await issueRefreshToken(user.id, meta, newId);
   return session(user, refreshToken);
@@ -197,7 +201,7 @@ async function refresh(rawToken, meta = {}) {
 async function logout(rawToken) {
   if (!rawToken) return;
   const row = await db('panel_refresh_tokens').where({ token_hash: sha256(rawToken) }).first();
-  if (!row) return;
+  if (!row || row.revoked_at || new Date(row.expires_at).getTime() <= Date.now()) return;
   await revokeAllForUser(row.user_id);
   await writePanelAudit({ actorId: row.user_id, targetId: row.user_id, action: 'auth.logout' });
 }

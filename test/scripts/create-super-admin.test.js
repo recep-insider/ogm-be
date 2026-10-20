@@ -54,10 +54,10 @@ describe('create-super-admin', () => {
     expect(db.rows('panel_users')).toEqual([before]);
   });
 
-  it('--reset yeni geçici şifre verir, hesabı aktifler, tüm oturumları kapatır; rolü korur', async () => {
+  it('--reset yeni geçici şifre verir, hesabı aktifler, tüm oturumları kapatır', async () => {
     db.reset({
       panel_users: [{
-        id: 'p1', email: EMAIL, role: 'admin', status: 'disabled', must_change_password: false, password_hash: 'hash:eski',
+        id: 'p1', email: EMAIL, role: 'super_admin', status: 'disabled', must_change_password: false, password_hash: 'hash:eski',
       }],
       panel_refresh_tokens: [
         { id: 't1', user_id: 'p1', token_hash: 'a', revoked_at: null },
@@ -70,7 +70,7 @@ describe('create-super-admin', () => {
 
     expect(result.status).toBe('reset');
     expect(db.rows('panel_users')[0]).toMatchObject({
-      role: 'admin',
+      role: 'super_admin',
       status: 'active',
       must_change_password: true,
       password_hash: `hash:${result.password}`,
@@ -79,6 +79,19 @@ describe('create-super-admin', () => {
     expect(db.rows('panel_user_audit')).toContainEqual(
       expect.objectContaining({ target_id: 'p1', action: 'auth.super_admin_reset' }),
     );
+  });
+
+  it('--reset süper admin olmayan hesabı değiştirmez', async () => {
+    db.reset({
+      panel_users: [{ id: 'p1', email: EMAIL, role: 'admin', status: 'rejected', password_hash: 'hash:eski' }],
+      panel_refresh_tokens: [],
+      panel_user_audit: [],
+    });
+    const before = { ...db.rows('panel_users')[0] };
+
+    await expect(createSuperAdmin({ db, auth, email: EMAIL, reset: true })).rejects.toThrow('rol: admin');
+    expect(db.rows('panel_users')).toEqual([before]);
+    expect(db.rows('panel_user_audit')).toHaveLength(0);
   });
 
   it('geçersiz e-postayı reddeder', async () => {
