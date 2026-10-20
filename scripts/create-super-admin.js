@@ -21,7 +21,8 @@ async function createSuperAdmin({ db, auth, email, name = DEFAULT_NAME, reset = 
 
   const existing = await db('panel_users').where({ email: normalized }).first();
   if (existing && !reset) return { status: 'exists', id: existing.id };
-  if (existing && existing.role !== 'super_admin') {
+  // Gömülü hesap panelden düşürülmüş ya da pasifleştirilmiş olabilir; kurtarma yine çalışmalı.
+  if (existing && existing.role !== 'super_admin' && !existing.is_system) {
     throw new Error(`Bu e-posta bir süper admine ait değil (rol: ${existing.role}); --reset yalnız süper adminde çalışır`);
   }
 
@@ -33,6 +34,7 @@ async function createSuperAdmin({ db, auth, email, name = DEFAULT_NAME, reset = 
     await db('panel_users').where({ id: existing.id }).update({
       password_hash: passwordHash,
       must_change_password: true,
+      role: 'super_admin',
       status: 'active',
       updated_at: now,
     });

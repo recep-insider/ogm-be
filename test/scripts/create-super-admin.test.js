@@ -81,6 +81,19 @@ describe('create-super-admin', () => {
     );
   });
 
+  it('--reset panelden düşürülüp pasifleştirilmiş gömülü hesabı süper admin olarak geri getirir', async () => {
+    db.reset({
+      panel_users: [{ id: 'sys', email: EMAIL, role: 'admin', status: 'disabled', is_system: true, password_hash: 'hash:eski' }],
+      panel_refresh_tokens: [],
+      panel_user_audit: [],
+    });
+
+    const result = await createSuperAdmin({ db, auth, email: EMAIL, reset: true });
+
+    expect(result.status).toBe('reset');
+    expect(db.rows('panel_users')[0]).toMatchObject({ role: 'super_admin', status: 'active', must_change_password: true });
+  });
+
   it('--reset süper admin olmayan hesabı değiştirmez', async () => {
     db.reset({
       panel_users: [{ id: 'p1', email: EMAIL, role: 'admin', status: 'rejected', password_hash: 'hash:eski' }],
