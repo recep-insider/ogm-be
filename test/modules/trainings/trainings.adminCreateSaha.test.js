@@ -113,9 +113,20 @@ describe('trainings.service — saat bilgili tarih İstanbul gününe göre okun
   });
   afterEach(() => jest.useRealTimers());
 
-  test("'2026-10-20T01:00:00+03:00' bugündür, kabul edilir", async () => {
+  test("'2026-10-20T01:00:00+03:00' bugündür, kabul edilir ve aynı gün kaydedilir", async () => {
     await adminCreateSaha(body('2026-10-20T01:00:00+03:00'));
 
     expect(mockInserts).toHaveLength(1);
+    expect(mockInserts[0].start_date).toBe('2026-10-20');
+  });
+
+  test('düzenlemede saat bilgili tarih de İstanbul günü olarak kaydedilir', async () => {
+    mockState.existing = { id: 's1', start_date: '2026-10-15' };
+    mockUpdates.length = 0;
+
+    await adminUpdateSaha('s1', { startDate: new Date('2026-10-25T01:00:00+03:00') });
+
+    expect(mockUpdates[0].start_date).toBe('2026-10-25');
+    mockState.existing = undefined;
   });
 });

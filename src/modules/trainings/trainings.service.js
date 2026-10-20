@@ -456,7 +456,7 @@ function sahaToRow(body) {
   const row = {};
   if (body.title !== undefined) row.title = body.title;
   if (body.location !== undefined) row.location = body.location;
-  if (body.startDate !== undefined) row.start_date = body.startDate;
+  if (body.startDate !== undefined) row.start_date = toLocalDateOnly(body.startDate);
   if (body.startTime !== undefined) row.start_time = body.startTime;
   if (body.endTime !== undefined) row.end_time = body.endTime;
   if (body.instructorName !== undefined) row.instructor_name = body.instructorName;
