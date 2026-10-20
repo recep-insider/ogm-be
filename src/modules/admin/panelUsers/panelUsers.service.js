@@ -5,6 +5,7 @@ const { db } = require('../../../config/db');
 const { redis } = require('../../../config/redis');
 const { errors } = require('../../../shared/errors');
 const { generateTempPassword } = require('../../../shared/temp-password');
+const { hitFixedWindow } = require('../../../shared/fixed-window');
 const auth = require('../auth/panelAuth.service');
 
 const REQUEST_MAX_PER_WINDOW = 10;
@@ -48,19 +49,11 @@ async function listUnits() {
   }));
 }
 
-// Sayaç sorgudan önce artırılır: eşzamanlı talepler de sınırı aşamaz.
-async function assertRequestAllowed(ip) {
-  const key = `${REQUEST_RL_PREFIX}${ip || '-'}`;
-  const count = await redis.incr(key);
-  if (count === 1) await redis.expire(key, REQUEST_WINDOW_SEC);
-  if (count <= REQUEST_MAX_PER_WINDOW) return;
-  let ttl = await redis.ttl(key);
-  if (ttl < 0) {
-    await redis.expire(key, REQUEST_WINDOW_SEC);
-    ttl = REQUEST_WINDOW_SEC;
-  }
-  throw errors.make(429, 'rate_limited', 'Çok fazla talep gönderildi. Daha sonra tekrar deneyin.', {
-    retryAfterSec: ttl,
+function assertRequestAllowed(ip) {
+  return hitFixedWindow(redis, `${REQUEST_RL_PREFIX}${ip || '-'}`, {
+    max: REQUEST_MAX_PER_WINDOW,
+    windowSec: REQUEST_WINDOW_SEC,
+    message: 'Çok fazla talep gönderildi. Daha sonra tekrar deneyin.',
   });
 }
 
@@ -74,10 +67,20 @@ async function submitRequest(body, meta = {}) {
     throw errors.validation('Seçilen birim bulunamadı.', undefined, 'unit_invalid');
   }
 
+  const existing = await db('panel_users').where({ email }).first();
+  if (existing && existing.status === 'pending') {
+    throw errors.conflict('Bu e-postayla bir talep zaten inceleniyor.', undefined, 'request_pending');
+  }
+  if (existing && existing.status !== 'rejected') {
+    throw errors.conflict('Bu e-postayla bir panel hesabı zaten var.', undefined, 'email_taken');
+  }
+
   const now = new Date();
+  // Talep her zaman admin rolüyle açılır; reddedilmiş kaydın eski rolü yeniden talepte taşınmaz.
   const fields = {
     name: body.name,
     password_hash: await auth.hashPassword(body.password),
+    role: 'admin',
     bolge_mudurlugu: body.bolge,
     isletme_mudurlugu: body.isletme,
     phone: body.phone || null,
@@ -86,14 +89,6 @@ async function submitRequest(body, meta = {}) {
     requested_at: now,
     updated_at: now,
   };
-
-  const existing = await db('panel_users').where({ email }).first();
-  if (existing && existing.status === 'pending') {
-    throw errors.conflict('Bu e-postayla bir talep zaten inceleniyor.', undefined, 'request_pending');
-  }
-  if (existing && existing.status !== 'rejected') {
-    throw errors.conflict('Bu e-postayla bir panel hesabı zaten var.', undefined, 'email_taken');
-  }
 
   if (existing) {
     // Koşullu güncelleme: aynı anda onaylanan bir kaydın üzerine yazılmaz.
@@ -109,7 +104,7 @@ async function submitRequest(body, meta = {}) {
 
   const id = uuidv4();
   try {
-    await db('panel_users').insert({ id, email, role: 'admin', ...fields, created_at: now });
+    await db('panel_users').insert({ id, email, ...fields, created_at: now });
   } catch (err) {
     if (err.code === 'ER_DUP_ENTRY') {
       throw errors.conflict('Bu e-postayla bir talep zaten inceleniyor.', undefined, 'request_pending');
@@ -171,7 +166,7 @@ function approve(actor, id) {
     from: 'pending',
     to: 'active',
     action: 'user.approve',
-    extra: { approved_by: actor.id, approved_at: new Date(), rejection_reason: null },
+    extra: { role: 'admin', approved_by: actor.id, approved_at: new Date(), rejection_reason: null },
   });
 }
 
@@ -214,6 +209,9 @@ async function setRole(actor, id, role) {
   let from;
   await db.transaction(async (trx) => {
     const locked = await lockTarget(trx, id);
+    if (!['active', 'disabled'].includes(locked.target.status)) {
+      throw errors.conflict('Rol yalnız onaylanmış hesapta değiştirilebilir.', undefined, 'invalid_state');
+    }
     from = locked.target.role;
     if (from === role) return;
     if (role !== 'super_admin') assertNotLastSuperAdmin(locked);
@@ -264,11 +262,17 @@ async function resetPassword(actor, id) {
     throw errors.conflict('Onaylanmamış hesabın şifresi sıfırlanamaz.', undefined, 'invalid_state');
   }
   const temporaryPassword = generateTempPassword();
-  await db('panel_users').where({ id }).update({
-    password_hash: await auth.hashPassword(temporaryPassword),
-    must_change_password: true,
-    updated_at: new Date(),
-  });
+  const updated = await db('panel_users')
+    .where({ id })
+    .whereIn('status', ['active', 'disabled'])
+    .update({
+      password_hash: await auth.hashPassword(temporaryPassword),
+      must_change_password: true,
+      updated_at: new Date(),
+    });
+  if (!updated) {
+    throw errors.conflict('Onaylanmamış hesabın şifresi sıfırlanamaz.', undefined, 'invalid_state');
+  }
   await auth.revokeAllForUser(id);
   await auth.writePanelAudit({ actorId: actor.id, targetId: id, action: 'user.reset_password' });
   return { temporaryPassword };

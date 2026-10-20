@@ -133,6 +133,43 @@ describe('POST /v1/admin/auth/request', () => {
     expect(actions()).toContain('request.resubmit');
   });
 
+  it('eşzamanlı aynı e-postalı talep insert\'te ER_DUP_ENTRY alırsa 409 request_pending, denetime yazmaz', async () => {
+    db.rows('panel_users').push = () => {
+      throw Object.assign(new Error('Duplicate entry'), { code: 'ER_DUP_ENTRY' });
+    };
+    const res = await submit(body());
+    expect(res.status).toBe(409);
+    expect(res.body.error.code).toBe('request_pending');
+    expect(actions()).not.toContain('request.create');
+  });
+
+  it('reddedilen kayıt araya giren onayla değişmişse 409 request_pending, üzerine yazmaz, denetime yazmaz', async () => {
+    seed([SUPER, { ...PENDING, status: 'rejected', rejection_reason: 'Birim doğrulanamadı' }]);
+    const rows = db.rows('panel_users');
+    rows.find = (fn) => {
+      delete rows.find;
+      const hit = rows.find(fn);
+      if (!hit) return hit;
+      const snapshot = { ...hit };
+      Object.assign(hit, { status: 'active', approved_by: 'su-1' });
+      return snapshot;
+    };
+    const res = await submit(body({ email: PENDING.email }));
+
+    expect(res.status).toBe(409);
+    expect(res.body.error.code).toBe('request_pending');
+    expect(row('pe-1')).toMatchObject({
+      status: 'active', approved_by: 'su-1', password_hash: PENDING.password_hash, bolge_mudurlugu: 'Antalya OBM',
+    });
+    expect(actions()).not.toContain('request.resubmit');
+  });
+
+  it('reddedilmiş kaydın eski rolü yeniden talebe taşınmaz', async () => {
+    seed([SUPER, { ...PENDING, status: 'rejected', role: 'super_admin' }]);
+    expect((await submit(body({ email: PENDING.email }))).status).toBe(202);
+    expect(row('pe-1')).toMatchObject({ status: 'pending', role: 'admin' });
+  });
+
   it('bölge/işletme çifti forest_units\'te yoksa 400 unit_invalid', async () => {
     const res = await submit(body({ isletme: 'Manavgat OİM' }));
     expect(res.status).toBe(400);
@@ -247,6 +284,18 @@ describe('süper admin işlemleri', () => {
       ]);
     });
 
+    it('bekleyen ya da reddedilmiş talebin rolü değiştirilemez: 409 invalid_state', async () => {
+      const res = await call('put', '/pe-1/role', { role: 'super_admin' });
+      expect(res.status).toBe(409);
+      expect(res.body.error.code).toBe('invalid_state');
+      expect(row('pe-1').role).toBe('admin');
+    });
+
+    it('onaylanan talep satırda başka rol olsa da admin olarak açılır', async () => {
+      row('pe-1').role = 'super_admin';
+      expect((await call('post', '/pe-1/approve')).body.role).toBe('admin');
+    });
+
     it('kendi rolünü değiştiremez: 403 cannot_change_own_role', async () => {
       const res = await call('put', '/su-1/role', { role: 'admin' });
       expect(res.status).toBe(403);
@@ -264,6 +313,12 @@ describe('süper admin işlemleri', () => {
     it('rol değişmiyorsa denetime yazmaz', async () => {
       await call('put', '/ad-1/role', { role: 'admin' });
       expect(actions()).not.toContain('user.role');
+    });
+
+    it('olmayan kullanıcı 404 panel_user_not_found', async () => {
+      const res = await call('put', '/yok/role', { role: 'super_admin' });
+      expect(res.status).toBe(404);
+      expect(res.body.error.code).toBe('panel_user_not_found');
     });
   });
 
@@ -304,6 +359,27 @@ describe('süper admin işlemleri', () => {
 
     it('bekleyen talep etkinleştirilemez (onay ucu kullanılır): 409 invalid_state', async () => {
       expect((await call('put', '/pe-1/status', { status: 'active' })).body.error.code).toBe('invalid_state');
+    });
+
+    it('olmayan kullanıcı 404 panel_user_not_found', async () => {
+      const res = await call('put', '/yok/status', { status: 'disabled' });
+      expect(res.status).toBe(404);
+      expect(res.body.error.code).toBe('panel_user_not_found');
+    });
+
+    it.each([
+      ['aktif hesap active', 'active', 'user.enable'],
+      ['pasif hesap disabled', 'disabled', 'user.disable'],
+    ])('%s yapılırsa 200, denetime yazmaz, oturumları kapatmaz', async (_label, status, action) => {
+      seed([SUPER, { ...ADMIN, status }]);
+      db.rows('panel_refresh_tokens').push({ id: 'rt-1', user_id: 'ad-1', token_hash: 'h', revoked_at: null });
+      token = await tokenFor(SUPER.email);
+
+      const res = await call('put', '/ad-1/status', { status });
+      expect(res.status).toBe(200);
+      expect(res.body.status).toBe(status);
+      expect(actions()).not.toContain(action);
+      expect(db.rows('panel_refresh_tokens').find((t) => t.id === 'rt-1').revoked_at).toBeNull();
     });
   });
 

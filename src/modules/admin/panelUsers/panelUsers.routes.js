@@ -5,6 +5,7 @@ const Joi = require('joi');
 const asyncHandler = require('../../../shared/async-handler');
 const validate = require('../../../middlewares/validate');
 const { requireSuperAdmin } = require('../../../middlewares/auth');
+const { PANEL_ROLES } = require('../../../shared/jwt');
 const service = require('./panelUsers.service');
 
 const router = Router();
@@ -17,7 +18,7 @@ const listQuery = Joi.object({
   q: Joi.string().trim().max(100).allow('').optional(),
 });
 const rejectSchema = Joi.object({ reason: Joi.string().trim().max(500).allow('', null).optional() });
-const roleSchema = Joi.object({ role: Joi.string().valid('admin', 'super_admin').required() });
+const roleSchema = Joi.object({ role: Joi.string().valid(...PANEL_ROLES).required() });
 const statusSchema = Joi.object({ status: Joi.string().valid('active', 'disabled').required() });
 
 const actor = (req) => ({ id: req.panelUser.id, role: req.panelUser.role });
@@ -142,7 +143,7 @@ router.post(
  * /admin/panel-users/{id}/role:
  *   put:
  *     tags: [Admin - Panel Kullanıcıları]
- *     summary: Rol değiştir (admin ↔ super_admin)
+ *     summary: Rol değiştir (admin ↔ super_admin; yalnız onaylanmış hesap)
  *     security: [ { panelBearer: [] } ]
  *     parameters: [ { in: path, name: id, required: true, schema: { type: string } } ]
  *     requestBody:
@@ -151,7 +152,7 @@ router.post(
  *     responses:
  *       200: { content: { application/json: { schema: { $ref: '#/components/schemas/PanelUser' } } } }
  *       403: { description: 'cannot_change_own_role' }
- *       409: { description: 'last_super_admin' }
+ *       409: { description: 'last_super_admin | invalid_state (bekleyen ya da reddedilmiş talep)' }
  */
 router.put(
   '/:id/role',

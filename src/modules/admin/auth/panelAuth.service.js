@@ -7,6 +7,7 @@ const { db } = require('../../../config/db');
 const { redis } = require('../../../config/redis');
 const logger = require('../../../config/logger');
 const { errors } = require('../../../shared/errors');
+const { hitFixedWindow } = require('../../../shared/fixed-window');
 const {
   signPanelAccessToken,
   verifyPanelAccessToken,
@@ -122,18 +123,12 @@ function session(user, refreshToken) {
   };
 }
 
-// Sayaç bcrypt'ten önce artırılır: eşzamanlı denemeler de sınırı aşamaz. Başarılı giriş sayacı siler.
-async function assertLoginAllowed(key) {
-  const attempts = await redis.incr(key);
-  if (attempts === 1) await redis.expire(key, LOGIN_WINDOW_SEC);
-  if (attempts <= LOGIN_MAX_FAILURES) return;
-  let ttl = await redis.ttl(key);
-  if (ttl < 0) {
-    await redis.expire(key, LOGIN_WINDOW_SEC);
-    ttl = LOGIN_WINDOW_SEC;
-  }
-  throw errors.make(429, 'rate_limited', 'Çok fazla deneme yapıldı. Daha sonra tekrar deneyin.', {
-    retryAfterSec: ttl,
+// Sayaç bcrypt'ten önce artırılır; başarılı giriş sayacı siler.
+function assertLoginAllowed(key) {
+  return hitFixedWindow(redis, key, {
+    max: LOGIN_MAX_FAILURES,
+    windowSec: LOGIN_WINDOW_SEC,
+    message: 'Çok fazla deneme yapıldı. Daha sonra tekrar deneyin.',
   });
 }
 

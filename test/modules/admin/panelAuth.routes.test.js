@@ -498,6 +498,13 @@ describe('requireAdmin — panel token', () => {
     expect((await scan('eski-admin-anahtari')).status).toBe(403);
   });
 
+  it('requireOfficer anahtar tanımsızken boş ya da eksik x-api-key\'i reddeder', async () => {
+    env.admin.officerApiKey = '';
+    const url = '/v1/missions/active/m1/scan';
+    expect((await request(app).post(url).set('x-api-key', '').send({})).status).toBe(403);
+    expect((await request(app).post(url).send({})).status).toBe(403);
+  });
+
   it('yetki rolü token\'dan değil veritabanından okunur', async () => {
     const token = signPanelAccessToken({ sub: 'u-active', role: 'super_admin' });
     db.rows('panel_users')[0].role = 'admin';
