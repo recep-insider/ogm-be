@@ -46,11 +46,20 @@ async function create({ userId, body, ip, userAgent }) {
   const user = await db('users').where({ id: userId, is_active: true }).first();
   if (!user) throw errors.notFound('Kullanıcı bulunamadı');
 
+  const activeParticipation = await db('mission_participants as mp')
+    .join('missions as m', 'm.id', 'mp.mission_id')
+    .where('mp.user_id', userId)
+    .where('m.status', 'active')
+    .whereIn('mp.status', ['yolda', 'sahada'])
+    .orderBy('mp.updated_at', 'desc')
+    .first('mp.mission_id');
+
   const id = uuidv4();
   const now = new Date();
   await db('sos_reports').insert({
     id,
     user_id: userId,
+    mission_id: activeParticipation?.mission_id || null,
     // §10 + mobil §4: konum YALNIZCA koordinattır; serbest metin etiket ve sebep alanı yoktur.
     lat: body.coordinates?.lat ?? null,
     lng: body.coordinates?.lng ?? null,
@@ -185,8 +194,10 @@ async function adminList({ status, page = 1, pageSize = 20 } = {}, actor = {}) {
   const rows = await base
     .clone()
     .leftJoin('users as u', 'u.id', 'sr.user_id')
+    .leftJoin('missions as m', 'm.id', 'sr.mission_id')
     .select(
       'sr.*',
+      'm.title as mission_title',
       'u.kan_grubu as live_kan_grubu',
       'u.phone as live_phone',
       'u.acil_ad as live_acil_ad',
@@ -247,6 +258,8 @@ function mapAdminSos(r, history) {
     status: r.status,
     coordinates: r.lat != null && r.lng != null ? { lat: Number(r.lat), lng: Number(r.lng) } : null,
     dispatchedTo: r.dispatched_to,
+    missionId: r.mission_id || null,
+    missionTitle: r.mission_title || null,
     createdAt: toIso(r.created_at),
     respondedAt: toIso(r.responded_at),
     cancelledAt: toIso(r.cancelled_at),

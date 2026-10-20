@@ -20,6 +20,8 @@ function mapPoint(row) {
     address: row.address || null,
     coordinates: { lat: Number(row.lat), lng: Number(row.lng) },
     isOpen: !!row.is_open,
+    officerName: row.officer_name || null,
+    officerPhone: row.officer_phone || null,
   };
 }
 
@@ -90,14 +92,25 @@ async function upsert(missionId, body, actor = {}) {
     is_open: body.isOpen !== undefined ? body.isOpen : true,
     updated_at: now,
   };
+  const officer = {};
+  if (body.officerName !== undefined) officer.officer_name = body.officerName || null;
+  if (body.officerPhone !== undefined) officer.officer_phone = body.officerPhone || null;
 
   let locationChanged = false;
   if (existing) {
     locationChanged =
       Number(existing.lat) !== Number(row.lat) || Number(existing.lng) !== Number(row.lng);
-    await db('assembly_points').where({ id: existing.id }).update(row);
+    await db('assembly_points').where({ id: existing.id }).update({ ...row, ...officer });
   } else {
-    await db('assembly_points').insert({ id: uuidv4(), mission_id: missionId, created_at: now, ...row });
+    await db('assembly_points').insert({
+      id: uuidv4(),
+      mission_id: missionId,
+      created_at: now,
+      officer_name: null,
+      officer_phone: null,
+      ...row,
+      ...officer,
+    });
   }
 
   const point = await getByMission(missionId);

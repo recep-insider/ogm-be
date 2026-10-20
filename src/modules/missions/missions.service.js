@@ -613,6 +613,8 @@ async function adminCreate(body, actor = {}) {
       address: body.assemblyPoint.address || null,
       lat: body.assemblyPoint.coordinates.lat,
       lng: body.assemblyPoint.coordinates.lng,
+      officer_name: body.assemblyPoint.officerName || null,
+      officer_phone: body.assemblyPoint.officerPhone || null,
       is_open: true,
       created_at: now,
       updated_at: now,
@@ -641,6 +643,53 @@ async function adminCreate(body, actor = {}) {
   });
 
   return { ok: true, missionId: id, status: 'active', called };
+}
+
+const REQUIRED_FIELDS = { title: 'title', shortLocation: 'short_location' };
+const CLEARABLE_FIELDS = {
+  fullTitle: 'full_title',
+  il: 'il',
+  ilce: 'ilce',
+  regionLabel: 'region_label',
+  locationLabel: 'location_label',
+  description: 'description',
+};
+
+/** Açık olayı kısmi günceller — gövdede olmayan alan olduğu gibi kalır. */
+async function adminUpdate(missionId, body, actor = {}) {
+  const mission = await db('missions').where({ id: missionId }).first();
+  if (!mission) throw errors.notFound('Görev bulunamadı', 'mission_not_found');
+  if (mission.status === 'archived') {
+    throw errors.conflict('Olay arşivlendi, düzenlenemez', undefined, 'mission_archived');
+  }
+
+  const row = {};
+  for (const [key, column] of Object.entries(REQUIRED_FIELDS)) {
+    if (body[key] !== undefined) row[column] = body[key];
+  }
+  for (const [key, column] of Object.entries(CLEARABLE_FIELDS)) {
+    if (body[key] !== undefined) row[column] = body[key] || null;
+  }
+  if (body.coordinates !== undefined) {
+    row.lat = body.coordinates.lat;
+    row.lng = body.coordinates.lng;
+  }
+  row.updated_at = new Date();
+
+  const updated = await db('missions').where({ id: missionId }).whereNot({ status: 'archived' }).update(row);
+  if (!updated) throw errors.conflict('Olay arşivlendi, düzenlenemez', undefined, 'mission_archived');
+
+  await writeAudit({
+    userId: actor.userId || null,
+    action: 'missions.update',
+    entity: 'mission',
+    entityId: missionId,
+    ip: actor.ip,
+    userAgent: actor.userAgent,
+    payload: { fields: Object.keys(body) },
+  });
+
+  return { ok: true, missionId };
 }
 
 /**
@@ -809,6 +858,7 @@ module.exports = {
   sahadakiSayisi,
   checkInTrend,
   adminCreate,
+  adminUpdate,
   adminArchive,
   adminCheckIns,
   callReadyVolunteers,

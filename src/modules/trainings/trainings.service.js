@@ -456,7 +456,7 @@ function sahaToRow(body) {
   const row = {};
   if (body.title !== undefined) row.title = body.title;
   if (body.location !== undefined) row.location = body.location;
-  if (body.startDate !== undefined) row.start_date = body.startDate;
+  if (body.startDate !== undefined) row.start_date = toLocalDateOnly(body.startDate);
   if (body.startTime !== undefined) row.start_time = body.startTime;
   if (body.endTime !== undefined) row.end_time = body.endTime;
   if (body.instructorName !== undefined) row.instructor_name = body.instructorName;
@@ -468,7 +468,18 @@ function sahaToRow(body) {
   return row;
 }
 
+function assertNotPastDay(startDate) {
+  if (toLocalDateOnly(startDate) < todayLocal()) {
+    throw errors.validation(
+      'Form alanlarında hata var',
+      { errors: [{ field: 'startDate', message: 'Eğitim tarihi bugünden önce olamaz' }] },
+      'start_date_past',
+    );
+  }
+}
+
 async function adminCreateSaha(body, actor = {}) {
+  assertNotPastDay(body.startDate);
   const id = uuidv4();
   const now = new Date();
   await db('saha_trainings').insert({ id, ...sahaToRow(body), created_at: now, updated_at: now });
@@ -487,6 +498,10 @@ async function adminCreateSaha(body, actor = {}) {
 async function adminUpdateSaha(id, body, actor = {}) {
   const existing = await db('saha_trainings').where({ id }).first();
   if (!existing) throw errors.notFound('Eğitim bulunamadı', 'training_not_found');
+  // Tarihi zaten geçmiş eğitim düzenlenebilir; yalnızca tarih geçmiş bir güne taşınamaz.
+  if (body.startDate !== undefined && toLocalDateOnly(body.startDate) !== toDateOnly(existing.start_date)) {
+    assertNotPastDay(body.startDate);
+  }
   await db('saha_trainings').where({ id }).update({ ...sahaToRow(body), updated_at: new Date() });
   await writeAudit({
     userId: actor.userId || null,

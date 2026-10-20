@@ -6,19 +6,58 @@
 
 const mockInserted = [];
 const mockHistory = [];
-const mockState = { user: null, redisCount: 0 };
+const mockState = {
+  user: null,
+  redisCount: 0,
+  participation: undefined,
+  whereCalls: [],
+  whereInCalls: [],
+  orderByCalls: [],
+  leftJoinCalls: [],
+  selectCalls: [],
+  adminRows: [],
+};
 
 jest.mock('../../../src/config/db', () => {
   const makeChain = (table) => {
     const c = {
-      where: jest.fn(() => c),
-      first: jest.fn(async () => (table === 'users' ? mockState.user : undefined)),
+      where: jest.fn((...args) => {
+        mockState.whereCalls.push([table, ...args]);
+        return c;
+      }),
+      join: jest.fn(() => c),
+      leftJoin: jest.fn((...args) => {
+        mockState.leftJoinCalls.push(args);
+        return c;
+      }),
+      select: jest.fn((...args) => {
+        mockState.selectCalls.push(args);
+        return c;
+      }),
+      clone: jest.fn(() => c),
+      limit: jest.fn(() => c),
+      count: jest.fn(async () => [{ total: mockState.adminRows.length }]),
+      offset: jest.fn(async () => mockState.adminRows),
+      whereIn: jest.fn((...args) => {
+        mockState.whereInCalls.push([table, ...args]);
+        return c;
+      }),
+      orderBy: jest.fn((...args) => {
+        mockState.orderByCalls.push([table, ...args]);
+        return c;
+      }),
+      first: jest.fn(async () => {
+        if (table === 'users') return mockState.user;
+        if (table === 'mission_participants as mp') return mockState.participation;
+        return undefined;
+      }),
       insert: jest.fn(async (row) => {
         if (table === 'sos_history') mockHistory.push(row);
         else mockInserted.push(row);
         return [1];
       }),
     };
+    if (table === 'sos_history') c.then = (resolve) => resolve([]);
     return c;
   };
   const db = Object.assign(jest.fn((table) => makeChain(table)), { raw: jest.fn() });
@@ -58,6 +97,10 @@ describe('sos.service.create', () => {
     mockHistory.length = 0;
     mockState.user = { ...USER_ROW };
     mockState.redisCount = 0;
+    mockState.participation = undefined;
+    mockState.whereCalls = [];
+    mockState.whereInCalls = [];
+    mockState.orderByCalls = [];
     jest.clearAllMocks();
   });
 
@@ -125,5 +168,76 @@ describe('sos.service.create', () => {
       service.create({ userId: 'ghost', body: {}, ip: '1.2.3.4', userAgent: 'jest' }),
     ).rejects.toMatchObject({ status: 404 });
     expect(mockInserted).toHaveLength(0);
+  });
+
+  test('gönüllü aktif bir olayda yolda/sahada ise SOS o olaya bağlanır', async () => {
+    mockState.participation = { mission_id: 'm1' };
+
+    await service.create({ userId: 'u1', body: {}, ip: '1.2.3.4', userAgent: 'jest' });
+
+    expect(mockInserted[0].mission_id).toBe('m1');
+    expect(mockState.whereCalls).toEqual(
+      expect.arrayContaining([
+        ['mission_participants as mp', 'mp.user_id', 'u1'],
+        ['mission_participants as mp', 'm.status', 'active'],
+      ]),
+    );
+    expect(mockState.whereInCalls).toContainEqual([
+      'mission_participants as mp',
+      'mp.status',
+      ['yolda', 'sahada'],
+    ]);
+  });
+
+  test('birden çok katılım varsa en son güncellenen katılımın olayı seçilir', async () => {
+    mockState.participation = { mission_id: 'm1' };
+
+    await service.create({ userId: 'u1', body: {}, ip: '1.2.3.4', userAgent: 'jest' });
+
+    expect(mockState.orderByCalls).toContainEqual(['mission_participants as mp', 'mp.updated_at', 'desc']);
+  });
+
+  test('aktif olayda yolda/sahada katılımı yoksa SOS yine kabul edilir, mission_id null', async () => {
+    mockState.participation = undefined;
+
+    const result = await service.create({ userId: 'u1', body: {}, ip: '1.2.3.4', userAgent: 'jest' });
+
+    expect(result.ok).toBe(true);
+    expect(mockInserted[0].mission_id).toBeNull();
+  });
+});
+
+describe('sos.service.mapAdminSos — bağlı olay', () => {
+  const row = { id: 's1', status: 'active', created_at: new Date('2026-10-20T10:00:00Z') };
+
+  test('missionId ve missionTitle döner', () => {
+    const item = service.mapAdminSos({ ...row, mission_id: 'm1', mission_title: 'Marmaris Yangını' }, []);
+
+    expect(item).toMatchObject({ missionId: 'm1', missionTitle: 'Marmaris Yangını' });
+  });
+
+  test('olaysız SOS için ikisi de null', () => {
+    const item = service.mapAdminSos({ ...row, mission_id: null }, []);
+
+    expect(item).toMatchObject({ missionId: null, missionTitle: null });
+  });
+});
+
+describe('sos.service.adminList — bağlı olay başlığı', () => {
+  beforeEach(() => {
+    mockState.leftJoinCalls = [];
+    mockState.selectCalls = [];
+    mockState.adminRows = [
+      { id: 's1', status: 'active', created_at: new Date('2026-10-20T10:00:00Z'), mission_id: 'm1', mission_title: 'Marmaris Yangını' },
+    ];
+    jest.clearAllMocks();
+  });
+
+  test('missions tablosunu join edip olay başlığını missionTitle olarak döner', async () => {
+    const result = await service.adminList({}, { userId: 'a1' });
+
+    expect(mockState.leftJoinCalls).toContainEqual(['missions as m', 'm.id', 'sr.mission_id']);
+    expect(mockState.selectCalls[0]).toContain('m.title as mission_title');
+    expect(result.items[0]).toMatchObject({ missionId: 'm1', missionTitle: 'Marmaris Yangını' });
   });
 });
