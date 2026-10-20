@@ -5,6 +5,7 @@ jest.mock('../../../src/shared/audit', () => ({ writeAudit: jest.fn() }));
 jest.mock('../../../src/shared/asset-url', () => ({ assetUrl: (rel) => rel }));
 
 const { db } = require('../../../src/config/db');
+const { writeAudit } = require('../../../src/shared/audit');
 const { deliverKkdSet } = require('../../../src/modules/equipment/equipment.service');
 const { adminSaveAttendance } = require('../../../src/modules/trainings/trainings.service');
 const { KKD_ITEM_KEYS } = require('../../../src/shared/kkd');
@@ -50,6 +51,22 @@ describe('deliverKkdSet — komisyon onayı', () => {
       details: { userIds: ['u1'] },
     });
     expect(db.rows('equipment')).toHaveLength(0);
+  });
+
+  test('audit kaydı çağıranın transaction bağlantısıyla yazılır', async () => {
+    db.reset({
+      users: [user('u1')],
+      commission_decisions: [decision('u1', 'approved', '2026-01-01')],
+      equipment: [],
+    });
+    const trx = (name) => db(name);
+
+    await deliverKkdSet('u1', {}, { userId: 'a1' }, trx);
+
+    expect(writeAudit).toHaveBeenLastCalledWith(
+      expect.objectContaining({ userId: 'a1', entityId: 'u1' }),
+      trx,
+    );
   });
 });
 

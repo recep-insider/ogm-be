@@ -116,6 +116,22 @@ describe('idempotent()', () => {
     expect(handler).toHaveBeenCalledTimes(1);
   });
 
+  it('ilk istek sürerken aynı anahtar farklı gövdeyle gelirse 409 değil 422 idempotency_key_reused alır', async () => {
+    let release;
+    handler.mockImplementation((_req, res) => {
+      release = () => res.json({ ok: true });
+    });
+    const first = post({ a: 1 }).then((r) => r);
+    while (!release) await flush();
+    const second = await post({ a: 2 });
+    release();
+
+    expect(second.status).toBe(422);
+    expect(second.body.error.code).toBe('idempotency_key_reused');
+    expect((await first).status).toBe(200);
+    expect(handler).toHaveBeenCalledTimes(1);
+  });
+
   it('işleyici 4xx hata verirse anahtar silinir ve yeniden deneme işlenir', async () => {
     handler.mockImplementationOnce((_req, _res, next) => next(errors.business('olmadı')));
     const failed = await post({ a: 1 });
