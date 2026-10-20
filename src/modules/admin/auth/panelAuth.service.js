@@ -74,7 +74,8 @@ function publicUser(user) {
 function profile(user) {
   return {
     ...publicUser(user),
-    unitId: user.unit_id || null,
+    bolge: user.bolge_mudurlugu || null,
+    isletme: user.isletme_mudurlugu || null,
     phone: user.phone || null,
     lastLoginAt: user.last_login_at || null,
   };

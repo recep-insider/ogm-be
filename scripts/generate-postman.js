@@ -77,15 +77,14 @@ function buildItem(routePath, method, op) {
   const request = { method: method.toUpperCase(), header: headers, url };
   if (op.description) request.description = op.description;
 
-  // Güvenlik: apiKey'li uçlar header + noauth; bearer ise koleksiyon auth'u kullan.
+  // Güvenlik: officer anahtarlı uç header + noauth; panel uçları panel token'ı; diğer bearer
+  // uçlar koleksiyon auth'unu (mobil accessToken) kullanır.
   const sec = (op.security || []).flatMap((s) => Object.keys(s));
-  if (sec.includes('adminApiKey') || sec.includes('officerApiKey')) {
+  if (sec.includes('officerApiKey')) {
     request.auth = { type: 'noauth' };
-    headers.push({
-      key: 'x-api-key',
-      value: sec.includes('officerApiKey') ? '{{officerApiKey}}' : '{{adminApiKey}}',
-      type: 'text',
-    });
+    headers.push({ key: 'x-api-key', value: '{{officerApiKey}}', type: 'text' });
+  } else if (sec.includes('panelBearer')) {
+    request.auth = { type: 'bearer', bearer: [{ key: 'token', value: '{{panelAccessToken}}', type: 'string' }] };
   } else if (op.security && op.security.length === 0 && !routePath.includes('/users/')) {
     request.auth = { type: 'noauth' };
   }
@@ -165,10 +164,11 @@ const collection = {
     _postman_id: 'a1b2c3d4-0000-4000-8000-ogmgonullu02',
     description:
       'BACKEND_API_CONTRACT.md kontratına uygun, docs/openapi.json\'dan üretilmiş collection.\n\n'
-      + '1. `baseUrl` (default http://localhost:3000) ve gerekiyorsa `adminApiKey`/`officerApiKey` ayarla.\n'
+      + '1. `baseUrl` (default http://localhost:3000) ve gerekiyorsa `officerApiKey` ayarla.\n'
       + '2. Auth - Phone > send-otp → sessionId otomatik kaydedilir.\n'
       + '3. verify-otp → accessToken/refreshToken otomatik kaydedilir.\n'
-      + '4. Korumalı uçlar koleksiyon seviyesinde Bearer {{accessToken}} kullanır.\n\n'
+      + '4. Korumalı uçlar koleksiyon seviyesinde Bearer {{accessToken}} kullanır.\n'
+      + '5. Panel (/admin) uçları Bearer {{panelAccessToken}} ister: Admin - Auth > login yanıtındaki accessToken.\n\n'
       + 'Dummy OTP: phone=+905555555555, code=123456 (OTP_DUMMY_PHONES bu numarayı içermeli).',
     schema: 'https://schema.getpostman.com/json/collection/v2.1.0/collection.json',
   },
@@ -181,7 +181,7 @@ const collection = {
     { key: 'accessToken', value: '', type: 'string' },
     { key: 'refreshToken', value: '', type: 'string' },
     { key: 'registrationToken', value: '', type: 'string' },
-    { key: 'adminApiKey', value: '', type: 'string' },
+    { key: 'panelAccessToken', value: '', type: 'string' },
     { key: 'officerApiKey', value: '', type: 'string' },
   ],
   item: [],

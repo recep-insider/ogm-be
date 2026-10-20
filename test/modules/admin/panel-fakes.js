@@ -1,7 +1,8 @@
 'use strict';
 
 // Panel auth testleri için bellek içi knex/ioredis taklitleri; yalnız servisin kullandığı
-// sorgu biçimlerini (where/whereNot/whereNull + first/update/insert) destekler.
+// sorgu biçimlerini (where/whereNot/whereNull/whereIn + orderBy/limit/select/forUpdate +
+// first/update/insert, await ile liste, transaction) destekler.
 
 function createFakeDb() {
   let tables = {};
@@ -10,7 +11,23 @@ function createFakeDb() {
     if (!tables[name]) tables[name] = [];
     const rows = tables[name];
     const preds = [];
+    let sort = null;
+    let max = Infinity;
     const matches = (row) => preds.every((p) => p(row));
+    const list = () => {
+      const out = rows.filter(matches).map((r) => ({ ...r }));
+      if (sort) {
+        out.sort((a, b) => {
+          for (const { col, dir } of sort) {
+            const d = dir === 'desc' ? -1 : 1;
+            if (a[col] > b[col]) return d;
+            if (a[col] < b[col]) return -d;
+          }
+          return 0;
+        });
+      }
+      return out.slice(0, max);
+    };
     const eq = (obj) => (row) => Object.entries(obj).every(([k, v]) => row[k] === v);
     const q = {
       where(obj) {
@@ -25,6 +42,27 @@ function createFakeDb() {
       whereNull(col) {
         preds.push((row) => row[col] === null || row[col] === undefined);
         return q;
+      },
+      whereIn(col, values) {
+        preds.push((row) => values.includes(row[col]));
+        return q;
+      },
+      orderBy(col, dir = 'asc') {
+        sort = Array.isArray(col) ? col.map((c) => ({ col: c.column, dir: c.order || 'asc' })) : [{ col, dir }];
+        return q;
+      },
+      limit(n) {
+        max = n;
+        return q;
+      },
+      select() {
+        return q;
+      },
+      forUpdate() {
+        return q;
+      },
+      then(resolve, reject) {
+        return Promise.resolve().then(list).then(resolve, reject);
       },
       async first() {
         const row = rows.find(matches);
@@ -49,6 +87,7 @@ function createFakeDb() {
     tables = Object.fromEntries(Object.entries(seed).map(([k, v]) => [k, v.map((r) => ({ ...r }))]));
   };
   db.destroy = async () => {};
+  db.transaction = async (fn) => fn(db);
   // app.js yüklenirken bazı servisler modül seviyesinde db.raw / db.fn çağırıyor.
   db.raw = (sql) => ({ sql });
   db.fn = { now: () => new Date() };

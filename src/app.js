@@ -35,6 +35,7 @@ const emergencyRoutes = require('./modules/emergency/emergency.routes');
 const sosRoutes = require('./modules/sos/sos.routes');
 const adminRoutes = require('./modules/admin/admin.routes');
 const panelAuthRoutes = require('./modules/admin/auth/panelAuth.routes');
+const panelUsersRoutes = require('./modules/admin/panelUsers/panelUsers.routes');
 
 const app = express();
 
@@ -109,6 +110,7 @@ app.use('/v1/legal', legalRoutes);
 app.use('/v1/blog', blogRoutes);
 // admin.routes tümüyle requireAdmin arkasında; giriş uçları ondan ÖNCE eşleşmeli.
 app.use('/v1/admin/auth', panelAuthRoutes);
+app.use('/v1/admin/panel-users', panelUsersRoutes);
 app.use('/v1/admin', adminRoutes);
 
 app.use(notFoundHandler);

@@ -2,7 +2,7 @@
   "info": {
     "name": "OGM Gönüllü Yönetim Sistemi — API",
     "_postman_id": "a1b2c3d4-0000-4000-8000-ogmgonullu02",
-    "description": "BACKEND_API_CONTRACT.md kontratına uygun, docs/openapi.json'dan üretilmiş collection.\n\n1. `baseUrl` (default http://localhost:3000) ve gerekiyorsa `adminApiKey`/`officerApiKey` ayarla.\n2. Auth - Phone > send-otp → sessionId otomatik kaydedilir.\n3. verify-otp → accessToken/refreshToken otomatik kaydedilir.\n4. Korumalı uçlar koleksiyon seviyesinde Bearer {{accessToken}} kullanır.\n\nDummy OTP: phone=+905555555555, code=123456 (OTP_DUMMY_PHONES bu numarayı içermeli).",
+    "description": "BACKEND_API_CONTRACT.md kontratına uygun, docs/openapi.json'dan üretilmiş collection.\n\n1. `baseUrl` (default http://localhost:3000) ve gerekiyorsa `officerApiKey` ayarla.\n2. Auth - Phone > send-otp → sessionId otomatik kaydedilir.\n3. verify-otp → accessToken/refreshToken otomatik kaydedilir.\n4. Korumalı uçlar koleksiyon seviyesinde Bearer {{accessToken}} kullanır.\n5. Panel (/admin) uçları Bearer {{panelAccessToken}} ister: Admin - Auth > login yanıtındaki accessToken.\n\nDummy OTP: phone=+905555555555, code=123456 (OTP_DUMMY_PHONES bu numarayı içermeli).",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "auth": {
@@ -52,7 +52,7 @@
       "type": "string"
     },
     {
-      "key": "adminApiKey",
+      "key": "panelAccessToken",
       "value": "",
       "type": "string"
     },
@@ -543,7 +543,7 @@
             "description": "Tüm alanlar opsiyonel (partial update). Telefon için OTP doğrulamalı güvenli akış\n(`POST /users/me/phone-change/init` + `/commit`) de mevcuttur.\n",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"phone\": \"+905557654321\",\n  \"eposta\": \"\",\n  \"avatarUrl\": \"https://example.com/x.jpg\",\n  \"adres\": \"\",\n  \"kanGrubu\": \"A+\",\n  \"ogrenim\": \"Lise\",\n  \"meslek\": \"Memur\",\n  \"meslekDiger\": \"\",\n  \"hobiler\": [\n    \"\"\n  ],\n  \"acil\": {\n    \"ad\": \"\",\n    \"soyad\": \"\",\n    \"telefon\": \"+905321112233\",\n    \"yakinlik\": \"Anne\"\n  }\n}",
+              "raw": "{\n  \"phone\": \"+905557654321\",\n  \"eposta\": \"\",\n  \"avatarUrl\": \"https://example.com/x.jpg\",\n  \"adres\": \"\",\n  \"kanGrubu\": \"A+\",\n  \"ogrenim\": \"Lise\",\n  \"meslek\": \"Memur\",\n  \"meslekDiger\": \"\",\n  \"hobiler\": [\n    \"\"\n  ],\n  \"giysiBedeni\": \"S\",\n  \"ayakkabiNumarasi\": 0,\n  \"acil\": {\n    \"ad\": \"\",\n    \"soyad\": \"\",\n    \"telefon\": \"+905321112233\",\n    \"yakinlik\": \"Anne\"\n  }\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -757,6 +757,26 @@
               }
             }
           }
+        },
+        {
+          "name": "Hazırlık zinciri — gönüllü nerede takıldı (türetilmiş) (GET /v1/users/me/readiness)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/v1/users/me/readiness",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "users",
+                "me",
+                "readiness"
+              ]
+            },
+            "description": "mobil-gereksinimleri.md §8/§10: Başvuru → Komisyon onayı → Teorik eğitim → Uygulamalı (saha) eğitimi → KKD → Hazır. Adımlar birbirinin yerine geçmez, sıra atlanamaz. Eksiği olan gönüllü hiçbir göreve katılamaz; engeller burada listelenir."
+          }
         }
       ]
     },
@@ -830,12 +850,18 @@
           }
         },
         {
-          "name": "Göreve katıl (userStatus → accepted) (POST /v1/missions/active/:id/join)",
+          "name": "Katılım kararı — \"Katılmak istiyorum\" (yolda) | \"Katılamıyorum\" (POST /v1/missions/active/:id/respond)",
           "request": {
             "method": "POST",
-            "header": [],
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
             "url": {
-              "raw": "{{baseUrl}}/v1/missions/active/:id/join",
+              "raw": "{{baseUrl}}/v1/missions/active/:id/respond",
               "host": [
                 "{{baseUrl}}"
               ],
@@ -844,7 +870,7 @@
                 "missions",
                 "active",
                 ":id",
-                "join"
+                "respond"
               ],
               "variable": [
                 {
@@ -852,11 +878,21 @@
                   "value": ""
                 }
               ]
+            },
+            "description": "backend §3: bu durumların sinyal sahibi GÖNÜLLÜDÜR; operatör panelden değiştiremez. §5 kuralı istisnasızdır: hazırlık zincirinde eksiği olan gönüllü hiçbir göreve katılamaz — destek rolüyle katılma seçeneği yoktur. Engel varsa 403 `readiness_incomplete` ve eksik adımlar döner. Uygunluk canlı bir değerdir, sahaya varışta (check-in) yeniden değerlendirilir.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"decision\": \"yolda\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
             }
           }
         },
         {
-          "name": "Saha amiri QR tarama (userStatus → on_site) (POST /v1/missions/active/:id/scan)",
+          "name": "Yangın sahası giriş kaydı — QR check-in (userStatus → sahada) (POST /v1/missions/active/:id/scan)",
           "request": {
             "method": "POST",
             "header": [
@@ -890,13 +926,13 @@
                 }
               ]
             },
-            "description": "Mobil uygulamadan ÇAĞRILMAZ. Saha amiri (officer) `x-api-key` veya\n`role=officer` token ile çağırır. Opsiyonel `token` HMAC imzasıdır (B.1).\n",
+            "description": "Mobil uygulamadan ÇAĞRILMAZ. Saha amiri cihazı `x-api-key` (OFFICER_API_KEY)\nya da panel kullanıcısı access token'ıyla çağırır. `qr` (`OGM:VOL:{id}`) ve `tcKimlik` imza\nTAŞIMAZ — güven kaynağı saha amirinin doğrulanmış cihazı ve seçtiği olaydır.\n`SCAN_HMAC_SECRET` doluysa `token` (HMAC `${userId}:${missionId}`) yalnızca\nçıplak `userId` formatında zorunludur (B.1); geçersiz/yanlış uzunlukta token\n400 `invalid_qr` döner.\n\nbackend §13: Gönüllü QR'ı `OGM:VOL:{id}` formatındadır; okutulamazsa TC kimlik\nnumarasıyla manuel kayıt yedek yöntemdir. Hazırlık zincirinde eksik varsa\ncheck-in ENGELLENİR — yalnızca uyarı değil, kayıt oluşmaz ve sahadaki sayıya\ngirmez. Arama bölge kapsamıyla sınırlı değildir. Sahadaki gönüllü sayısının tek\nkaynağı bu kayıttır.\n",
             "auth": {
               "type": "noauth"
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"userId\": \"\",\n  \"scannedAt\": \"2026-01-01T00:00:00Z\",\n  \"token\": \"\"\n}",
+              "raw": "{\n  \"qr\": \"OGM:VOL:8f3c...\",\n  \"userId\": \"\",\n  \"tcKimlik\": \"\",\n  \"scannedAt\": \"2026-01-01T00:00:00Z\",\n  \"token\": \"\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -906,7 +942,7 @@
           }
         },
         {
-          "name": "Görev fotoğrafı yükle (yalnızca on_site) (POST /v1/missions/active/:id/photos)",
+          "name": "Görev fotoğrafı yükle (yalnızca sahada olan gönüllü) (POST /v1/missions/active/:id/photos)",
           "request": {
             "method": "POST",
             "header": [],
@@ -1024,7 +1060,8 @@
                 "trainings",
                 "saha"
               ]
-            }
+            },
+            "description": "Only active trainings dated today or later (Europe/Istanbul); past trainings are not listed."
           }
         },
         {
@@ -1121,6 +1158,27 @@
               ]
             }
           }
+        },
+        {
+          "name": "KKD seti — beş kalemin zimmet, ömür ve beden görünümü (GET /v1/users/me/equipment/kkd)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/v1/users/me/equipment/kkd",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "users",
+                "me",
+                "equipment",
+                "kkd"
+              ]
+            },
+            "description": "mobil-gereksinimleri.md §12: kalıcı/geçici ayrımı YOKTUR, tek set vardır. Elle \"KKD tamam\" işaretlemesi yoktur — durum zimmetten türer, ömrü dolan kalem otomatik düşer. Beden gönüllü profilinden okunur."
+          }
         }
       ]
     },
@@ -1128,7 +1186,7 @@
       "name": "Fire Reports",
       "item": [
         {
-          "name": "Yangın ihbarı (multipart, media[] min 1) (POST /v1/fire-reports)",
+          "name": "Yangın ihbarı (multipart, media[] min 1) — guest (token'sız) da gönderebilir (POST /v1/fire-reports)",
           "request": {
             "method": "POST",
             "header": [],
@@ -1214,6 +1272,108 @@
               }
             }
           }
+        },
+        {
+          "name": "SOS — kişisel acil yardım çağrısı (görev bağlamı yok) (POST /v1/sos)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/sos",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "sos"
+              ]
+            },
+            "description": "Ana sayfadaki SOS butonundan tetiklenir. /emergency'den farklı olarak görev (mission) bağlamı yoktur. Konum izni yoksa coordinates alanı hiç gönderilmez; konumsuz çağrı da kabul edilir. Sebep alanı YOKTUR (backend §12). Çağrı `active` durumunda açılır ve geçmişine \"SOS çağrısı gönderildi\" satırı düşer.\n",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"coordinates\": {\n    \"lat\": 0,\n    \"lng\": 0\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Açık SOS çağrım — canlı durum ve geçmiş (GET /v1/sos/active)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/v1/sos/active",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "sos",
+                "active"
+              ]
+            },
+            "description": "mobil §4: ekran statik bir onay değil, canlı durumdur (Gönderildi → Merkez seni arıyor → Müdahale edildi / İptal edildi). Aradaki adımlar ayrı bir durum değil, çağrının geçmişindeki satırlardır. Ana ekran widget'ı da bu sözleşmeyi okur."
+          }
+        },
+        {
+          "name": "SOS çağrısının durumu ve geçmişi (GET /v1/sos/:id)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/v1/sos/:id",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "sos",
+                ":id"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": ""
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "SOS'u iptal et (yalnızca gönüllü) (POST /v1/sos/:id/cancel)",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/v1/sos/:id/cancel",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "sos",
+                ":id",
+                "cancel"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": ""
+                }
+              ]
+            },
+            "description": "backend §10: `cancelled` sinyalinin sahibi gönüllüdür — operatör panelden iptal EDEMEZ, yalnızca görüntüler (yolda/katılamıyor ile aynı ilke). Yalnızca `active` çağrı iptal edilebilir."
+          }
         }
       ]
     },
@@ -1294,7 +1454,8 @@
                 "me",
                 "notifications"
               ]
-            }
+            },
+            "description": "Dört kategori döner. `acil` sınıfı KAPATILAMAZ (closable:false) ve listenin en üstünde sabittir — bu bir güvenlik gereksinimidir, tercih değil. Kanal kategoriden türer: SMS yalnızca `acil`, diğerleri push. Yangın bildirim mesafesi gönüllünün kendi tercihidir (admin mesafe girmez) ve `baseLocation` noktasından ölçülür; acil sınıfı bu tercihi bypass eder."
           }
         },
         {
@@ -1320,10 +1481,10 @@
                 "notifications"
               ]
             },
-            "description": "Request `distanceKm` (flat) gönderilir; response `distance:{km,min,max}` (nested) döner.",
+            "description": "Request `distanceKm` (flat) gönderilir; response `distance:{km,min,max}` (nested) döner. `acil` kategorisi için anahtar YOKTUR — kapatılamaz.",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"taskCalls\": true,\n  \"trainings\": true,\n  \"announcements\": true,\n  \"distanceKm\": 0\n}",
+              "raw": "{\n  \"taskCalls\": true,\n  \"trainings\": true,\n  \"announcements\": true,\n  \"distanceKm\": 0,\n  \"baseLocation\": {\n    \"lat\": 0,\n    \"lng\": 0,\n    \"il\": \"\",\n    \"ilce\": \"\"\n  }\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -1415,15 +1576,62 @@
       "name": "Admin",
       "item": [
         {
-          "name": "Yangın bildirimi statü geçişi (panel) (PUT /v1/admin/fire-reports/:id)",
+          "name": "Gönüllü başvuru durumunu güncelle (panel / onay) (PUT /v1/admin/users/:userId/application)",
           "request": {
             "method": "PUT",
             "header": [
               {
-                "key": "x-api-key",
-                "value": "{{adminApiKey}}",
+                "key": "Content-Type",
+                "value": "application/json",
                 "type": "text"
-              },
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/admin/users/:userId/application",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "admin",
+                "users",
+                ":userId",
+                "application"
+              ],
+              "variable": [
+                {
+                  "key": "userId",
+                  "value": ""
+                }
+              ]
+            },
+            "description": "Mobil uygulamadan ÇAĞRILMAZ. Panel oturumu (Bearer) gerektirir. Kullanıcının en güncel başvurusunun status'unu günceller; bildirim göndermez.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{panelAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"pending\",\n  \"note\": \"\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Yangın bildirimi statü geçişi (panel) (PUT /v1/admin/fire-reports/:id)",
+          "request": {
+            "method": "PUT",
+            "header": [
               {
                 "key": "Content-Type",
                 "value": "application/json",
@@ -1448,9 +1656,16 @@
                 }
               ]
             },
-            "description": "Mobil uygulamadan ÇAĞRILMAZ. x-api-key (admin) gerektirir.",
+            "description": "Mobil uygulamadan ÇAĞRILMAZ. Panel oturumu (Bearer) gerektirir.",
             "auth": {
-              "type": "noauth"
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{panelAccessToken}}",
+                  "type": "string"
+                }
+              ]
             },
             "body": {
               "mode": "raw",
@@ -1464,15 +1679,46 @@
           }
         },
         {
+          "name": "Yangın ihbarı detayı (panel) (GET /v1/admin/fire-reports/:id)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/v1/admin/fire-reports/:id",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "admin",
+                "fire-reports",
+                ":id"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": ""
+                }
+              ]
+            },
+            "description": "Liste alanları + ip. Panel oturumu.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{panelAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          }
+        },
+        {
           "name": "Görev fotoğrafı moderasyonu (panel) (PUT /v1/admin/missions/:id/photos/:submissionId)",
           "request": {
             "method": "PUT",
             "header": [
-              {
-                "key": "x-api-key",
-                "value": "{{adminApiKey}}",
-                "type": "text"
-              },
               {
                 "key": "Content-Type",
                 "value": "application/json",
@@ -1504,7 +1750,14 @@
               ]
             },
             "auth": {
-              "type": "noauth"
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{panelAccessToken}}",
+                  "type": "string"
+                }
+              ]
             },
             "body": {
               "mode": "raw",
@@ -1514,6 +1767,2154 @@
                   "language": "json"
                 }
               }
+            }
+          }
+        },
+        {
+          "name": "Gönüllü listesi (panel) (GET /v1/admin/volunteers)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/v1/admin/volunteers",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "admin",
+                "volunteers"
+              ]
+            },
+            "description": "Mobil uygulamadan ÇAĞRILMAZ. Panel oturumu (Bearer) gerektirir. Misafir/silinmiş kullanıcılar hariç; her kullanıcı en güncel başvurusuyla döner. PII gözetimi: tcKimlik bu listede dönmez (detay ucunda döner).",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{panelAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Gönüllü detayı (panel) (GET /v1/admin/volunteers/:userId)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/v1/admin/volunteers/:userId",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "admin",
+                "volunteers",
+                ":userId"
+              ],
+              "variable": [
+                {
+                  "key": "userId",
+                  "value": ""
+                }
+              ]
+            },
+            "description": "PII (tcKimlik, adres, acil kişi, belgeler) yalnızca bu uçta döner. Panel oturumu.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{panelAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Yangın ihbarı listesi (panel) (GET /v1/admin/fire-reports)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/v1/admin/fire-reports",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "admin",
+                "fire-reports"
+              ]
+            },
+            "description": "Mobil uygulamadan ÇAĞRILMAZ. Panel oturumu (Bearer) gerektirir.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{panelAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Görev listesi (panel) (GET /v1/admin/missions)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/v1/admin/missions",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "admin",
+                "missions"
+              ]
+            },
+            "description": "Tüm görevler (is_active filtresi opsiyonel) + pendingPhotos sayacı. Panel oturumu.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{panelAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Olay kaydı oluştur (panel) (POST /v1/admin/missions)",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/v1/admin/missions",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "admin",
+                "missions"
+              ]
+            },
+            "description": "Olay HER ZAMAN `active` durumunda başlar. Toplanma noktası zorunludur; ikisi tek işlemde açılır. `callVolunteers` yalnızca çağrının hemen gidip gitmeyeceğini belirler — çağrı YALNIZCA `Hazır` gönüllülere gider, yarıçap admin'de girilmez. Bölge filtresi yalnızca görünümü süzer: başka bölgede olay açılabilir.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{panelAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Görev fotoğraf/moderasyon kuyruğu (panel) (GET /v1/admin/missions/:id/photos)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/v1/admin/missions/:id/photos",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "admin",
+                "missions",
+                ":id",
+                "photos"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": ""
+                }
+              ]
+            },
+            "description": "status=pending ile bekleyen kuyruk. PUT /admin/missions/{id}/photos/{submissionId} ile moderasyon. Panel oturumu.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{panelAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Online eğitim listesi (panel, aggregate) (GET /v1/admin/trainings/online)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/v1/admin/trainings/online",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "admin",
+                "trainings",
+                "online"
+              ]
+            },
+            "description": "Mobil /trainings/online'dan farklı olarak kullanıcıdan bağımsızdır; enrolled/completed sayaçları döner. Panel oturumu (Bearer) gerektirir.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{panelAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Online eğitim oluştur (panel) (POST /v1/admin/trainings/online)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/admin/trainings/online",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "admin",
+                "trainings",
+                "online"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{panelAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"\",\n  \"description\": \"\",\n  \"durationMin\": 0,\n  \"iconTone\": \"primary\",\n  \"sortOrder\": 0,\n  \"videoPath\": \"\",\n  \"required\": true,\n  \"delivery\": \"yuzyuze\",\n  \"startsAt\": \"2026-01-01T00:00:00Z\",\n  \"location\": \"\",\n  \"instructor\": \"\",\n  \"isActive\": true\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Saha eğitim listesi (panel, aggregate) (GET /v1/admin/trainings/saha)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/v1/admin/trainings/saha",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "admin",
+                "trainings",
+                "saha"
+              ]
+            },
+            "description": "Başvuru sayaçları (pending/approved/rejected) ve koltuk durumuyla döner. Panel oturumu (Bearer) gerektirir.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{panelAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Saha eğitimi oluştur (panel) (POST /v1/admin/trainings/saha)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/admin/trainings/saha",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "admin",
+                "trainings",
+                "saha"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{panelAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"\",\n  \"location\": \"\",\n  \"startDate\": \"2026-01-01\",\n  \"startTime\": \"09:00\",\n  \"endTime\": \"17:00\",\n  \"instructorName\": \"\",\n  \"instructorAvatarPath\": \"\",\n  \"coverPath\": \"\",\n  \"totalSeats\": 0,\n  \"isActive\": true\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Acil durum (SOS) listesi (panel) (GET /v1/admin/emergency-reports)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/v1/admin/emergency-reports",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "admin",
+                "emergency-reports"
+              ]
+            },
+            "description": "Mobil uygulamadan ÇAĞRILMAZ. Panel oturumu (Bearer) gerektirir.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{panelAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "SOS çağrı listesi (panel) (GET /v1/admin/sos-reports)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/v1/admin/sos-reports",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "admin",
+                "sos-reports"
+              ]
+            },
+            "description": "Mobil uygulamadan ÇAĞRILMAZ. Panel oturumu (Bearer) gerektirir. Durum üç değerlidir (active → responded | cancelled) ve her çağrı geçmişiyle birlikte döner. Kan grubu ve acil durum kişisi TÜRETİLİR (gönüllü kaydından); kullanıcı silinmişse çağrı anındaki snapshot'a düşülür. Yanıt süresi çağrı saati ile geçmişteki ilk OPERATÖR kaydı arasındaki farktır, ölçülemiyorsa null döner.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{panelAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "SOS geçmişine kayıt düş (ve gerekiyorsa durumu aynı çağrıda güncelle) (POST /v1/admin/sos-reports/:id/history)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/admin/sos-reports/:id/history",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "admin",
+                "sos-reports",
+                ":id",
+                "history"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": ""
+                }
+              ]
+            },
+            "description": "Hazır aksiyonlar merkezin KENDİ işlemleriyle sınırlıdır: gönüllüyü aradı, 112 arandı, müdahale edildi. Sahadan gelen bilgi serbest nota yazılır ve operatörün adına düşer. Operatör çağrıyı İPTAL EDEMEZ — `cancelled` yalnızca gönüllünün mobilden verdiği sinyaldir.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{panelAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"action\": \"called_volunteer\",\n  \"note\": \"\",\n  \"by\": \"\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Operasyon Merkezi / sidebar sayaçları (panel) (GET /v1/admin/dashboard/summary)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/v1/admin/dashboard/summary",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "admin",
+                "dashboard",
+                "summary"
+              ]
+            },
+            "description": "Tek istekte tüm özet sayaçlar. Panel oturumu.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{panelAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Raporlar KPI'ları (panel) (GET /v1/admin/reports/summary)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/v1/admin/reports/summary",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "admin",
+                "reports",
+                "summary"
+              ]
+            },
+            "description": "[from,to) penceresi + bir önceki eşit uzunlukta pencereyle kıyas döner. \"fires\" = onaylanmış ihbar sayısı (FIRES domaini netleşene dek vekil metrik); volunteersTotal = pencere sonu itibarıyla kümülatif; activeVolunteers = pencere içinde göreve katılan tekil gönüllü; reportAccuracy = confirmed/(confirmed+rejected)%.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{panelAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Raporlar zaman serisi (panel grafiği) (GET /v1/admin/reports/series)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/v1/admin/reports/series",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "admin",
+                "reports",
+                "series"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{panelAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Blog yazıları — admin listesi (taslaklar dahil) (GET /v1/admin/content/blog)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/v1/admin/content/blog",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "admin",
+                "content",
+                "blog"
+              ]
+            },
+            "description": "Public /blog/posts'tan farkı: is_active=false kayıtlar da döner; isActive/coverPath/ham content source alanları içerir. Panel oturumu.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{panelAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Blog yazısı oluştur (POST /v1/admin/content/blog)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/admin/content/blog",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "admin",
+                "content",
+                "blog"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{panelAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"\",\n  \"description\": \"\",\n  \"coverPath\": \"\",\n  \"publishedAt\": \"2026-01-01\",\n  \"readTimeMin\": 0,\n  \"themes\": [\n    \"\"\n  ],\n  \"authorName\": \"\",\n  \"authorRole\": \"\",\n  \"content\": [\n    {}\n  ],\n  \"isActive\": true\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Blog yazısı güncelle (kısmi — isActive:false = yayından kaldır) (PUT /v1/admin/content/blog/:id)",
+          "request": {
+            "method": "PUT",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/v1/admin/content/blog/:id",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "admin",
+                "content",
+                "blog",
+                ":id"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": ""
+                }
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{panelAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Blog yazısını KALICI sil (DELETE /v1/admin/content/blog/:id)",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/v1/admin/content/blog/:id",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "admin",
+                "content",
+                "blog",
+                ":id"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": ""
+                }
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{panelAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "İçerik medyası yükle (blog görseli/kapak, eğitim videosu) (POST /v1/admin/content/media)",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/v1/admin/content/media",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "admin",
+                "content",
+                "media"
+              ]
+            },
+            "description": "multipart/form-data, alan adı `file`. jpeg/png/webp/mp4. Dönen `path` blog/eğitim body'lerinde kullanılır.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{panelAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "file",
+                  "type": "file",
+                  "src": []
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Online eğitim güncelle (kısmi) (PUT /v1/admin/trainings/online/:id)",
+          "request": {
+            "method": "PUT",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/v1/admin/trainings/online/:id",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "admin",
+                "trainings",
+                "online",
+                ":id"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": ""
+                }
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{panelAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Online eğitimi KALICI sil (progress kayıtları CASCADE silinir) (DELETE /v1/admin/trainings/online/:id)",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/v1/admin/trainings/online/:id",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "admin",
+                "trainings",
+                "online",
+                ":id"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": ""
+                }
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{panelAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Saha eğitimi güncelle (kısmi) (PUT /v1/admin/trainings/saha/:id)",
+          "request": {
+            "method": "PUT",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/v1/admin/trainings/saha/:id",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "admin",
+                "trainings",
+                "saha",
+                ":id"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": ""
+                }
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{panelAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Saha eğitimini KALICI sil (başvurular CASCADE silinir) (DELETE /v1/admin/trainings/saha/:id)",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/v1/admin/trainings/saha/:id",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "admin",
+                "trainings",
+                "saha",
+                ":id"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": ""
+                }
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{panelAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Saha eğitimi başvuru listesi (panel) (GET /v1/admin/trainings/saha/:id/applications)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/v1/admin/trainings/saha/:id/applications",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "admin",
+                "trainings",
+                "saha",
+                ":id",
+                "applications"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": ""
+                }
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{panelAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Saha eğitimi başvurusu onay/red (panel) (PUT /v1/admin/trainings/saha/applications/:applicationId)",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/admin/trainings/saha/applications/:applicationId",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "admin",
+                "trainings",
+                "saha",
+                "applications",
+                ":applicationId"
+              ],
+              "variable": [
+                {
+                  "key": "applicationId",
+                  "value": ""
+                }
+              ]
+            },
+            "description": "Bildirim göndermez. Panel oturumu.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{panelAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"pending\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Komisyon kararı — \"Onayla ve SMS Gönder\" / \"Reddet ve SMS Gönder\" (panel) (POST /v1/admin/volunteers/:userId/commission)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/admin/volunteers/:userId/commission",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "admin",
+                "volunteers",
+                ":userId",
+                "commission"
+              ],
+              "variable": [
+                {
+                  "key": "userId",
+                  "value": ""
+                }
+              ]
+            },
+            "description": "Bölge Müdürlüğü Komisyonunun kararını AYRI bir kayıt olarak yazar (red kararı da saklanır) ve kararla birlikte gönüllüye sabit şablonlu bilgilendirme SMS'i gönderir. Karar ve SMS tek işlemdir; ret gerekçesi SMS metnine girmez.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{panelAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"decision\": \"approved\",\n  \"decidedBy\": \"\",\n  \"decisionNo\": \"\",\n  \"note\": \"\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "KKD seti teslim et (panel) (POST /v1/admin/volunteers/:userId/kkd)",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/v1/admin/volunteers/:userId/kkd",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "admin",
+                "volunteers",
+                ":userId",
+                "kkd"
+              ],
+              "variable": [
+                {
+                  "key": "userId",
+                  "value": ""
+                }
+              ]
+            },
+            "description": "Tek işlemle standart beş kalemi (kask, tulum, bot, eldiven, maske) açar. Zaten geçerli zimmeti olan kalem tekrar açılmaz. Ömür sonu tarihi kalem tipinden hesaplanır; beden gönüllü profilinden türer, zimmete yazılmaz. Gönüllü onayı gerekmez.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{panelAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Gönüllünün KKD seti (panel) (GET /v1/admin/volunteers/:userId/kkd)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/v1/admin/volunteers/:userId/kkd",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "admin",
+                "volunteers",
+                ":userId",
+                "kkd"
+              ],
+              "variable": [
+                {
+                  "key": "userId",
+                  "value": ""
+                }
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{panelAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Hazırlık zinciri ve kişi durumu (panel, türetilmiş) (GET /v1/admin/volunteers/:userId/readiness)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/v1/admin/volunteers/:userId/readiness",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "admin",
+                "volunteers",
+                ":userId",
+                "readiness"
+              ],
+              "variable": [
+                {
+                  "key": "userId",
+                  "value": ""
+                }
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{panelAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Zimmet iadesi (API hazır — panelde ekranı yok) (POST /v1/admin/equipment/:equipmentId/return)",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/v1/admin/equipment/:equipmentId/return",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "admin",
+                "equipment",
+                ":equipmentId",
+                "return"
+              ],
+              "variable": [
+                {
+                  "key": "equipmentId",
+                  "value": ""
+                }
+              ]
+            },
+            "description": "İade akışı panelden geçici olarak kaldırıldı; uç sözleşme gereği hazır tutulur.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{panelAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Saha eğitimi yoklaması (panel) (PUT /v1/admin/trainings/saha/:id/attendance)",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/admin/trainings/saha/:id/attendance",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "admin",
+                "trainings",
+                "saha",
+                ":id",
+                "attendance"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": ""
+                }
+              ]
+            },
+            "description": "Uygulamalı eğitimin tamamlandığını işaretleyen TEK mekanizma. Yetkinlik bayraklı eğitimde \"katıldı\" işaretlenen gönüllünün uygulamalı adımı kapanır. Aynı satırda kkdDelivered işaretlenirse eksik KKD kalemleri o anda aynı zimmet kaydına yazılır.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{panelAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"entries\": [\n    {\n      \"userId\": \"\",\n      \"attended\": true,\n      \"kkdDelivered\": true\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Açık olayı düzenle (panel) (PATCH /v1/admin/missions/:id)",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/admin/missions/:id",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "admin",
+                "missions",
+                ":id"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": ""
+                }
+              ]
+            },
+            "description": "Kısmi güncelleme: yalnızca gönderilen alanlar değişir. `title` ve `shortLocation` dışındaki metin alanları boş veya null gönderilirse temizlenir. Durum, ikon, başlangıç ve toplanma noktası bu uçtan değişmez (toplanma noktası için PUT /admin/missions/{id}/assembly-point). Arşivlenmiş olay düzenlenemez.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{panelAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"\",\n  \"fullTitle\": \"\",\n  \"shortLocation\": \"\",\n  \"il\": \"\",\n  \"ilce\": \"\",\n  \"regionLabel\": \"\",\n  \"locationLabel\": \"\",\n  \"description\": \"\",\n  \"coordinates\": {\n    \"lat\": 0,\n    \"lng\": 0\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Olayı arşivle (panel) — TERMİNAL (POST /v1/admin/missions/:id/archive)",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/v1/admin/missions/:id/archive",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "admin",
+                "missions",
+                ":id",
+                "archive"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": ""
+                }
+              ]
+            },
+            "description": "Durum geçişi operatör kararıdır, otomatik değişmez. Arşivlendi terminaldir: aynı kayıt tekrar Aktif'e alınamaz, yeniden alevlenirse YENİ olay kaydı açılır. Yeni gönüllü çağrısı durur, toplanma noktası kapanır, `yolda`/`sahada` gönüllüler `tamamladi` olur ve sahadaki sayı sıfırlanır (check-in kayıtları korunur). Yanıtsız `cagrildi` satırları değişmez, görev geçmişine girmez.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{panelAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Gönüllü çağrısı gönder (panel) (POST /v1/admin/missions/:id/call)",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/v1/admin/missions/:id/call",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "admin",
+                "missions",
+                ":id",
+                "call"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": ""
+                }
+              ]
+            },
+            "description": "Yalnızca `Hazır` gönüllülere push gider — katılamayacak kişiye çağrı gönderilmez. Gönüllüler bölgeye göre süzülmez.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{panelAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Olayın toplanma noktası (panel) (GET /v1/admin/missions/:id/assembly-point)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/v1/admin/missions/:id/assembly-point",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "admin",
+                "missions",
+                ":id",
+                "assembly-point"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": ""
+                }
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{panelAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Toplanma noktasını oluştur/güncelle (panel) (PUT /v1/admin/missions/:id/assembly-point)",
+          "request": {
+            "method": "PUT",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/v1/admin/missions/:id/assembly-point",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "admin",
+                "missions",
+                ":id",
+                "assembly-point"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": ""
+                }
+              ]
+            },
+            "description": "Olay başına TEK nokta vardır. Konum DEĞİŞİRSE operatör elle bildirim yazmaz; sunucu üç kitleye gönderir: yola çıkmamışa sessiz, yoldakine zorunlu push+SMS, sahadakine push. Kontenjan alanı yoktur.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{panelAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Yangın sahası giriş kayıtları (panel) (GET /v1/admin/missions/:id/check-ins)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/v1/admin/missions/:id/check-ins",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "admin",
+                "missions",
+                ":id",
+                "check-ins"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": ""
+                }
+              ]
+            },
+            "description": "Sahadaki gönüllü sayısının tek kaynağı; panel, mobil ve toplanma noktası ekranı aynı sayıyı gösterir. Olay arşivlendiğinde sayı sıfırlanır, kayıtlar korunur.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{panelAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Bölge listesi (kapsam menüsü) (GET /v1/admin/regions)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/v1/admin/regions",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "admin",
+                "regions"
+              ]
+            },
+            "description": "Faz 1 kırılımı: yedi coğrafi bölge, varsayılan Akdeniz. 81 il tam olarak bir bölgeye aittir; eşleşme il alanından yapılır. Kapsam yalnızca OLAY ve İHBAR kayıtlarını süzer — gönüllüler bölge kapsamına girmez.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{panelAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Bildirim gönder (panel) (POST /v1/admin/notifications)",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/v1/admin/notifications",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "admin",
+                "notifications"
+              ]
+            },
+            "description": "Kanal KATEGORİDEN TÜRER, operatör seçmez: SMS yalnızca `acil` sınıfına gider, diğer her şey push. `acil` kapatılamaz ve gönüllünün bildirim tercihini bypass eder. Yarıçap admin'de girilmez. Olay bazlı gönderimde segment seçimi Hazır, Çağrıldı, Yolda, Sahada; genel gönderimde Hazır, Eğitim Bekleyenler, Tüm Gönüllüler. Gönderim denetim izine yazılır.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{panelAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Bildirim gönderim geçmişi (panel) (GET /v1/admin/notifications)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/v1/admin/notifications",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "admin",
+                "notifications"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{panelAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "İhbarı olaya bağla (\"Olaya Ekle\") (POST /v1/admin/missions/:id/reports)",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/v1/admin/missions/:id/reports",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "admin",
+                "missions",
+                ":id",
+                "reports"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": ""
+                }
+              ]
+            },
+            "description": "Birden fazla ihbar TEK olay kaydına bağlanabilir. Bağın tek sahibi ihbar kaydıdır; bağlanan ihbar \"Doğrulandı\" olur ve medyası olayın galerisini besler.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{panelAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "İhbarın olay bağını kaldır (DELETE /v1/admin/missions/:id/reports/:reportId)",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/v1/admin/missions/:id/reports/:reportId",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "admin",
+                "missions",
+                ":id",
+                "reports",
+                ":reportId"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": ""
+                },
+                {
+                  "key": "reportId",
+                  "value": ""
+                }
+              ]
+            },
+            "description": "Bağ kaldırılan ihbar yeniden \"İnceleniyor\" durumuna döner.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{panelAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Admin - Auth",
+      "item": [
+        {
+          "name": "Panel girişi (e-posta + şifre) (POST /v1/admin/auth/login)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/admin/auth/login",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "admin",
+                "auth",
+                "login"
+              ]
+            },
+            "description": "Mobil uygulamadan ÇAĞRILMAZ. Başarılı girişte access token gövdede döner, refresh token `ogm_panel_rt` httpOnly çerezine yazılır (Path=/v1/admin/auth, SameSite=Strict, 12 saat). Aynı e-posta + IP için 15 dakikada 5 hatalı denemeden sonra 429 döner. Şifre doğru değilse hesap durumu açıklanmaz (invalid_credentials).",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"\",\n  \"password\": \"\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Panel access token'ını yenile (refresh çerezi, rotasyonlu) (POST /v1/admin/auth/refresh)",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/v1/admin/auth/refresh",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "admin",
+                "auth",
+                "refresh"
+              ]
+            },
+            "description": "Gövde yok; `ogm_panel_rt` çerezi okunur. Her başarılı yenilemede yeni refresh token verilir, eskisi iptal edilir ve süre 12 saat uzar. Yenilenmiş (devredilmiş) bir token tekrar sunulursa kullanıcının tüm oturumları kapatılır (refresh_reused); çıkış ya da şifre değişimiyle kapanan token yalnız refresh_invalid döner. Hata durumunda çerez silinir."
+          }
+        },
+        {
+          "name": "Panel çıkışı — sunulan refresh token'ı iptal eder, çerezi siler (POST /v1/admin/auth/logout)",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/v1/admin/auth/logout",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "admin",
+                "auth",
+                "logout"
+              ]
+            },
+            "description": "İdempotent; çerez yoksa ya da zaten iptal edilmişse de 204 döner."
+          }
+        },
+        {
+          "name": "Oturumdaki panel kullanıcısı (GET /v1/admin/auth/me)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/v1/admin/auth/me",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "admin",
+                "auth",
+                "me"
+              ]
+            },
+            "description": "`mustChangePassword` true iken de çağrılabilir.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{panelAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Şifre değiştir (PUT /v1/admin/auth/password)",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/admin/auth/password",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "admin",
+                "auth",
+                "password"
+              ]
+            },
+            "description": "`mustChangePassword` true iken mevcut şifre geçici şifredir. Başarılı değişiklikte zorunluluk kalkar ve bu oturum dışındaki tüm oturumlar kapatılır.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{panelAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"currentPassword\": \"\",\n  \"newPassword\": \"\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Hesap talebi formundaki birimler (bölge → işletme müdürlükleri) (GET /v1/admin/auth/units)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/v1/admin/auth/units",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "admin",
+                "auth",
+                "units"
+              ]
+            },
+            "description": "Oturum gerektirmez. forest_units'ten tekil bölge/işletme çiftleri, Türkçe sıralı."
+          }
+        },
+        {
+          "name": "Panel hesap talebi (onay bekler) (POST /v1/admin/auth/request)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/admin/auth/request",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "admin",
+                "auth",
+                "request"
+              ]
+            },
+            "description": "Oturum gerektirmez; IP başına saatte 10 talep. Kayıt pending olarak açılır, süper admin onaylayınca aynı şifreyle giriş yapılır. Reddedilmiş e-posta yeni bilgilerle tekrar talep açabilir.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"\",\n  \"email\": \"\",\n  \"password\": \"\",\n  \"bolge\": \"\",\n  \"isletme\": \"\",\n  \"phone\": \"\",\n  \"note\": \"\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Admin - Panel Kullanıcıları",
+      "item": [
+        {
+          "name": "Panel kullanıcıları ve hesap talepleri (yalnız süper admin) (GET /v1/admin/panel-users)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/v1/admin/panel-users",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "admin",
+                "panel-users"
+              ]
+            },
+            "description": "status ile süzülür (pending = bekleyen talepler); q ad/e-postada arar. Sayfalama yok.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{panelAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Panel kullanıcısı / talep detayı (GET /v1/admin/panel-users/:id)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/v1/admin/panel-users/:id",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "admin",
+                "panel-users",
+                ":id"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": ""
+                }
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{panelAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Hesap geçmişi (son 100 işlem, yeniden eskiye) (GET /v1/admin/panel-users/:id/audit)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/v1/admin/panel-users/:id/audit",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "admin",
+                "panel-users",
+                ":id",
+                "audit"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": ""
+                }
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{panelAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Bekleyen hesap talebini onayla (rol admin olarak açılır) (POST /v1/admin/panel-users/:id/approve)",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/v1/admin/panel-users/:id/approve",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "admin",
+                "panel-users",
+                ":id",
+                "approve"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": ""
+                }
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{panelAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Bekleyen hesap talebini reddet (gerekçe isteğe bağlı, girişte kişiye gösterilir) (POST /v1/admin/panel-users/:id/reject)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/admin/panel-users/:id/reject",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "admin",
+                "panel-users",
+                ":id",
+                "reject"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": ""
+                }
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{panelAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"reason\": \"\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Rol değiştir (admin ↔ super_admin) (PUT /v1/admin/panel-users/:id/role)",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/admin/panel-users/:id/role",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "admin",
+                "panel-users",
+                ":id",
+                "role"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": ""
+                }
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{panelAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"role\": \"admin\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Hesabı pasifleştir / yeniden etkinleştir (pasifleştirme oturumları kapatır) (PUT /v1/admin/panel-users/:id/status)",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/admin/panel-users/:id/status",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "admin",
+                "panel-users",
+                ":id",
+                "status"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": ""
+                }
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{panelAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"active\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Geçici şifre üret (ilk girişte değiştirme zorunlu, oturumlar kapanır) (POST /v1/admin/panel-users/:id/reset-password)",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/v1/admin/panel-users/:id/reset-password",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "admin",
+                "panel-users",
+                ":id",
+                "reset-password"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": ""
+                }
+              ]
+            },
+            "description": "Geçici şifre yalnız bu yanıtta döner, hiçbir yerde saklanmaz.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{panelAccessToken}}",
+                  "type": "string"
+                }
+              ]
             }
           }
         }
