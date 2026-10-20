@@ -91,6 +91,20 @@ describe('panelAuth.service logout', () => {
     expect(db.rows('panel_refresh_tokens').find((t) => t.id === 't2').revoked_at).toBeNull();
     expect(db.rows('panel_user_audit')).toHaveLength(0);
   });
+
+  it('süresi dolmuş ama iptal edilmemiş token diğer oturumları kapatmaz', async () => {
+    seed({
+      tokens: [
+        { id: 't1', user_id: 'u1', token_hash: sha256('suresi-dolmus'), expires_at: new Date(Date.now() - 1000), revoked_at: null },
+        { id: 't2', user_id: 'u1', token_hash: sha256('canli'), expires_at: new Date(Date.now() + 3600 * 1000), revoked_at: null },
+      ],
+    });
+
+    await service.logout('suresi-dolmus');
+
+    expect(db.rows('panel_refresh_tokens').find((t) => t.id === 't2').revoked_at).toBeNull();
+    expect(db.rows('panel_user_audit').map((a) => a.action)).not.toContain('auth.logout');
+  });
 });
 
 describe('panelAuth.service writePanelAudit', () => {
