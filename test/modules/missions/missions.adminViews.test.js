@@ -113,13 +113,11 @@ describe('adminParticipants', () => {
 
   beforeEach(() => {
     mockState.tables.missions = { first: { id: 'm1' } };
-    mockState.tables.mission_participants = {
+    mockState.tables['mission_participants as mp'] = {
       grouped: [
         { status: 'cagrildi', c: 3 },
         { status: 'sahada', c: '1' },
       ],
-    };
-    mockState.tables['mission_participants as mp'] = {
       rows: [participant(), participant({ id: 'p2', user_id: 'u2', status: 'cagrildi', checked_in_at: null })],
     };
   });
@@ -157,11 +155,20 @@ describe('adminParticipants', () => {
   it('status filtresi yalnızca listeye uygulanır, sayaç sorgusuna uygulanmaz', async () => {
     await service.adminParticipants('m1', { status: 'sahada' });
 
-    const [counts] = chainsFor('mission_participants');
-    const [list] = chainsFor('mission_participants as mp');
-    expect(callsNamed(counts, 'where')).toEqual([['where', { mission_id: 'm1' }]]);
-    expect(callsNamed(counts, 'groupBy')).toEqual([['groupBy', 'status']]);
+    const [list, counts] = chainsFor('mission_participants as mp');
+    expect(callsNamed(counts, 'where')).toEqual([['where', 'mp.mission_id', 'm1']]);
+    expect(callsNamed(counts, 'groupBy')).toEqual([['groupBy', 'mp.status']]);
     expect(callsNamed(list, 'where')).toContainEqual(['where', 'mp.status', 'sahada']);
+  });
+
+  it('silinmiş (KVKK) kullanıcıları sayaçtan da listeden de çıkarır', async () => {
+    await service.adminParticipants('m1');
+
+    const [list, counts] = chainsFor('mission_participants as mp');
+    for (const chain of [list, counts]) {
+      expect(callsNamed(chain, 'join')).toContainEqual(['join', 'users as u', 'u.id', 'mp.user_id']);
+      expect(callsNamed(chain, 'whereNull')).toEqual([['whereNull', 'u.deleted_at']]);
+    }
   });
 
   it('check-in bilgisini olay + gönüllü üzerinden tek join ile alır', async () => {

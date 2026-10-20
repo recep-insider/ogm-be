@@ -6,28 +6,49 @@ const logger = require('../config/logger');
 const { errors } = require('../shared/errors');
 
 const MAX_KEY_LENGTH = 200;
-const PENDING_TTL_SEC = 300;
+const PENDING_TTL_SEC = 60;
+const HEARTBEAT_MS = 20000;
+const MAX_HOLD_MS = 15 * 60 * 1000;
 const DONE_TTL_SEC = 86400;
 
 function logRedisError(err) {
   logger.warn('Idempotency: Redis hatası, anahtarsız devam ediliyor', { error: err.message });
 }
 
+// İşleyici sürdükçe pending anahtar uzatılır; süreç çökerse PENDING_TTL_SEC içinde düşer.
 // İstemci bağlantıyı kopardığında anahtar silinmez: işleyici sürerken aynı anahtarla ikinci kayıt açılmasın.
+// 5xx'te de silinmez: yan etki (push/SMS) kısmen gitmiş olabilir; tekrar deneme hemen yeniden çalıştırmasın.
 function track(res, redisKey, hash) {
   let settled = false;
+  const startedAt = Date.now();
+  const heartbeat = setInterval(() => {
+    if (Date.now() - startedAt > MAX_HOLD_MS) return clearInterval(heartbeat);
+    redis.expire(redisKey, PENDING_TTL_SEC).catch(logRedisError);
+  }, HEARTBEAT_MS);
+  heartbeat.unref();
+  const settle = () => {
+    settled = true;
+    clearInterval(heartbeat);
+  };
   const json = res.json.bind(res);
   res.json = (body) => {
-    settled = true;
+    settle();
     const status = res.statusCode;
-    const op = status >= 200 && status < 300
-      ? redis.set(redisKey, JSON.stringify({ state: 'done', hash, status, body }), 'EX', DONE_TTL_SEC)
-      : redis.del(redisKey);
-    op.catch(logRedisError);
+    if (status >= 200 && status < 300) {
+      const done = JSON.stringify({ state: 'done', hash, status, body });
+      redis.set(redisKey, done, 'EX', DONE_TTL_SEC)
+        .catch(() => redis.set(redisKey, done, 'EX', DONE_TTL_SEC))
+        .catch(logRedisError);
+    } else if (status < 500) {
+      redis.del(redisKey).catch(logRedisError);
+    }
     return json(body);
   };
   res.on('finish', () => {
-    if (!settled) redis.del(redisKey).catch(logRedisError);
+    if (!settled) {
+      settle();
+      redis.del(redisKey).catch(logRedisError);
+    }
   });
 }
 

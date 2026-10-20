@@ -2160,7 +2160,7 @@
               "type": "string",
               "maxLength": 200
             },
-            "description": "Aynı anahtar ve aynı gövdeyle tekrar gelen istek yeniden işlenmez; 24 saat içinde ilk başarılı yanıt `Idempotent-Replayed: true` başlığıyla döner. Başarısız yanıt anahtarı serbest bırakır."
+            "description": "Aynı anahtar ve aynı gövdeyle tekrar gelen istek yeniden işlenmez; 24 saat içinde ilk başarılı yanıt `Idempotent-Replayed: true` başlığıyla döner. 4xx yanıt anahtarı serbest bırakır; 5xx'te anahtar işlem bittikten 60 sn sonra düşer."
           }
         ],
         "responses": {
@@ -3705,7 +3705,7 @@
               "type": "string",
               "maxLength": 200
             },
-            "description": "Aynı anahtar ve aynı gövdeyle tekrar gelen istek yeniden işlenmez; 24 saat içinde ilk başarılı yanıt `Idempotent-Replayed: true` başlığıyla döner. Başarısız yanıt anahtarı serbest bırakır."
+            "description": "Aynı anahtar ve aynı gövdeyle tekrar gelen istek yeniden işlenmez; 24 saat içinde ilk başarılı yanıt `Idempotent-Replayed: true` başlığıyla döner. 4xx yanıt anahtarı serbest bırakır; 5xx'te anahtar işlem bittikten 60 sn sonra düşer."
           }
         ],
         "responses": {

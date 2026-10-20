@@ -13,6 +13,7 @@ jest.mock('../../src/config/redis', () => {
       }),
       get: jest.fn(async (key) => (store.has(key) ? store.get(key).value : null)),
       del: jest.fn(async (key) => (store.delete(key) ? 1 : 0)),
+      expire: jest.fn(async (key) => (store.has(key) ? 1 : 0)),
     },
   };
 });
@@ -70,7 +71,7 @@ describe('idempotent()', () => {
     await flush();
 
     expect(res.status).toBe(200);
-    expect(redis.set).toHaveBeenNthCalledWith(1, KEY, expect.any(String), 'EX', 300, 'NX');
+    expect(redis.set).toHaveBeenNthCalledWith(1, KEY, expect.any(String), 'EX', 60, 'NX');
     const stored = redis.store.get(KEY);
     expect(stored.args).toEqual(['EX', 86400]);
     expect(JSON.parse(stored.value)).toMatchObject({ state: 'done', status: 200, body: { ok: true, echo: 1 } });
@@ -115,7 +116,7 @@ describe('idempotent()', () => {
     expect(handler).toHaveBeenCalledTimes(1);
   });
 
-  it('işleyici hata verirse anahtar silinir ve yeniden deneme işlenir', async () => {
+  it('işleyici 4xx hata verirse anahtar silinir ve yeniden deneme işlenir', async () => {
     handler.mockImplementationOnce((_req, _res, next) => next(errors.business('olmadı')));
     const failed = await post({ a: 1 });
     await flush();
@@ -126,6 +127,56 @@ describe('idempotent()', () => {
     const retry = await post({ a: 1 });
     expect(retry.status).toBe(200);
     expect(handler).toHaveBeenCalledTimes(2);
+  });
+
+  it('işleyici 5xx verirse anahtar pending kalır; tekrar deneme 409 alır', async () => {
+    handler.mockImplementationOnce((_req, _res, next) => next(new Error('push sağlayıcısı düştü')));
+    const failed = await post({ a: 1 });
+    await flush();
+
+    expect(failed.status).toBe(500);
+    expect(redis.del).not.toHaveBeenCalled();
+    expect(JSON.parse(redis.store.get(KEY).value).state).toBe('pending');
+
+    const retry = await post({ a: 1 });
+    expect(retry.status).toBe(409);
+    expect(handler).toHaveBeenCalledTimes(1);
+  });
+
+  it('işleyici sürdükçe pending anahtarın süresi uzatılır, yanıttan sonra durur', async () => {
+    jest.useFakeTimers({ doNotFake: ['setImmediate', 'nextTick'] });
+    try {
+      let finish;
+      handler.mockImplementationOnce((_req, res) => { finish = () => res.json({ ok: true }); });
+      const pending = post({ a: 1 }).then((r) => r);
+      while (!finish) await flush();
+
+      jest.advanceTimersByTime(45000);
+      expect(redis.expire).toHaveBeenCalledTimes(2);
+      expect(redis.expire).toHaveBeenCalledWith(KEY, 60);
+
+      finish();
+      await pending;
+      jest.advanceTimersByTime(60000);
+      expect(redis.expire).toHaveBeenCalledTimes(2);
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it('done kaydı ilk denemede yazılamazsa bir kez daha denenir', async () => {
+    redis.set
+      .mockImplementationOnce(async (key, value, ...args) => {
+        redis.store.set(key, { value, args });
+        return 'OK';
+      })
+      .mockImplementationOnce(async () => { throw new Error('timeout'); });
+    const res = await post({ a: 1 });
+    await flush();
+    await flush();
+
+    expect(res.status).toBe(200);
+    expect(JSON.parse(redis.store.get(KEY).value).state).toBe('done');
   });
 
   it('yanıt json dışında biterse anahtar silinir', async () => {

@@ -903,6 +903,7 @@ async function adminParticipants(missionId, { status } = {}) {
       this.on('ci.mission_id', '=', 'mp.mission_id').andOn('ci.user_id', '=', 'mp.user_id');
     })
     .where('mp.mission_id', missionId)
+    .whereNull('u.deleted_at')
     .orderBy([
       { column: 'mp.updated_at', order: 'desc' },
       { column: 'mp.id', order: 'desc' },
@@ -919,7 +920,13 @@ async function adminParticipants(missionId, { status } = {}) {
   if (status) items.where('mp.status', status);
 
   const [countRows, rows] = await Promise.all([
-    db('mission_participants').where({ mission_id: missionId }).select('status').count({ c: '*' }).groupBy('status'),
+    db('mission_participants as mp')
+      .join('users as u', 'u.id', 'mp.user_id')
+      .where('mp.mission_id', missionId)
+      .whereNull('u.deleted_at')
+      .select('mp.status')
+      .count({ c: '*' })
+      .groupBy('mp.status'),
     items,
   ]);
 

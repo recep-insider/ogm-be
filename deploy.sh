@@ -404,6 +404,8 @@ _env_write() {
 
 # Tek anahtarın değerini okur; diğer satırlar sunucudan çıkmaz.
 _env_get() { run_ssh "grep -m1 '^$1=' $DEPLOY_DIR/.env | cut -d= -f2-"; }
+# URL değerini tırnak ve sondaki / olmadan döndürür.
+_env_get_url() { local v; v=$(_env_get "$1") || return; v=${v//\"/}; v=${v//\'/}; printf '%s' "${v%/}"; }
 
 # ─── .env gönder (sadece fresh — update'te sunucudaki .env'e dokunulmaz) ─────
 if [ "$MODE" = "fresh" ]; then
@@ -445,7 +447,7 @@ else
   # Eski setup-domain.sh bu anahtarı https'e çevirmiyordu; https sayfada http
   # yükleme URL'leri mixed content olarak engellenir.
   if _env_has "^API_URL=https://" && _env_has "^UPLOAD_PUBLIC_BASE_URL=http://"; then
-    UPLOAD_URL="$(_env_get API_URL)/uploads"
+    UPLOAD_URL="$(_env_get_url API_URL)/uploads"
     warn "  UPLOAD_PUBLIC_BASE_URL: http → $UPLOAD_URL"
     _env_write UPLOAD_PUBLIC_BASE_URL "$UPLOAD_URL"
   fi
@@ -606,11 +608,11 @@ ok "  /v1/reference/kan-grubu: 200"
 
 # nginx üzerinden: https'e geçilmişse API_URL'e (hairpin NAT'a takılmasın diye
 # 127.0.0.1'e çözülerek), değilse :80'e. Yönlendirme izlenmez; tam 200 beklenir.
-API_URL_SRV=$(_env_get API_URL || true)
+API_URL_SRV=$(_env_get_url API_URL || true)
 case "$API_URL_SRV" in
   https://*)
-    NGINX_HOST=${API_URL_SRV#https://}; NGINX_HOST=${NGINX_HOST%%/*}
-    NGINX_CURL="--resolve $NGINX_HOST:443:127.0.0.1 $API_URL_SRV/health" ;;
+    NGINX_HOST=${API_URL_SRV#https://}; NGINX_HOST=${NGINX_HOST%%/*}; NGINX_HOST=${NGINX_HOST%%:*}
+    NGINX_CURL="--resolve $NGINX_HOST:443:127.0.0.1 https://$NGINX_HOST/health" ;;
   *) NGINX_CURL="http://localhost/health" ;;
 esac
 NGINX_CODE=$(run_ssh "curl -sS -o /dev/null -w '%{http_code}' --max-redirs 0 --max-time 10 $NGINX_CURL" || true)

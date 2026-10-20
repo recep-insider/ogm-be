@@ -1286,7 +1286,7 @@ const assemblyPointUpsertSchema = Joi.object({
  *         schema: { type: string, maxLength: 200 }
  *         description: >-
  *           Aynı anahtar ve aynı gövdeyle tekrar gelen istek yeniden işlenmez; 24 saat içinde ilk
- *           başarılı yanıt `Idempotent-Replayed: true` başlığıyla döner. Başarısız yanıt anahtarı serbest bırakır.
+ *           başarılı yanıt `Idempotent-Replayed: true` başlığıyla döner. 4xx yanıt anahtarı serbest bırakır; 5xx'te anahtar işlem bittikten 60 sn sonra düşer.
  *     responses:
  *       200: { description: '{ok, missionId, status: active, called}' }
  *       400: { description: idempotency_key_invalid }
@@ -1554,7 +1554,7 @@ const notificationSendSchema = Joi.object({
  *         schema: { type: string, maxLength: 200 }
  *         description: >-
  *           Aynı anahtar ve aynı gövdeyle tekrar gelen istek yeniden işlenmez; 24 saat içinde ilk
- *           başarılı yanıt `Idempotent-Replayed: true` başlığıyla döner. Başarısız yanıt anahtarı serbest bırakır.
+ *           başarılı yanıt `Idempotent-Replayed: true` başlığıyla döner. 4xx yanıt anahtarı serbest bırakır; 5xx'te anahtar işlem bittikten 60 sn sonra düşer.
  *     responses:
  *       200: { description: '{ok, notificationId, channel, recipients, pushCount, smsCount}' }
  *       400: { description: idempotency_key_invalid }
