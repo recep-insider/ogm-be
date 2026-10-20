@@ -71,6 +71,18 @@ describe('PATCH /admin/missions/:id', () => {
     expect(tooLong.status).toBe(400);
   });
 
+  it.each([
+    ['title', ''],
+    ['title', null],
+    ['shortLocation', ''],
+    ['shortLocation', null],
+  ])('zorunlu %s alanını %p ile temizlemeyi reddeder', async (field, value) => {
+    const res = await request(app).patch('/admin/missions/m1').send({ [field]: value });
+
+    expect(res.status).toBe(400);
+    expect(missionsService.adminUpdate).not.toHaveBeenCalled();
+  });
+
   it('eksik koordinatı reddeder', async () => {
     const res = await request(app).patch('/admin/missions/m1').send({ coordinates: { lat: 36.8 } });
 
