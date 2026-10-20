@@ -191,6 +191,7 @@ run_ssh "sed -i.bak \
   -e 's|^APP_URL=.*|APP_URL=https://$DOMAIN|' \
   -e 's|^API_URL=.*|API_URL=https://$DOMAIN|' \
   -e 's|^EDEVLET_CALLBACK_URL=.*|EDEVLET_CALLBACK_URL=https://$DOMAIN/v1/auth/edevlet/callback|' \
+  -e 's|^UPLOAD_PUBLIC_BASE_URL=.*|UPLOAD_PUBLIC_BASE_URL=https://$DOMAIN/uploads|' \
   $DEPLOY_DIR/.env"
 ok ".env güncel"
 
@@ -212,13 +213,21 @@ echo -n "  HTTP redirect:    "
 REDIRECT=$(curl -sI "http://$DOMAIN/" | grep -i '^location:' | tr -d '\r' || true)
 echo "${REDIRECT:-yok}"
 
-echo -n "  HTTPS health:     "
-HEALTH=$(curl -fsS "https://$DOMAIN/health" 2>&1 || echo "BAŞARISIZ")
+# Restart'tan sonraki 5sn backend'in DB/Redis'e bağlanmasına yetmeyebilir.
+echo -n "  HTTPS ready:      "
+HEALTH=""
+for _ in $(seq 1 20); do
+  HEALTH=$(curl -sS --max-time 10 "https://$DOMAIN/health/ready" 2>&1 || true)
+  case "$HEALTH" in *'"status":"ok"'*) break ;; esac
+  sleep 3
+done
 echo "$HEALTH"
+case "$HEALTH" in *'"status":"ok"'*) ;; *) die "HTTPS health/ready başarısız" ;; esac
 
 echo -n "  Reference data:   "
-REF=$(curl -fsS "https://$DOMAIN/v1/reference/kan-grubu" 2>&1 | head -c 100 || echo "BAŞARISIZ")
-echo "$REF..."
+REF_CODE=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 10 "https://$DOMAIN/v1/reference/kan-grubu" || true)
+echo "HTTP $REF_CODE"
+[ "$REF_CODE" = "200" ] || die "Reference data HTTPS üzerinden alınamadı (HTTP ${REF_CODE:-yok})"
 
 echo -n "  Sertifika expiry: "
 EXPIRY=$(echo | openssl s_client -servername "$DOMAIN" -connect "$DOMAIN":443 2>/dev/null \

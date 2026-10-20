@@ -355,7 +355,24 @@ const definition = {
               regionLabel: { type: 'string' },
               fullTitle: { type: 'string' },
               description: { type: 'string' },
-              gallery: { type: 'array', items: { type: 'string', format: 'uri' } },
+              gallery: {
+                type: 'array',
+                description: 'Olay görselleri + bağlı ihbar medyası + onaylı saha fotoğrafları (yalnız görsel).',
+                items: { type: 'string', format: 'uri' },
+              },
+              photos: {
+                type: 'array',
+                description: 'Panelde onaylanmış saha fotoğraf/videoları.',
+                items: {
+                  type: 'object',
+                  properties: {
+                    id: { type: 'string' },
+                    url: { type: 'string', format: 'uri' },
+                    kind: { type: 'string', enum: ['image', 'video'] },
+                    createdAt: { type: 'string', format: 'date-time', nullable: true },
+                  },
+                },
+              },
               stats: {
                 type: 'object',
                 description: 'Sahadaki gönüllü sayısının tek kaynağı check-in kaydıdır.',

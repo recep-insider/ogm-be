@@ -17,6 +17,7 @@ const {
   kkdBeden,
   kkdKalemDurumu,
 } = require('../../shared/kkd');
+const { komisyonKarari } = require('../../shared/derive');
 
 const PROTECTIVE_TYPE = KKD_TYPE;
 
@@ -59,10 +60,26 @@ async function hasProtectiveEquipment(userId) {
   return rows.some((r) => kkdKalemDurumu(r) !== 'expired' && kkdKalemDurumu(r) !== 'returned');
 }
 
-/** Gönüllünün KKD durumu — `tam` | `eksik` | `yok` (backend §1). */
-async function kkdDurumuFor(userId, trx = db) {
-  const rows = await trx('equipment').where({ user_id: userId });
-  return kkdDurumu(rows);
+/**
+ * KKD yalnız komisyon onaylı gönüllüye teslim edilir; karar, hazırlık zincirindeki gibi
+ * kullanıcının en güncel commission_decisions satırından okunur.
+ * @param {string[]} userIds
+ */
+async function assertCommissionApproved(userIds, trx = db) {
+  if (!userIds.length) return;
+  const decisions = await trx('commission_decisions')
+    .whereIn('user_id', userIds)
+    .orderBy('decided_at', 'desc');
+  const latest = new Map();
+  for (const row of decisions) if (!latest.has(row.user_id)) latest.set(row.user_id, row);
+  const notApproved = userIds.filter((id) => komisyonKarari(latest.get(id)) !== 'approved');
+  if (notApproved.length) {
+    throw errors.conflict(
+      'Komisyon onayı olmayan gönüllüye KKD teslim edilemez',
+      { userIds: notApproved },
+      'commission_not_approved',
+    );
+  }
 }
 
 /**
@@ -78,6 +95,7 @@ async function kkdDurumuFor(userId, trx = db) {
 async function deliverKkdSet(userId, body = {}, actor = {}, trx = db) {
   const user = await trx('users').where({ id: userId }).whereNull('deleted_at').first();
   if (!user) throw errors.notFound('Kullanıcı bulunamadı', 'user_not_found');
+  await assertCommissionApproved([userId], trx);
 
   const requested = body.itemKeys?.length ? body.itemKeys : KKD_ITEM_KEYS;
   const invalid = requested.filter((k) => !kkdItem(k));
@@ -119,7 +137,7 @@ async function deliverKkdSet(userId, body = {}, actor = {}, trx = db) {
     ip: actor.ip,
     userAgent: actor.userAgent,
     payload: { delivered: missing, skipped: requested.filter((k) => !missing.includes(k)) },
-  });
+  }, trx);
 
   const after = await trx('equipment').where({ user_id: userId });
   return {
@@ -134,37 +152,11 @@ async function deliverKkdSet(userId, body = {}, actor = {}, trx = db) {
   };
 }
 
-/**
- * İade — panelden geçici olarak kaldırıldı (backend §6), API ucu hazır tutulur.
- * İade edilen kalem KKD durumundan otomatik düşer.
- */
-async function returnEquipment(equipmentId, actor = {}, trx = db) {
-  const row = await trx('equipment').where({ id: equipmentId }).first();
-  if (!row) throw errors.notFound('Zimmet kaydı bulunamadı', 'equipment_not_found');
-  if (row.returned_at) throw errors.conflict('Bu kalem zaten iade alınmış', undefined, 'already_returned');
-
-  const now = new Date();
-  await trx('equipment').where({ id: equipmentId }).update({ returned_at: now, updated_at: now });
-
-  await writeAudit({
-    userId: actor.userId || null,
-    action: 'equipment.return',
-    entity: 'equipment',
-    entityId: equipmentId,
-    ip: actor.ip,
-    userAgent: actor.userAgent,
-    payload: { targetUserId: row.user_id, itemKey: row.item_key },
-  });
-
-  return { ok: true, equipmentId, returnedAt: toIso(now), kkdDurumu: await kkdDurumuFor(row.user_id, trx) };
-}
-
 module.exports = {
   listForUser,
   hasProtectiveEquipment,
-  kkdDurumuFor,
   deliverKkdSet,
-  returnEquipment,
+  assertCommissionApproved,
   computeStatus,
   mapEquipment,
   PROTECTIVE_TYPE,

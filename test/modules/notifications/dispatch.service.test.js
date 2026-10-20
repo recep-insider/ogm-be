@@ -42,6 +42,7 @@ jest.mock('../../../src/shared/push-provider', () => ({ sendPushToUser: jest.fn(
 jest.mock('../../../src/shared/sms-provider', () => ({ sendSms: jest.fn(async () => ({ ok: true })) }));
 jest.mock('../../../src/modules/users/readiness.service', () => ({
   getReadiness: jest.fn(async (id) => mockState.readiness[id]),
+  getReadinessMany: jest.fn(async (ids) => new Map(ids.map((id) => [id, mockState.readiness[id]]))),
 }));
 
 const { sendPushToUser } = require('../../../src/shared/push-provider');

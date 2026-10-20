@@ -10,6 +10,8 @@ const { v4: uuidv4 } = require('uuid');
 const { hasProtectiveEquipment, PROTECTIVE_TYPE } = require('../equipment/equipment.service');
 const { sendTransactional } = require('../../shared/sms-provider');
 const readinessService = require('../users/readiness.service');
+const { regionForCity } = require('../../shared/regions');
+const { foldSearch } = require('../../shared/fold-search');
 
 // applications.status enum'u ile aynı (migrations/20260427120200_create_applications.js).
 const APPLICATION_STATUSES = ['pending', 'approved', 'rejected', 'requires_revision'];
@@ -148,19 +150,41 @@ async function setCommissionDecision(userId, body, actor = {}) {
   };
 }
 
-function mapVolunteerListItem(row) {
+// users.service getMe ile aynı eşleme — mobil profil ve panel aynı alanları aynı biçimde görür.
+function profileFields(u) {
+  return {
+    il: u.il || null,
+    ilce: u.ilce || null,
+    region: regionForCity(u.il),
+    ogrenim: u.ogrenim,
+    meslek: u.meslek,
+    meslekDiger: u.meslek_diger,
+    giysiBedeni: u.giysi_bedeni,
+    ayakkabiNumarasi: u.ayakkabi_numarasi != null ? Number(u.ayakkabi_numarasi) : null,
+    stkText: u.stk_text || null,
+  };
+}
+
+function mapVolunteerListItem(row, readiness) {
   return {
     userId: row.id,
     ad: row.ad,
     soyad: row.soyad,
     phone: row.phone,
     eposta: row.eposta,
+    ...profileFields(row),
     profileComplete: !!row.profile_complete,
     isActive: !!row.is_active,
     applicationStatus: row.application_status || null,
     submittedAt: toIso(row.submitted_at),
     egitim: Number(row.completed_trainings || 0) > 0,
     donanim: Number(row.protective_equipment || 0) > 0,
+    kisiDurumu: readiness.kisiDurumu,
+    kkdDurumu: readiness.zincir.kkdDurumu,
+    mudahaleYetkisi: readiness.mudahaleYetkisi,
+    eksikAdimlar: readiness.zincir.eksikAdimlar,
+    siradakiAdim: readiness.zincir.siradakiAdim,
+    komisyon: readiness.komisyon,
   };
 }
 
@@ -186,19 +210,17 @@ async function listVolunteers({ status, q, page = 1, pageSize = 20 } = {}) {
     .whereNull('u.deleted_at');
 
   if (status) base.where('a.status', status);
-  if (q) {
-    // whereLike KULLANMA: knex'in MySQL dialekti 'COLLATE utf8_bin' ekler ve
-    // utf8mb4 bağlantıda ER_COLLATION_CHARSET_MISMATCH (1253) ile patlar.
-    // Düz LIKE, utf8mb4_*_ci collation ile zaten case-insensitive arar.
-    const like = `%${q.replace(/[\\%_]/g, '\\$&')}%`;
-    base.where((b) => {
-      b.where('u.ad', 'like', like)
-        .orWhere('u.soyad', 'like', like)
-        .orWhere('u.phone', 'like', like)
-        .orWhere('u.eposta', 'like', like)
-        // Panel QR okutulamayan gönüllüyü TC kimlik numarasıyla eşleştirir.
-        .orWhere('u.tc_kimlik', 'like', like);
-    });
+  // whereLike KULLANMA: knex'in MySQL dialekti 'COLLATE utf8_bin' ekler ve
+  // utf8mb4 bağlantıda ER_COLLATION_CHARSET_MISMATCH (1253) ile patlar.
+  // utf8mb4_unicode_ci 'ı' ile 'i'yi ayrı harf sayar; ı → i katlaması iki tarafta da yapılır.
+  // Her kelime ayrı ayrı eşleşmeli ("ismail kaya").
+  // Panel QR okutulamayan gönüllüyü TC kimlik numarasıyla eşleştirir.
+  const tokens = q ? foldSearch(q).split(/\s+/).filter(Boolean) : [];
+  for (const token of tokens) {
+    base.whereRaw(
+      "REPLACE(LOWER(CONCAT_WS(' ', u.ad, u.soyad, u.phone, u.eposta, u.tc_kimlik, u.il, u.ilce, u.stk_text)), 'ı', 'i') LIKE ?",
+      [`%${token.replace(/[\\%_]/g, '\\$&')}%`],
+    );
   }
 
   const [{ total }] = await base.clone().count({ total: 'u.id' });
@@ -206,6 +228,8 @@ async function listVolunteers({ status, q, page = 1, pageSize = 20 } = {}) {
     .clone()
     .select(
       'u.id', 'u.ad', 'u.soyad', 'u.phone', 'u.eposta', 'u.profile_complete', 'u.is_active',
+      'u.il', 'u.ilce', 'u.ogrenim', 'u.meslek', 'u.meslek_diger', 'u.giysi_bedeni',
+      'u.ayakkabi_numarasi', 'u.stk_text',
       'a.status as application_status', 'a.submitted_at',
       // mobil §15: tamamlanan eğitim sayısı elle doldurulan bir tablodan değil,
       // gerçek kaynaklardan gelir — teorik tamamlama + saha yoklaması.
@@ -223,7 +247,13 @@ async function listVolunteers({ status, q, page = 1, pageSize = 20 } = {}) {
     .limit(pageSize)
     .offset((page - 1) * pageSize);
 
-  return { items: rows.map(mapVolunteerListItem), total: Number(total), page, pageSize };
+  const readiness = await readinessService.getReadinessMany(rows.map((r) => r.id));
+  return {
+    items: rows.map((r) => mapVolunteerListItem(r, readiness.get(r.id))),
+    total: Number(total),
+    page,
+    pageSize,
+  };
 }
 
 /** Gönüllü detayı (admin paneli) — PII burada döner: tcKimlik, adres, acil kişi, belgeler. */
@@ -262,6 +292,7 @@ async function getVolunteer(userId, actor = {}) {
       phone: user.phone,
       eposta: user.eposta,
       adres: user.adres,
+      ...profileFields(user),
       kanGrubu: user.kan_grubu,
       acil: {
         ad: user.acil_ad,
@@ -384,8 +415,12 @@ function previousWindow(from, to) {
   return { from: new Date(from.getTime() - length), to: new Date(from) };
 }
 
+// missions.service HISTORY_STATUSES ile aynı: gerçekten yola çıkan / sahaya giren gönüllü.
+// `tamamladi` dahil — arşiv yolda/sahada satırlarını tamamladi'ya taşır, geçmiş pencereler sıfırlanmasın.
+const ENGAGED_PARTICIPANT_STATUSES = ['yolda', 'sahada', 'tamamladi'];
+
 async function windowKpis(from, to) {
-  const [fireByStatus, newVolunteers, activeVolunteers] = await Promise.all([
+  const [fireByStatus, newVolunteers, activeVolunteers, missions] = await Promise.all([
     db('fire_reports')
       .where('created_at', '>=', from)
       .where('created_at', '<', to)
@@ -396,8 +431,10 @@ async function windowKpis(from, to) {
     db('mission_participants')
       .where('joined_at', '>=', from)
       .where('joined_at', '<', to)
+      .whereIn('status', ENGAGED_PARTICIPANT_STATUSES)
       .countDistinct({ c: 'user_id' })
       .first(),
+    db('missions').where('created_at', '>=', from).where('created_at', '<', to).count({ c: '*' }).first(),
   ]);
   const fire = statusCounts(fireByStatus);
   const confirmed = fire.confirmed || 0;
@@ -407,6 +444,7 @@ async function windowKpis(from, to) {
     volunteersTotal: Number(newVolunteers?.c || 0), // pencere SONU itibarıyla kümülatif gönüllü
     activeVolunteers: Number(activeVolunteers?.c || 0), // pencere içinde göreve katılan tekil gönüllü
     reportAccuracy: computeAccuracy(confirmed, rejected),
+    missions: Number(missions?.c || 0), // pencere içinde açılan olay (arşivlenenler dahil)
   };
 }
 
@@ -421,6 +459,7 @@ async function reportsSummary({ from, to }) {
       volunteersTotal: { current: current.volunteersTotal, previous: previous.volunteersTotal },
       activeVolunteers: { current: current.activeVolunteers, previous: previous.activeVolunteers },
       reportAccuracy: { current: current.reportAccuracy, previous: previous.reportAccuracy },
+      missions: { current: current.missions, previous: previous.missions },
     },
   };
 }
@@ -432,6 +471,7 @@ const SERIES_METRICS = {
   emergency: { table: 'emergency_reports', column: 'created_at', filter: null },
   // volunteersTotal (windowKpis) ile tutarlı: misafir ve soft-delete hariç
   newUsers: { table: 'users', column: 'created_at', filter: (q) => q.where({ is_guest: false }).whereNull('deleted_at') },
+  missions: { table: 'missions', column: 'created_at', filter: null },
 };
 const SERIES_INTERVALS = {
   day: '%Y-%m-%d',

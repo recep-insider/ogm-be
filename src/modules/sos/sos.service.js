@@ -16,8 +16,6 @@ const SOS_STATUS = ['active', 'responded', 'cancelled'];
 // durumu anlatan kayıtlar ("gönüllü güvende", teşhis) hazır aksiyon olarak sunulmaz —
 // merkez bunu bilemez. Operatör sahadan bilgi aldıysa serbest notu kendi adına yazar.
 const OPERATOR_ACTIONS = {
-  called_volunteer: { event: 'Merkez gönüllüyü aradı', status: null },
-  called_112: { event: '112 arandı', status: null },
   responded: { event: 'Müdahale edildi olarak işaretlendi', status: 'responded' },
 };
 

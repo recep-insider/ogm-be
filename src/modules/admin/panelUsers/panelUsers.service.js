@@ -6,6 +6,7 @@ const { redis } = require('../../../config/redis');
 const { errors } = require('../../../shared/errors');
 const { generateTempPassword } = require('../../../shared/temp-password');
 const { hitFixedWindow } = require('../../../shared/fixed-window');
+const { foldSearch } = require('../../../shared/fold-search');
 const auth = require('../auth/panelAuth.service');
 
 const REQUEST_MAX_PER_WINDOW = 10;
@@ -127,9 +128,6 @@ async function findOr404(id, conn = db) {
   if (!user) throw errors.notFound('Panel kullanıcısı bulunamadı', 'panel_user_not_found');
   return user;
 }
-
-// "ELIF" (İngilizce klavye) ile "Elif" eşleşsin: Türkçe küçük harfte I → ı olur, ı da i sayılır.
-const foldSearch = (value) => value.toLocaleLowerCase('tr').replace(/ı/g, 'i');
 
 // ponytail: panel kullanıcıları en fazla birkaç yüz kişi; arama ve sıralama bellekte, sayfalama yok.
 async function listUsers({ status, q } = {}) {

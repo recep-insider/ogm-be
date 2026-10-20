@@ -402,6 +402,9 @@ _env_write() {
   _env_has "^${key}=${val}\$" || die "$key yazılamadı — .env'i sunucuda elle kontrol edin"
 }
 
+# Tek anahtarın değerini okur; diğer satırlar sunucudan çıkmaz.
+_env_get() { run_ssh "grep -m1 '^$1=' $DEPLOY_DIR/.env | cut -d= -f2-"; }
+
 # ─── .env gönder (sadece fresh — update'te sunucudaki .env'e dokunulmaz) ─────
 if [ "$MODE" = "fresh" ]; then
   log ".env transfer"
@@ -439,6 +442,13 @@ else
   # Nominatim'e giden User-Agent'taki iletişim adresi buradan geliyor; eksikse
   # env.js 'http://localhost'a düşer ve OSM'in istediği adres işe yaramaz olur.
   ensure_env_key APP_URL "http://$SSH_HOST"
+  # Eski setup-domain.sh bu anahtarı https'e çevirmiyordu; https sayfada http
+  # yükleme URL'leri mixed content olarak engellenir.
+  if _env_has "^API_URL=https://" && _env_has "^UPLOAD_PUBLIC_BASE_URL=http://"; then
+    UPLOAD_URL="$(_env_get API_URL)/uploads"
+    warn "  UPLOAD_PUBLIC_BASE_URL: http → $UPLOAD_URL"
+    _env_write UPLOAD_PUBLIC_BASE_URL "$UPLOAD_URL"
+  fi
 fi
 
 # ─── Push (FCM) ──────────────────────────────────────────────────────────────
@@ -575,10 +585,37 @@ else
 fi
 
 # ─── Smoke test ──────────────────────────────────────────────
+# Backend'e nginx'i atlayarak 127.0.0.1:3000'den bakılır: domain kurulduktan
+# sonra :80 301 döner ve curl -f 3xx'i hata saymaz. Container "healthy" yalnızca
+# /health (liveness) demek; DB/Redis'i /health/ready ölçer, 503 = degraded.
 log "Smoke test"
-run_ssh "curl -fsS http://localhost/health"   && echo
-run_ssh "curl -fsS http://localhost/health/ready" && echo
-run_ssh "curl -fsS http://localhost/v1/reference/kan-grubu | head -c 200" && echo
+READY=""
+for _ in $(seq 1 10); do
+  READY=$(run_ssh "curl -sS --max-time 10 http://127.0.0.1:3000/health/ready" 2>&1 || true)
+  case "$READY" in *'"status":"ok"'*) break ;; esac
+  sleep 3
+done
+case "$READY" in
+  *'"status":"ok"'*) ok "  /health/ready: ok" ;;
+  *) die "Smoke test: /health/ready hazır değil → ${READY:-yanıt yok}" ;;
+esac
+
+REF_CODE=$(run_ssh "curl -sS -o /dev/null -w '%{http_code}' --max-time 10 http://127.0.0.1:3000/v1/reference/kan-grubu" || true)
+[ "$REF_CODE" = "200" ] || die "Smoke test: /v1/reference/kan-grubu → HTTP ${REF_CODE:-yok}"
+ok "  /v1/reference/kan-grubu: 200"
+
+# nginx üzerinden: https'e geçilmişse API_URL'e (hairpin NAT'a takılmasın diye
+# 127.0.0.1'e çözülerek), değilse :80'e. Yönlendirme izlenmez; tam 200 beklenir.
+API_URL_SRV=$(_env_get API_URL || true)
+case "$API_URL_SRV" in
+  https://*)
+    NGINX_HOST=${API_URL_SRV#https://}; NGINX_HOST=${NGINX_HOST%%/*}
+    NGINX_CURL="--resolve $NGINX_HOST:443:127.0.0.1 $API_URL_SRV/health" ;;
+  *) NGINX_CURL="http://localhost/health" ;;
+esac
+NGINX_CODE=$(run_ssh "curl -sS -o /dev/null -w '%{http_code}' --max-redirs 0 --max-time 10 $NGINX_CURL" || true)
+[ "$NGINX_CODE" = "200" ] || die "Smoke test: nginx ($NGINX_CURL) → HTTP ${NGINX_CODE:-yok}"
+ok "  nginx /health: 200"
 ok "Smoke test geçti"
 
 # ─── PRODUCTION-SECRETS.md (sadece fresh — update'te secret üretilmedi) ──────

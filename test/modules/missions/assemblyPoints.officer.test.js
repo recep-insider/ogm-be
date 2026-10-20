@@ -87,6 +87,46 @@ describe('assemblyPoints.upsert — görevli alanları', () => {
   });
 });
 
+describe('assemblyPoints.upsert — adres ve açık/kapalı durumu', () => {
+  beforeEach(reset);
+
+  it('adres gönderilmezse update satırına girmez (mevcut adres korunur)', async () => {
+    mockState.point = { ...EXISTING, address: 'Atatürk Cad. No:1' };
+
+    await service.upsert('m1', SAME_PLACE, {});
+
+    expect(mockState.updates[0]).not.toHaveProperty('address');
+  });
+
+  it('isOpen gönderilmezse kapalı nokta yeniden açılmaz', async () => {
+    mockState.point = { ...EXISTING, is_open: 0 };
+
+    await service.upsert('m1', SAME_PLACE, {});
+
+    expect(mockState.updates[0]).not.toHaveProperty('is_open');
+  });
+
+  it.each([[null], ['']])('adres %p gönderilirse temizlenir', async (value) => {
+    await service.upsert('m1', { ...SAME_PLACE, address: value }, {});
+
+    expect(mockState.updates[0]).toMatchObject({ address: null });
+  });
+
+  it('gönderilen adres ve isOpen yazılır', async () => {
+    await service.upsert('m1', { ...SAME_PLACE, address: 'Yeni adres', isOpen: false }, {});
+
+    expect(mockState.updates[0]).toMatchObject({ address: 'Yeni adres', is_open: false });
+  });
+
+  it('ilk oluşturmada adres null, nokta açık yazılır', async () => {
+    mockState.point = null;
+
+    await service.upsert('m1', SAME_PLACE, {});
+
+    expect(mockState.inserts[0]).toMatchObject({ address: null, is_open: true });
+  });
+});
+
 describe('assemblyPoints.mapPoint — görevli alanları', () => {
   it('görevli adı ve telefonunu döner', () => {
     expect(service.mapPoint(EXISTING)).toMatchObject({

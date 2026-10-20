@@ -15,34 +15,59 @@ async function requiredTheoryIds(trx = db) {
 }
 
 /**
+ * Gönüllülerin zincir girdilerini kullanıcı sayısından bağımsız SABİT sayıda sorguyla toplar
+ * (liste ucu kişi başı sorgu atmasın).
+ * @param {string[]} userIds
+ * @returns {Promise<Map<string, object>>} userId → collect() girdisi
+ */
+async function collectMany(userIds, trx = db) {
+  const ids = [...new Set(userIds)];
+  if (!ids.length) return new Map();
+
+  const [decisions, requiredIds, completedRows, attendanceRows, equipmentRows, users] = await Promise.all([
+    trx('commission_decisions').whereIn('user_id', ids).orderBy('decided_at', 'desc'),
+    requiredTheoryIds(trx),
+    trx('online_training_progress')
+      .whereIn('user_id', ids)
+      .where({ status: 'completed' })
+      .select('user_id', 'training_id'),
+    trx('saha_training_applications as sta')
+      .join('saha_trainings as st', 'st.id', 'sta.training_id')
+      .whereIn('sta.user_id', ids)
+      .select('sta.user_id', 'sta.attendance', 'st.grants_competency'),
+    trx('equipment').whereIn('user_id', ids),
+    trx('users').whereIn('id', ids),
+  ]);
+
+  const out = new Map(
+    ids.map((id) => [
+      id,
+      { decision: undefined, requiredIds, completedIds: [], attendanceRows: [], equipmentRows: [], user: undefined },
+    ]),
+  );
+  for (const d of decisions) {
+    const entry = out.get(d.user_id);
+    if (entry && !entry.decision) entry.decision = d;
+  }
+  for (const r of completedRows) out.get(r.user_id)?.completedIds.push(r.training_id);
+  for (const r of attendanceRows) out.get(r.user_id)?.attendanceRows.push(r);
+  for (const r of equipmentRows) out.get(r.user_id)?.equipmentRows.push(r);
+  for (const u of users) {
+    const entry = out.get(u.id);
+    if (entry) entry.user = u;
+  }
+  return out;
+}
+
+/**
  * Bir gönüllünün zincir girdilerini tek turda toplar.
  * @param {string} userId
  */
 async function collect(userId, trx = db) {
-  const [decision, requiredIds, completedIds, attendanceRows, equipmentRows, user] = await Promise.all([
-    trx('commission_decisions').where({ user_id: userId }).orderBy('decided_at', 'desc').first(),
-    requiredTheoryIds(trx),
-    trx('online_training_progress')
-      .where({ user_id: userId, status: 'completed' })
-      .pluck('training_id'),
-    trx('saha_training_applications as sta')
-      .join('saha_trainings as st', 'st.id', 'sta.training_id')
-      .where('sta.user_id', userId)
-      .select('sta.attendance', 'st.grants_competency'),
-    trx('equipment').where({ user_id: userId }),
-    trx('users').where({ id: userId }).first(),
-  ]);
-
-  return { decision, requiredIds, completedIds, attendanceRows, equipmentRows, user };
+  return (await collectMany([userId], trx)).get(userId);
 }
 
-/**
- * Hazırlık zinciri + kişi durumu + müdahale yetkisi.
- * @param {string} userId
- * @returns {Promise<{zincir:object, kisiDurumu:string, mudahaleYetkisi:boolean, engeller:object[]}>}
- */
-async function getReadiness(userId, trx = db) {
-  const data = await collect(userId, trx);
+function toReadiness(data) {
   const zincir = derive.hazirlikZinciri({
     decision: data.decision,
     requiredTrainingIds: data.requiredIds,
@@ -65,6 +90,25 @@ async function getReadiness(userId, trx = db) {
         }
       : { decision: 'pending', decidedAt: null, decidedBy: null, decisionNo: null },
   };
+}
+
+/**
+ * Hazırlık zinciri + kişi durumu + müdahale yetkisi.
+ * @param {string} userId
+ * @returns {Promise<{zincir:object, kisiDurumu:string, mudahaleYetkisi:boolean, engeller:object[]}>}
+ */
+async function getReadiness(userId, trx = db) {
+  return toReadiness(await collect(userId, trx));
+}
+
+/**
+ * getReadiness'in toplu hâli — liste uçları içindir.
+ * @param {string[]} userIds
+ * @returns {Promise<Map<string, ReturnType<typeof toReadiness>>>}
+ */
+async function getReadinessMany(userIds, trx = db) {
+  const data = await collectMany(userIds, trx);
+  return new Map([...data].map(([id, d]) => [id, toReadiness(d)]));
 }
 
 /** Mobil/panel KKD sekmesi — set bazında zimmet görünümü (beden profilden türer). */
@@ -97,4 +141,6 @@ async function kkdSet(userId, trx = db) {
   });
 }
 
-module.exports = { getReadiness, kkdSet, collect, requiredTheoryIds };
+module.exports = {
+  getReadiness, getReadinessMany, kkdSet, collect, collectMany, requiredTheoryIds,
+};

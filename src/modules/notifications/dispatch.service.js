@@ -60,13 +60,8 @@ async function readyVolunteerIds() {
     .where({ is_guest: false, is_active: true })
     .whereNull('deleted_at')
     .pluck('id');
-  const out = [];
-  for (const id of candidates) {
-    // eslint-disable-next-line no-await-in-loop
-    const { kisiDurumu } = await readinessService.getReadiness(id);
-    if (kisiDurumu === 'hazir') out.push(id);
-  }
-  return out;
+  const readiness = await readinessService.getReadinessMany(candidates);
+  return candidates.filter((id) => readiness.get(id).kisiDurumu === 'hazir');
 }
 
 /** Genel hedef kitle: Hazır · Eğitim Bekleyenler · Tüm Gönüllüler. */
@@ -77,10 +72,10 @@ async function resolveGeneralTargets(audience) {
     .pluck('id');
   if (audience === 'tumu') return all;
 
+  const readiness = await readinessService.getReadinessMany(all);
   const out = [];
   for (const id of all) {
-    // eslint-disable-next-line no-await-in-loop
-    const { kisiDurumu, zincir } = await readinessService.getReadiness(id);
+    const { kisiDurumu, zincir } = readiness.get(id);
     if (audience === 'hazir' && kisiDurumu === 'hazir') out.push(id);
     // Eğitim bekleyen: komisyonu onaylı ama teorik/uygulamalı adımı açık olan gönüllü.
     if (
