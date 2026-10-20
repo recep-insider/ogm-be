@@ -4190,7 +4190,7 @@
         "tags": [
           "Admin - Panel Kullanıcıları"
         ],
-        "summary": "Rol değiştir (admin ↔ super_admin)",
+        "summary": "Rol değiştir (admin ↔ super_admin; yalnız onaylanmış hesap)",
         "security": [
           {
             "panelBearer": []
@@ -4242,7 +4242,7 @@
             "description": "cannot_change_own_role"
           },
           "409": {
-            "description": "last_super_admin"
+            "description": "last_super_admin | invalid_state (bekleyen ya da reddedilmiş talep)"
           }
         }
       }

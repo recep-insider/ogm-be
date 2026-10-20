@@ -3780,7 +3780,7 @@
           }
         },
         {
-          "name": "Rol değiştir (admin ↔ super_admin) (PUT /v1/admin/panel-users/:id/role)",
+          "name": "Rol değiştir (admin ↔ super_admin; yalnız onaylanmış hesap) (PUT /v1/admin/panel-users/:id/role)",
           "request": {
             "method": "PUT",
             "header": [

@@ -416,4 +416,15 @@ describe('süper admin işlemleri', () => {
     expect(res.body.items[0]).toMatchObject({ actor: { id: 'su-1', name: 'Sistem Yöneticisi' }, detail: { from: 'admin', to: 'super_admin' } });
     expect((await call('get', '/yok/audit')).status).toBe(404);
   });
+
+  it('mysql2 JSON kolonunu nesne döndürdüğünde detail aynen iletilir', async () => {
+    db.rows('panel_user_audit').push({
+      id: 1, target_id: 'ad-1', actor_id: 'su-1', action: 'user.role',
+      detail: { from: 'admin', to: 'super_admin' }, at: new Date(Date.UTC(2026, 9, 20, 10, 0)),
+    });
+
+    const res = await call('get', '/ad-1/audit');
+    expect(res.status).toBe(200);
+    expect(res.body.items).toEqual([expect.objectContaining({ action: 'user.role', detail: { from: 'admin', to: 'super_admin' } })]);
+  });
 });
