@@ -87,14 +87,29 @@ function mapActiveSummary(m, userStatus) {
   };
 }
 
-function mapActiveDetail(m, userStatus, { onSiteCount, trend, assemblyPoint, userId, linkedMedia = [] }) {
+/** Panelin moderasyonda onayladığı saha fotoğraf/videoları (gönderim sırasıyla). */
+async function approvedPhotosFor(missionId) {
+  const rows = await db('mission_photos')
+    .where({ mission_id: missionId, status: 'approved' })
+    .orderBy('submitted_at', 'asc')
+    .select('id', 'file_path', 'kind', 'submitted_at');
+  return rows.map((p) => ({ id: p.id, url: assetUrl(p.file_path), kind: p.kind, createdAt: toIso(p.submitted_at) }));
+}
+
+function mapActiveDetail(m, userStatus, { onSiteCount, trend, assemblyPoint, userId, linkedMedia = [], photos = [] }) {
   return {
     ...mapActiveSummary(m, userStatus),
     regionLabel: m.region_label || '',
     fullTitle: m.full_title || m.title,
     description: m.description || '',
     // §5: bağlı ihbarların fotoğraf/videoları olayın medya havuzunu besler.
-    gallery: [...safeJson(m.gallery, []).map(assetUrl), ...linkedMedia.map((x) => x.url)],
+    // Mobil galeri yalnızca görsel çizer; onaylı videolar yalnız `photos` içinde gider.
+    gallery: [
+      ...safeJson(m.gallery, []).map(assetUrl),
+      ...linkedMedia.map((x) => x.url),
+      ...photos.filter((p) => p.kind === 'image').map((p) => p.url),
+    ],
+    photos,
     // §12 / mobil §6: tahmini alan, ihtiyaç listesi, kapsama yarıçapı, şiddet, hava
     // durumu ve ekip sayıları KALDIRILDI — merkez operatörünün doğrulayamayacağı saha
     // verisi. Sahadaki gönüllü sayısının tek kaynağı check-in'dir.
@@ -174,11 +189,12 @@ async function getActive(userId, id) {
   if (!m || m.status === 'archived') throw errors.notFound('Görev bulunamadı', 'mission_not_found');
   // §12: "saha güncellemeleri akışı" kaldırıldı — merkez operatörünün doğrulayamayacağı
   // saha verisiydi; duyurular artık Bildirim Merkezi'nden gider.
-  const [onSiteCount, trend, assemblyPoint, linkedMedia] = await Promise.all([
+  const [onSiteCount, trend, assemblyPoint, linkedMedia, photos] = await Promise.all([
     sahadakiSayisi(id, m),
     checkInTrend(id),
     assemblyPointFor(id),
     require('../fireReports/fireReports.service').mediaForMission(id),
+    approvedPhotosFor(id),
   ]);
   return mapActiveDetail(m, await statusFor(userId, id), {
     onSiteCount,
@@ -186,6 +202,7 @@ async function getActive(userId, id) {
     assemblyPoint,
     userId,
     linkedMedia,
+    photos,
   });
 }
 
@@ -512,6 +529,19 @@ function mapAdminMission(m) {
     stats: { volunteers: m.status === 'archived' ? 0 : Number(m.on_site_count || 0) },
     cover: assetUrl(m.cover_path),
     pendingPhotos: Number(m.pending_photos || 0),
+    assemblyPoint: m.ap_id
+      ? assemblyPoints.mapPoint({
+          id: m.ap_id,
+          mission_id: m.id,
+          name: m.ap_name,
+          address: m.ap_address,
+          lat: m.ap_lat,
+          lng: m.ap_lng,
+          is_open: m.ap_is_open,
+          officer_name: m.ap_officer_name,
+          officer_phone: m.ap_officer_phone,
+        })
+      : null,
     createdAt: toIso(m.created_at),
   };
 }
@@ -527,8 +557,18 @@ async function adminList({ status, region, isActive, page = 1, pageSize = 20 } =
   const [{ total }] = await base.clone().count({ total: 'm.id' });
   const rows = await base
     .clone()
+    // Olay başına tek nokta (assembly_points.mission_id unique) — join satır çoğaltmaz.
+    .leftJoin('assembly_points as ap', 'ap.mission_id', 'm.id')
     .select(
       'm.*',
+      'ap.id as ap_id',
+      'ap.name as ap_name',
+      'ap.address as ap_address',
+      'ap.lat as ap_lat',
+      'ap.lng as ap_lng',
+      'ap.is_open as ap_is_open',
+      'ap.officer_name as ap_officer_name',
+      'ap.officer_phone as ap_officer_phone',
       db.raw("(select count(*) from mission_photos mp where mp.mission_id = m.id and mp.status = 'pending') as pending_photos"),
       db.raw('(select count(*) from check_ins ci where ci.mission_id = m.id) as on_site_count'),
     )
@@ -720,9 +760,9 @@ async function callReadyVolunteers(missionId, actor = {}) {
   let notReady = 0;
   let withoutBaseLocation = 0;
 
+  const readiness = await readinessService.getReadinessMany(candidates.map((c) => c.id));
   for (const candidate of candidates) {
-    // eslint-disable-next-line no-await-in-loop
-    const { kisiDurumu } = await readinessService.getReadiness(candidate.id);
+    const { kisiDurumu } = readiness.get(candidate.id);
     if (kisiDurumu !== 'hazir') {
       notReady += 1;
       continue;
@@ -848,6 +888,71 @@ async function adminCheckIns(missionId) {
   };
 }
 
+/**
+ * Panel — olayın katılımcıları. Sayaçlar durum filtresinden bağımsızdır (tek GROUP BY);
+ * check_ins (mission_id, user_id) tekil olduğundan join satır çoğaltmaz.
+ * @param {{status?:string}} params
+ */
+async function adminParticipants(missionId, { status } = {}) {
+  const mission = await db('missions').where({ id: missionId }).first('id');
+  if (!mission) throw errors.notFound('Görev bulunamadı', 'mission_not_found');
+
+  const items = db('mission_participants as mp')
+    .join('users as u', 'u.id', 'mp.user_id')
+    .leftJoin('check_ins as ci', function onCheckIn() {
+      this.on('ci.mission_id', '=', 'mp.mission_id').andOn('ci.user_id', '=', 'mp.user_id');
+    })
+    .where('mp.mission_id', missionId)
+    .whereNull('u.deleted_at')
+    .orderBy([
+      { column: 'mp.updated_at', order: 'desc' },
+      { column: 'mp.id', order: 'desc' },
+    ])
+    .select(
+      'mp.*',
+      'u.ad',
+      'u.soyad',
+      'u.phone',
+      'ci.checked_in_at',
+      'ci.method as ci_method',
+      'ci.recorded_by as ci_recorded_by',
+    );
+  if (status) items.where('mp.status', status);
+
+  const [countRows, rows] = await Promise.all([
+    db('mission_participants as mp')
+      .join('users as u', 'u.id', 'mp.user_id')
+      .where('mp.mission_id', missionId)
+      .whereNull('u.deleted_at')
+      .select('mp.status')
+      .count({ c: '*' })
+      .groupBy('mp.status'),
+    items,
+  ]);
+
+  const counts = Object.fromEntries(EVENT_STATUS.map((s) => [s, 0]));
+  for (const r of countRows) counts[r.status] = Number(r.c);
+
+  return {
+    counts,
+    items: rows.map((r) => ({
+      userId: r.user_id,
+      ad: r.ad,
+      soyad: r.soyad,
+      phone: r.phone || null,
+      status: r.status,
+      calledAt: toIso(r.called_at),
+      respondedAt: toIso(r.responded_at),
+      joinedAt: toIso(r.joined_at),
+      onSiteAt: toIso(r.on_site_at),
+      completedAt: toIso(r.completed_at),
+      checkIn: r.checked_in_at
+        ? { checkedInAt: toIso(r.checked_in_at), method: r.ci_method, recordedBy: r.ci_recorded_by || null }
+        : null,
+    })),
+  };
+}
+
 module.exports = {
   listActive,
   getActive,
@@ -861,6 +966,7 @@ module.exports = {
   adminUpdate,
   adminArchive,
   adminCheckIns,
+  adminParticipants,
   callReadyVolunteers,
   EVENT_STATUS,
   VOLUNTEER_SIGNALS,
@@ -872,4 +978,5 @@ module.exports = {
   adminList,
   adminListPhotos,
   mapAdminMission,
+  approvedPhotosFor,
 };

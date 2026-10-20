@@ -42,6 +42,7 @@ jest.mock('../../../src/shared/push-provider', () => ({ sendPushToUser: jest.fn(
 jest.mock('../../../src/shared/sms-provider', () => ({ sendSms: jest.fn(async () => ({ ok: true })) }));
 jest.mock('../../../src/modules/users/readiness.service', () => ({
   getReadiness: jest.fn(async (id) => mockState.readiness[id]),
+  getReadinessMany: jest.fn(async (ids) => new Map(ids.map((id) => [id, mockState.readiness[id]]))),
 }));
 
 const { sendPushToUser } = require('../../../src/shared/push-provider');
@@ -127,6 +128,22 @@ describe('hedef kitle', () => {
     );
 
     expect(result.recipients).toBe(1);
+  });
+
+  it('olay bazlı "hazir" segmenti yalnızca hazır gönüllüye push gönderir, hazırlık tek sorguda okunur', async () => {
+    const { getReadinessMany } = require('../../../src/modules/users/readiness.service');
+    mockState.users = [{ id: 'u1' }, { id: 'u9' }];
+    mockState.readiness.u9 = { kisiDurumu: 'basvuru', zincir: { komisyon: 'pending', eksikAdimlar: ['komisyon'] } };
+
+    await service.send(
+      { category: 'gorev', title: 'Çağrı', body: 'x', missionId: 'm1', segments: ['hazir'] },
+      {},
+    );
+
+    expect(sendPushToUser).toHaveBeenCalledTimes(1);
+    expect(sendPushToUser).toHaveBeenCalledWith('u1', expect.anything());
+    expect(getReadinessMany).toHaveBeenCalledTimes(1);
+    expect(getReadinessMany).toHaveBeenCalledWith(['u1', 'u9']);
   });
 
   it('gönderim denetim izine yazılır', async () => {

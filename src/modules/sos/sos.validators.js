@@ -12,12 +12,4 @@ const sosSchema = Joi.object({
   }).optional(),
 });
 
-// Panelin hazır aksiyonları merkezin KENDİ yaptığı işlemlerle sınırlıdır; sahadan
-// gelen bilgi serbest nota yazılır ve operatörün adına düşer.
-const sosHistorySchema = Joi.object({
-  action: Joi.string().valid('called_volunteer', 'called_112', 'responded').optional(),
-  note: Joi.string().max(300).optional(),
-  by: Joi.string().max(120).optional(),
-}).or('action', 'note');
-
-module.exports = { sosSchema, sosHistorySchema };
+module.exports = { sosSchema };

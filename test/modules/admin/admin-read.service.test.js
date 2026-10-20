@@ -11,7 +11,7 @@ jest.mock('../../../src/config/db', () => {
     // DİKKAT: whereLike/orWhereLike bilinçli olarak YOK — knex MySQL dialektinde
     // 'COLLATE utf8_bin' ürettiği için utf8mb4'te patlar; servis kodu düz LIKE kullanmalı.
     const passthrough = [
-      'leftJoin', 'where', 'orWhere', 'whereNull',
+      'leftJoin', 'where', 'orWhere', 'whereNull', 'whereRaw',
       'orderBy', 'limit', 'offset', 'select', 'count', 'update',
     ];
     for (const method of passthrough) {
@@ -37,14 +37,23 @@ jest.mock('../../../src/shared/asset-url', () => ({
 }));
 // Hazırlık zinciri kendi testinde doğrulanır; burada getVolunteer'ın türetilmiş
 // alanları künyeye taşıdığını görmek yeterli.
+const mockReadiness = {
+  zincir: { kkdDurumu: 'tam', eksikAdimlar: [], siradakiAdim: null, tamam: true, steps: [] },
+  kisiDurumu: 'hazir',
+  mudahaleYetkisi: true,
+  engeller: [],
+  komisyon: { decision: 'approved', decidedAt: null, decidedBy: null, decisionNo: null },
+};
+const mockPending = {
+  zincir: { kkdDurumu: 'yok', eksikAdimlar: ['komisyon', 'kkd'], siradakiAdim: 'komisyon', tamam: false, steps: [] },
+  kisiDurumu: 'basvuru',
+  mudahaleYetkisi: false,
+  engeller: [],
+  komisyon: { decision: 'pending', decidedAt: null, decidedBy: null, decisionNo: null },
+};
 jest.mock('../../../src/modules/users/readiness.service', () => ({
-  getReadiness: jest.fn(async () => ({
-    zincir: { kkdDurumu: 'tam', eksikAdimlar: [], tamam: true, steps: [] },
-    kisiDurumu: 'hazir',
-    mudahaleYetkisi: true,
-    engeller: [],
-    komisyon: { decision: 'approved', decidedAt: null, decidedBy: null, decisionNo: null },
-  })),
+  getReadiness: jest.fn(async () => mockReadiness),
+  getReadinessMany: jest.fn(async (ids) => new Map(ids.map((id) => [id, id === 'u1' ? mockReadiness : mockPending]))),
   kkdSet: jest.fn(async () => []),
 }));
 jest.mock('../../../src/modules/equipment/equipment.service', () => ({
@@ -52,6 +61,7 @@ jest.mock('../../../src/modules/equipment/equipment.service', () => ({
   PROTECTIVE_TYPE: 'Koruyucu Ekipman',
 }));
 
+const readinessService = require('../../../src/modules/users/readiness.service');
 const {
   listVolunteers, getVolunteer, mapVolunteerListItem,
   computeAccuracy, previousWindow,
@@ -68,6 +78,8 @@ describe('admin.service — listVolunteers', () => {
     mockQueue.push([
       {
         id: 'u1', ad: 'Ahmet', soyad: 'Yılmaz', phone: '+905321112233', eposta: 'a@b.c',
+        il: 'İzmir', ilce: 'Bornova', ogrenim: 'lisans', meslek: 'diger', meslek_diger: 'Pilot',
+        giysi_bedeni: 'L', ayakkabi_numarasi: 43, stk_text: 'AKUT',
         profile_complete: 1, is_active: 1, application_status: 'pending',
         submitted_at: new Date('2026-06-01T10:00:00Z'),
         completed_trainings: '2', protective_equipment: '0',
@@ -84,16 +96,35 @@ describe('admin.service — listVolunteers', () => {
     expect(result).toMatchObject({ total: 2, page: 2, pageSize: 10 });
     expect(result.items[0]).toEqual({
       userId: 'u1', ad: 'Ahmet', soyad: 'Yılmaz', phone: '+905321112233', eposta: 'a@b.c',
+      il: 'İzmir', ilce: 'Bornova', region: 'ege', ogrenim: 'lisans', meslek: 'diger',
+      meslekDiger: 'Pilot', giysiBedeni: 'L', ayakkabiNumarasi: 43, stkText: 'AKUT',
       profileComplete: true, isActive: true, applicationStatus: 'pending',
       submittedAt: '2026-06-01T10:00:00.000Z', egitim: true, donanim: false,
+      kisiDurumu: 'hazir', kkdDurumu: 'tam', mudahaleYetkisi: true,
+      eksikAdimlar: [], siradakiAdim: null, komisyon: mockReadiness.komisyon,
     });
     expect(result.items[1]).toMatchObject({
       applicationStatus: null, submittedAt: null, egitim: false, donanim: true,
+      il: null, ilce: null, region: null, ayakkabiNumarasi: null, stkText: null,
+      kisiDurumu: 'basvuru', kkdDurumu: 'yok', mudahaleYetkisi: false,
+      eksikAdimlar: ['komisyon', 'kkd'], siradakiAdim: 'komisyon', komisyon: { decision: 'pending' },
     });
   });
 
+  test('hazırlık zinciri sayfa başına TEK toplu çağrıyla gelir (kişi başı sorgu yok)', async () => {
+    readinessService.getReadinessMany.mockClear();
+    mockQueue.push([{ total: 3 }]);
+    mockQueue.push([{ id: 'u1' }, { id: 'u2' }, { id: 'u3' }]);
+
+    await listVolunteers({});
+
+    expect(readinessService.getReadinessMany).toHaveBeenCalledTimes(1);
+    expect(readinessService.getReadinessMany).toHaveBeenCalledWith(['u1', 'u2', 'u3']);
+    expect(readinessService.getReadiness).not.toHaveBeenCalled();
+  });
+
   test('tc_kimlik liste DTO\'sunda asla yer almaz (PII)', () => {
-    const item = mapVolunteerListItem({ id: 'u1', tc_kimlik: '12345678901', completed_trainings: 0 });
+    const item = mapVolunteerListItem({ id: 'u1', tc_kimlik: '12345678901', completed_trainings: 0 }, mockReadiness);
     expect(item).not.toHaveProperty('tcKimlik');
     expect(JSON.stringify(item)).not.toContain('12345678901');
   });
@@ -114,7 +145,8 @@ describe('admin.service — getVolunteer', () => {
     mockQueue.push({
       id: 'u1', tc_kimlik: '12345678901', ad: 'Ahmet', soyad: 'Yılmaz',
       dogum_tarihi: '1990-05-01', phone: '+905321112233', eposta: 'a@b.c',
-      adres: 'İstanbul', kan_grubu: 'A+', acil_ad: 'Veli', acil_soyad: 'Yılmaz',
+      adres: 'İstanbul', il: 'İstanbul', ilce: 'Kadıköy', ogrenim: 'lise', meslek: 'ogrenci',
+      meslek_diger: null, giysi_bedeni: 'M', ayakkabi_numarasi: '42', stk_text: null, kan_grubu: 'A+', acil_ad: 'Veli', acil_soyad: 'Yılmaz',
       acil_telefon: '+905329998877', acil_yakinlik: 'kardes',
       avatar_path: 'avatars/u1.jpg', profile_complete: 1, is_active: 1,
       created_at: new Date('2026-05-01T08:00:00Z'),
@@ -134,6 +166,8 @@ describe('admin.service — getVolunteer', () => {
       avatarUrl: 'https://cdn.test/avatars/u1.jpg', egitim: true, donanim: true,
       acil: { ad: 'Veli', telefon: '+905329998877' },
       kisiDurumu: 'hazir', kkdDurumu: 'tam', mudahaleYetkisi: true,
+      il: 'İstanbul', ilce: 'Kadıköy', region: 'marmara', ogrenim: 'lise', meslek: 'ogrenci',
+      meslekDiger: null, giysiBedeni: 'M', ayakkabiNumarasi: 42, stkText: null,
     });
     expect(result.komisyon.decision).toBe('approved');
     expect(result.application).toMatchObject({

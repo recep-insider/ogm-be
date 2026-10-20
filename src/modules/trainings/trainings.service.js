@@ -6,7 +6,7 @@ const { errors } = require('../../shared/errors');
 const { assetUrl } = require('../../shared/asset-url');
 const { toDateOnly, toLocalDateOnly, toIso } = require('../../shared/dates');
 const { writeAudit } = require('../../shared/audit');
-const { deliverKkdSet } = require('../equipment/equipment.service');
+const { deliverKkdSet, assertCommissionApproved } = require('../equipment/equipment.service');
 
 const LAST_SEATS_THRESHOLD = 5;
 
@@ -629,28 +629,35 @@ async function adminSaveAttendance(trainingId, body, actor = {}) {
   const now = new Date();
   const results = [];
 
-  for (const entry of entries) {
-    const application = byUser.get(entry.userId);
-    const attendance = entry.attended ? 'katildi' : 'kayitli';
-    await db('saha_training_applications').where({ id: application.id }).update({
-      attendance,
-      attendance_at: entry.attended ? now : null,
-      kkd_delivered: entry.attended ? !!entry.kkdDelivered : false,
-      updated_at: now,
-    });
+  await db.transaction(async (trx) => {
+    await assertCommissionApproved(
+      entries.filter((e) => e.attended && e.kkdDelivered).map((e) => e.userId),
+      trx,
+    );
 
-    let kkd = null;
-    if (entry.attended && entry.kkdDelivered) {
-      kkd = await deliverKkdSet(entry.userId, {}, actor);
+    for (const entry of entries) {
+      const application = byUser.get(entry.userId);
+      const attendance = entry.attended ? 'katildi' : 'kayitli';
+      await trx('saha_training_applications').where({ id: application.id }).update({
+        attendance,
+        attendance_at: entry.attended ? now : null,
+        kkd_delivered: entry.attended ? !!entry.kkdDelivered : false,
+        updated_at: now,
+      });
+
+      let kkd = null;
+      if (entry.attended && entry.kkdDelivered) {
+        kkd = await deliverKkdSet(entry.userId, {}, actor, trx);
+      }
+
+      results.push({
+        userId: entry.userId,
+        attendance,
+        kkdDelivered: !!(entry.attended && entry.kkdDelivered),
+        kkdDurumu: kkd?.kkdDurumu,
+      });
     }
-
-    results.push({
-      userId: entry.userId,
-      attendance,
-      kkdDelivered: !!(entry.attended && entry.kkdDelivered),
-      kkdDurumu: kkd?.kkdDurumu,
-    });
-  }
+  });
 
   await writeAudit({
     userId: actor.userId || null,

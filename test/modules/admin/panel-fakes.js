@@ -2,7 +2,7 @@
 
 // Panel auth testleri için bellek içi knex/ioredis taklitleri; yalnız servisin kullandığı
 // sorgu biçimlerini (where/whereNot/whereNull/whereIn + orderBy/limit/select/forUpdate +
-// first/update/insert, await ile liste, transaction) destekler.
+// first/update/insert, await ile liste, hata olunca geri alınan transaction) destekler.
 
 function createFakeDb() {
   let tables = {};
@@ -74,7 +74,7 @@ function createFakeDb() {
         return hit.length;
       },
       async insert(row) {
-        rows.push({ ...row });
+        [].concat(row).forEach((r) => rows.push({ ...r }));
         return [rows.length];
       },
     };
@@ -87,7 +87,15 @@ function createFakeDb() {
     tables = Object.fromEntries(Object.entries(seed).map(([k, v]) => [k, v.map((r) => ({ ...r }))]));
   };
   db.destroy = async () => {};
-  db.transaction = async (fn) => fn(db);
+  db.transaction = async (fn) => {
+    const snapshot = Object.fromEntries(Object.entries(tables).map(([k, v]) => [k, v.map((r) => ({ ...r }))]));
+    try {
+      return await fn(db);
+    } catch (err) {
+      tables = snapshot;
+      throw err;
+    }
+  };
   // app.js yüklenirken bazı servisler modül seviyesinde db.raw / db.fn çağırıyor.
   db.raw = (sql) => ({ sql });
   db.fn = { now: () => new Date() };

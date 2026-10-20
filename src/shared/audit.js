@@ -18,10 +18,11 @@ const logger = require('../config/logger');
  * @param {string} [opts.ip]
  * @param {string} [opts.userAgent]
  * @param {object} [opts.payload]
+ * @param {import('knex').Knex} [conn] - transaction içinden çağrılırsa trx; geri alınan işlemin kaydı kalmaz.
  */
-async function writeAudit({ userId = null, action, entity = null, entityId = null, ip = null, userAgent = null, payload = null }) {
+async function writeAudit({ userId = null, action, entity = null, entityId = null, ip = null, userAgent = null, payload = null }, conn = db) {
   try {
-    await db('audit_log').insert({
+    await conn('audit_log').insert({
       user_id: userId,
       action,
       entity,

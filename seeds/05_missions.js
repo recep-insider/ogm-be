@@ -3,6 +3,8 @@
 const MISSIONS = [
   {
     id: 'am_marmaris',
+    il: 'Muğla',
+    ilce: 'Marmaris',
     // mobil §5: görev adı ve rol etiketi kaldırıldı — olayın kendisi gösterilir.
     title: 'Marmaris Orman Yangını',
     full_title: 'Marmaris Orman Yangını',
@@ -25,6 +27,8 @@ const MISSIONS = [
   },
   {
     id: 'am_fethiye',
+    il: 'Muğla',
+    ilce: 'Fethiye',
     title: 'Fethiye Orman Yangını',
     full_title: 'Fethiye Orman Yangını',
     short_location: 'Muğla / Fethiye',
@@ -46,6 +50,8 @@ const MISSIONS = [
   },
   {
     id: 'fm_marmaris_2025',
+    il: 'Muğla',
+    ilce: 'Marmaris',
     title: 'Marmaris Yangını',
     full_title: 'Marmaris Yangını 2025',
     short_location: 'Muğla / Marmaris',
@@ -91,6 +97,12 @@ exports.seed = async function seed(knex) {
     )
     .onConflict('id')
     .ignore();
+
+  // Daha önce seed'lenmiş kurulumlarda il/ilçe'yi doldur (yalnızca boşsa — elle girileni ezmez).
+  for (const m of MISSIONS) {
+    // eslint-disable-next-line no-await-in-loop
+    await knex('missions').where({ id: m.id }).whereNull('il').whereNull('ilce').update({ il: m.il, ilce: m.ilce });
+  }
 
   await knex('assembly_points')
     .insert(ASSEMBLY_POINTS.map((a) => ({ ...a, is_open: true })))

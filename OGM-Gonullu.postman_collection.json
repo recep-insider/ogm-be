@@ -2195,7 +2195,7 @@
                 }
               ]
             },
-            "description": "Hazır aksiyonlar merkezin KENDİ işlemleriyle sınırlıdır: gönüllüyü aradı, 112 arandı, müdahale edildi. Sahadan gelen bilgi serbest nota yazılır ve operatörün adına düşer. Operatör çağrıyı İPTAL EDEMEZ — `cancelled` yalnızca gönüllünün mobilden verdiği sinyaldir.",
+            "description": "Tek hazır aksiyon merkezin KENDİ işlemidir: müdahale edildi. Sahadan gelen bilgi serbest nota yazılır ve operatörün adına düşer. Operatör çağrıyı İPTAL EDEMEZ — `cancelled` yalnızca gönüllünün mobilden verdiği sinyaldir.",
             "auth": {
               "type": "bearer",
               "bearer": [
@@ -2208,7 +2208,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"action\": \"called_volunteer\",\n  \"note\": \"\",\n  \"by\": \"\"\n}",
+              "raw": "{\n  \"action\": \"responded\",\n  \"note\": \"\",\n  \"by\": \"\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -2264,7 +2264,7 @@
                 "summary"
               ]
             },
-            "description": "[from,to) penceresi + bir önceki eşit uzunlukta pencereyle kıyas döner. \"fires\" = onaylanmış ihbar sayısı (FIRES domaini netleşene dek vekil metrik); volunteersTotal = pencere sonu itibarıyla kümülatif; activeVolunteers = pencere içinde göreve katılan tekil gönüllü; reportAccuracy = confirmed/(confirmed+rejected)%.",
+            "description": "[from,to) penceresi + bir önceki eşit uzunlukta pencereyle kıyas döner. \"fires\" = onaylanmış ihbar sayısı (FIRES domaini netleşene dek vekil metrik); volunteersTotal = pencere sonu itibarıyla kümülatif; activeVolunteers = pencere içinde göreve katılan (yolda | sahada | tamamladi; yalnız çağrılan sayılmaz) tekil gönüllü; reportAccuracy = confirmed/(confirmed+rejected)%; missions = pencere içinde açılan olay sayısı (created_at, arşivlenenler dahil).",
             "auth": {
               "type": "bearer",
               "bearer": [
@@ -2888,43 +2888,6 @@
           }
         },
         {
-          "name": "Zimmet iadesi (API hazır — panelde ekranı yok) (POST /v1/admin/equipment/:equipmentId/return)",
-          "request": {
-            "method": "POST",
-            "header": [],
-            "url": {
-              "raw": "{{baseUrl}}/v1/admin/equipment/:equipmentId/return",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "v1",
-                "admin",
-                "equipment",
-                ":equipmentId",
-                "return"
-              ],
-              "variable": [
-                {
-                  "key": "equipmentId",
-                  "value": ""
-                }
-              ]
-            },
-            "description": "İade akışı panelden geçici olarak kaldırıldı; uç sözleşme gereği hazır tutulur.",
-            "auth": {
-              "type": "bearer",
-              "bearer": [
-                {
-                  "key": "token",
-                  "value": "{{panelAccessToken}}",
-                  "type": "string"
-                }
-              ]
-            }
-          }
-        },
-        {
           "name": "Saha eğitimi yoklaması (panel) (PUT /v1/admin/trainings/saha/:id/attendance)",
           "request": {
             "method": "PUT",
@@ -3200,6 +3163,43 @@
               ]
             },
             "description": "Sahadaki gönüllü sayısının tek kaynağı; panel, mobil ve toplanma noktası ekranı aynı sayıyı gösterir. Olay arşivlendiğinde sayı sıfırlanır, kayıtlar korunur.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{panelAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Olayın katılımcıları ve durum sayaçları (panel) (GET /v1/admin/missions/:id/participants)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/v1/admin/missions/:id/participants",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "admin",
+                "missions",
+                ":id",
+                "participants"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": ""
+                }
+              ]
+            },
+            "description": "counts her zaman olayın tüm katılımcılarını sayar; status filtresi yalnızca items listesini süzer. checkIn, gönüllünün bu olaydaki giriş kaydıdır (yoksa null).",
             "auth": {
               "type": "bearer",
               "bearer": [

@@ -58,3 +58,32 @@ describe.each(SEEDS)('seed idempotency: %s', (modPath) => {
     expect(calls.onConflictCols.length).toBe(calls.ignore);
   });
 });
+
+describe('05_missions il/ilçe', () => {
+  it('yeni kayıtlar Muğla il/ilçe ile eklenir, mevcutlarda yalnızca boşsa doldurulur', async () => {
+    const inserts = [];
+    const updates = [];
+    const knex = () => {
+      const state = { where: null, nulls: [] };
+      const c = {
+        insert(rows) { inserts.push(rows); return c; },
+        onConflict() { return c; },
+        ignore() { return Promise.resolve(0); },
+        where(obj) { state.where = obj; return c; },
+        whereNull(col) { state.nulls.push(col); return c; },
+        update(data) { updates.push({ ...state, data }); return Promise.resolve(0); },
+      };
+      return c;
+    };
+
+    await require('../../seeds/05_missions').seed(knex);
+
+    const missions = inserts[0];
+    expect(missions.every((m) => m.il === 'Muğla' && ['Marmaris', 'Fethiye'].includes(m.ilce))).toBe(true);
+    expect(updates).toHaveLength(missions.length);
+    for (const u of updates) {
+      expect(u.nulls).toEqual(['il', 'ilce']);
+      expect(u.data).toEqual({ il: 'Muğla', ilce: missions.find((m) => m.id === u.where.id).ilce });
+    }
+  });
+});

@@ -86,12 +86,12 @@ async function upsert(missionId, body, actor = {}) {
   const now = new Date();
   const row = {
     name: body.name,
-    address: body.address || null,
     lat: body.coordinates.lat,
     lng: body.coordinates.lng,
-    is_open: body.isOpen !== undefined ? body.isOpen : true,
     updated_at: now,
   };
+  if (body.address !== undefined) row.address = body.address || null;
+  if (body.isOpen !== undefined) row.is_open = body.isOpen;
   const officer = {};
   if (body.officerName !== undefined) officer.officer_name = body.officerName || null;
   if (body.officerPhone !== undefined) officer.officer_phone = body.officerPhone || null;
@@ -106,6 +106,8 @@ async function upsert(missionId, body, actor = {}) {
       id: uuidv4(),
       mission_id: missionId,
       created_at: now,
+      address: null,
+      is_open: true,
       officer_name: null,
       officer_phone: null,
       ...row,

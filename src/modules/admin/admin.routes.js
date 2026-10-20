@@ -5,6 +5,7 @@ const Joi = require('joi');
 const asyncHandler = require('../../shared/async-handler');
 const validate = require('../../middlewares/validate');
 const { requireAdmin } = require('../../middlewares/auth');
+const { idempotent } = require('../../middlewares/idempotency');
 const path = require('path');
 const env = require('../../config/env');
 const { contentUpload } = require('../../middlewares/upload');
@@ -202,7 +203,7 @@ const volunteersQuerySchema = Joi.object({
  *     security: [ { panelBearer: [] } ]
  *     parameters:
  *       - { in: query, name: status, schema: { type: string, enum: [pending, approved, rejected, requires_revision] } }
- *       - { in: query, name: q, schema: { type: string }, description: 'ad/soyad/telefon/eposta araması' }
+ *       - { in: query, name: q, schema: { type: string }, description: 'ad/soyad/telefon/eposta/TC/il/ilçe/STK araması; boşlukla ayrılan her kelime eşleşmeli, Türkçe büyük/küçük harf duyarsız' }
  *       - { in: query, name: page, schema: { type: integer, default: 1 } }
  *       - { in: query, name: pageSize, schema: { type: integer, default: 20, maximum: 100 } }
  *     responses:
@@ -223,12 +224,33 @@ const volunteersQuerySchema = Joi.object({
  *                       soyad: { type: string }
  *                       phone: { type: string }
  *                       eposta: { type: string }
+ *                       il: { type: string, nullable: true }
+ *                       ilce: { type: string, nullable: true }
+ *                       region: { type: string, nullable: true, description: 'il alanından türer' }
+ *                       ogrenim: { type: string, nullable: true }
+ *                       meslek: { type: string, nullable: true }
+ *                       meslekDiger: { type: string, nullable: true }
+ *                       giysiBedeni: { type: string, nullable: true }
+ *                       ayakkabiNumarasi: { type: integer, nullable: true }
+ *                       stkText: { type: string, nullable: true }
  *                       profileComplete: { type: boolean }
  *                       isActive: { type: boolean }
  *                       applicationStatus: { type: string, nullable: true }
  *                       submittedAt: { type: string, format: date-time, nullable: true }
  *                       egitim: { type: boolean, description: 'En az bir tamamlanmış eğitim' }
  *                       donanim: { type: boolean, description: 'Geçerli koruyucu ekipman' }
+ *                       kisiDurumu: { type: string, enum: [basvuru, hazir, pasif] }
+ *                       kkdDurumu: { type: string }
+ *                       mudahaleYetkisi: { type: boolean }
+ *                       eksikAdimlar: { type: array, items: { type: string, enum: [komisyon, teorik, uygulamali, kkd] } }
+ *                       siradakiAdim: { type: string, nullable: true }
+ *                       komisyon:
+ *                         type: object
+ *                         properties:
+ *                           decision: { type: string, example: pending }
+ *                           decidedAt: { type: string, format: date-time, nullable: true }
+ *                           decidedBy: { type: string, nullable: true }
+ *                           decisionNo: { type: string, nullable: true }
  *                 total: { type: integer }
  *                 page: { type: integer }
  *                 pageSize: { type: integer }
@@ -252,7 +274,10 @@ router.get(
  *     parameters:
  *       - { in: path, name: userId, required: true, schema: { type: string } }
  *     responses:
- *       200: { description: 'user + application (yoksa null)' }
+ *       200:
+ *         description: >-
+ *           user (il, ilce, region, ogrenim, meslek, meslekDiger, giysiBedeni, ayakkabiNumarasi,
+ *           stkText dahil) + hazirlikZinciri + komisyon + kkd + application (yoksa null)
  *       404: { description: 'user_not_found' }
  */
 router.get(
@@ -339,7 +364,7 @@ const missionsQuerySchema = Joi.object({
  *       - { in: query, name: page, schema: { type: integer, default: 1 } }
  *       - { in: query, name: pageSize, schema: { type: integer, default: 20, maximum: 100 } }
  *     responses:
- *       200: { description: 'items: görev (camelCase, cover URL, pendingPhotos), total/page/pageSize' }
+ *       200: { description: 'items: görev (camelCase, cover URL, pendingPhotos, assemblyPoint|null), total/page/pageSize' }
  */
 router.get(
   '/missions',
@@ -460,7 +485,7 @@ const sosQuerySchema = Joi.object({
 });
 
 const sosHistorySchema = Joi.object({
-  action: Joi.string().valid('called_volunteer', 'called_112', 'responded').optional(),
+  action: Joi.string().valid('responded').optional(),
   note: Joi.string().max(300).optional(),
   by: Joi.string().max(120).optional(),
 }).or('action', 'note');
@@ -500,10 +525,9 @@ router.get(
  *     tags: [Admin]
  *     summary: SOS geçmişine kayıt düş (ve gerekiyorsa durumu aynı çağrıda güncelle)
  *     description: >-
- *       Hazır aksiyonlar merkezin KENDİ işlemleriyle sınırlıdır: gönüllüyü aradı,
- *       112 arandı, müdahale edildi. Sahadan gelen bilgi serbest nota yazılır ve
- *       operatörün adına düşer. Operatör çağrıyı İPTAL EDEMEZ — `cancelled` yalnızca
- *       gönüllünün mobilden verdiği sinyaldir.
+ *       Tek hazır aksiyon merkezin KENDİ işlemidir: müdahale edildi. Sahadan gelen
+ *       bilgi serbest nota yazılır ve operatörün adına düşer. Operatör çağrıyı İPTAL
+ *       EDEMEZ — `cancelled` yalnızca gönüllünün mobilden verdiği sinyaldir.
  *     security: [ { panelBearer: [] } ]
  *     parameters:
  *       - { in: path, name: id, required: true, schema: { type: string } }
@@ -514,7 +538,7 @@ router.get(
  *           schema:
  *             type: object
  *             properties:
- *               action: { type: string, enum: [called_volunteer, called_112, responded] }
+ *               action: { type: string, enum: [responded] }
  *               note: { type: string, maxLength: 300 }
  *               by: { type: string, description: 'Kaydı düşen operatör/görevli adı' }
  *     responses:
@@ -569,13 +593,15 @@ const reportsRangeKeys = {
  *       [from,to) penceresi + bir önceki eşit uzunlukta pencereyle kıyas döner.
  *       "fires" = onaylanmış ihbar sayısı (FIRES domaini netleşene dek vekil metrik);
  *       volunteersTotal = pencere sonu itibarıyla kümülatif; activeVolunteers = pencere içinde
- *       göreve katılan tekil gönüllü; reportAccuracy = confirmed/(confirmed+rejected)%.
+ *       göreve katılan (yolda | sahada | tamamladi; yalnız çağrılan sayılmaz) tekil gönüllü;
+ *       reportAccuracy = confirmed/(confirmed+rejected)%; missions = pencere içinde açılan olay
+ *       sayısı (created_at, arşivlenenler dahil).
  *     security: [ { panelBearer: [] } ]
  *     parameters:
  *       - { in: query, name: from, required: true, schema: { type: string, format: date } }
  *       - { in: query, name: to, required: true, schema: { type: string, format: date } }
  *     responses:
- *       200: { description: 'range + kpis{fires,volunteersTotal,activeVolunteers,reportAccuracy}{current,previous}' }
+ *       200: { description: 'range + kpis{fires,volunteersTotal,activeVolunteers,reportAccuracy,missions}{current,previous}' }
  */
 router.get(
   '/reports/summary',
@@ -593,7 +619,7 @@ router.get(
  *     summary: Raporlar zaman serisi (panel grafiği)
  *     security: [ { panelBearer: [] } ]
  *     parameters:
- *       - { in: query, name: metric, required: true, schema: { type: string, enum: [fireReports, confirmedFireReports, emergency, newUsers] } }
+ *       - { in: query, name: metric, required: true, schema: { type: string, enum: [fireReports, confirmedFireReports, emergency, newUsers, missions] } }
  *       - { in: query, name: interval, required: true, schema: { type: string, enum: [day, week, month] } }
  *       - { in: query, name: from, required: true, schema: { type: string, format: date } }
  *       - { in: query, name: to, required: true, schema: { type: string, format: date } }
@@ -1082,6 +1108,7 @@ const kkdDeliverSchema = Joi.object({
  *     responses:
  *       200: { description: '{ok, delivered[], kkdDurumu, items[]}' }
  *       404: { description: user_not_found }
+ *       409: { description: 'commission_not_approved — en güncel komisyon kararı onay değil' }
  *   get:
  *     tags: [Admin]
  *     summary: Gönüllünün KKD seti (panel)
@@ -1122,28 +1149,6 @@ router.get(
   '/volunteers/:userId/readiness',
   asyncHandler(async (req, res) => {
     res.json(await readinessService.getReadiness(req.params.userId));
-  }),
-);
-
-/**
- * @openapi
- * /admin/equipment/{equipmentId}/return:
- *   post:
- *     tags: [Admin]
- *     summary: Zimmet iadesi (API hazır — panelde ekranı yok)
- *     description: 'İade akışı panelden geçici olarak kaldırıldı; uç sözleşme gereği hazır tutulur.'
- *     security: [ { panelBearer: [] } ]
- *     parameters:
- *       - { in: path, name: equipmentId, required: true, schema: { type: string } }
- *     responses:
- *       200: { description: '{ok, equipmentId, returnedAt, kkdDurumu}' }
- *       404: { description: equipment_not_found }
- *       409: { description: already_returned }
- */
-router.post(
-  '/equipment/:equipmentId/return',
-  asyncHandler(async (req, res) => {
-    res.json(await equipmentService.returnEquipment(req.params.equipmentId, actorFrom(req)));
   }),
 );
 
@@ -1193,6 +1198,7 @@ const attendanceSchema = Joi.object({
  *     responses:
  *       200: { description: '{trainingId, grantsCompetency, saved, items[]}' }
  *       404: { description: training_not_found }
+ *       409: { description: 'commission_not_approved — kkdDelivered işaretli gönüllülerden komisyon onayı olmayan var (details.userIds); hiçbir satır yazılmaz' }
  */
 router.put(
   '/trainings/saha/:id/attendance',
@@ -1273,12 +1279,24 @@ const assemblyPointUpsertSchema = Joi.object({
  *       belirler — çağrı YALNIZCA `Hazır` gönüllülere gider, yarıçap admin'de girilmez.
  *       Bölge filtresi yalnızca görünümü süzer: başka bölgede olay açılabilir.
  *     security: [ { panelBearer: [] } ]
+ *     parameters:
+ *       - in: header
+ *         name: Idempotency-Key
+ *         required: false
+ *         schema: { type: string, maxLength: 200 }
+ *         description: >-
+ *           Aynı anahtar ve aynı gövdeyle tekrar gelen istek yeniden işlenmez; 24 saat içinde ilk
+ *           başarılı yanıt `Idempotent-Replayed: true` başlığıyla döner. 4xx yanıt anahtarı serbest bırakır; 5xx'te anahtar işlem bittikten 60 sn sonra düşer.
  *     responses:
  *       200: { description: '{ok, missionId, status: active, called}' }
+ *       400: { description: idempotency_key_invalid }
+ *       409: { description: idempotency_in_flight }
+ *       422: { description: idempotency_key_reused }
  */
 router.post(
   '/missions',
   validate({ body: missionCreateSchema }),
+  idempotent(),
   asyncHandler(async (req, res) => {
     res.json(await missionsService.adminCreate(req.body, actorFrom(req)));
   }),
@@ -1441,6 +1459,41 @@ router.get(
   }),
 );
 
+const participantsQuerySchema = Joi.object({
+  status: Joi.string().valid('cagrildi', 'yolda', 'sahada', 'tamamladi', 'katilamiyor').optional(),
+});
+
+/**
+ * @openapi
+ * /admin/missions/{id}/participants:
+ *   get:
+ *     tags: [Admin]
+ *     summary: Olayın katılımcıları ve durum sayaçları (panel)
+ *     description: >-
+ *       counts her zaman olayın tüm katılımcılarını sayar; status filtresi yalnızca
+ *       items listesini süzer. checkIn, gönüllünün bu olaydaki giriş kaydıdır (yoksa null).
+ *     security: [ { panelBearer: [] } ]
+ *     parameters:
+ *       - { in: path, name: id, required: true, schema: { type: string } }
+ *       - in: query
+ *         name: status
+ *         schema: { type: string, enum: [cagrildi, yolda, sahada, tamamladi, katilamiyor] }
+ *     responses:
+ *       200:
+ *         description: >-
+ *           counts{cagrildi,yolda,sahada,tamamladi,katilamiyor} + items[{userId, ad, soyad,
+ *           phone, status, calledAt, respondedAt, joinedAt, onSiteAt, completedAt,
+ *           checkIn{checkedInAt, method, recordedBy}|null}]
+ *       404: { description: mission_not_found }
+ */
+router.get(
+  '/missions/:id/participants',
+  validate({ query: participantsQuerySchema }),
+  asyncHandler(async (req, res) => {
+    res.json(await missionsService.adminParticipants(req.params.id, req.query));
+  }),
+);
+
 // ── Bölge (kapsam) modeli, elle bildirim ve ihbar-olay bağı ─────────────────
 
 /**
@@ -1494,8 +1547,19 @@ const notificationSendSchema = Joi.object({
  *       Çağrıldı, Yolda, Sahada; genel gönderimde Hazır, Eğitim Bekleyenler, Tüm
  *       Gönüllüler. Gönderim denetim izine yazılır.
  *     security: [ { panelBearer: [] } ]
+ *     parameters:
+ *       - in: header
+ *         name: Idempotency-Key
+ *         required: false
+ *         schema: { type: string, maxLength: 200 }
+ *         description: >-
+ *           Aynı anahtar ve aynı gövdeyle tekrar gelen istek yeniden işlenmez; 24 saat içinde ilk
+ *           başarılı yanıt `Idempotent-Replayed: true` başlığıyla döner. 4xx yanıt anahtarı serbest bırakır; 5xx'te anahtar işlem bittikten 60 sn sonra düşer.
  *     responses:
  *       200: { description: '{ok, notificationId, channel, recipients, pushCount, smsCount}' }
+ *       400: { description: idempotency_key_invalid }
+ *       409: { description: idempotency_in_flight }
+ *       422: { description: idempotency_key_reused }
  *   get:
  *     tags: [Admin]
  *     summary: Bildirim gönderim geçmişi (panel)
@@ -1506,6 +1570,7 @@ const notificationSendSchema = Joi.object({
 router.post(
   '/notifications',
   validate({ body: notificationSendSchema }),
+  idempotent(),
   asyncHandler(async (req, res) => {
     res.json(await dispatchService.send(req.body, actorFrom(req)));
   }),

@@ -25,13 +25,8 @@ describe('responseSeconds — çağrı ile İLK operatör kaydı arası', () => 
 });
 
 describe('OPERATOR_ACTIONS — hazır aksiyonlar merkezin kendi işlemleriyle sınırlı', () => {
-  it('yalnızca üç hazır aksiyon vardır', () => {
-    expect(Object.keys(OPERATOR_ACTIONS)).toEqual(['called_volunteer', 'called_112', 'responded']);
-  });
-
-  it('durumu yalnızca "müdahale edildi" değiştirir; arama adımları ayrı durum değildir', () => {
-    expect(OPERATOR_ACTIONS.called_volunteer.status).toBeNull();
-    expect(OPERATOR_ACTIONS.called_112.status).toBeNull();
+  it('tek hazır aksiyon "müdahale edildi"dir ve durumu responded yapar', () => {
+    expect(Object.keys(OPERATOR_ACTIONS)).toEqual(['responded']);
     expect(OPERATOR_ACTIONS.responded.status).toBe('responded');
   });
 

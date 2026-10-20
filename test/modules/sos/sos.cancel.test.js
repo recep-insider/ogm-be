@@ -81,23 +81,28 @@ describe('sos.adminAddHistory', () => {
     });
   });
 
-  it('arama aksiyonu durumu değiştirmez, yalnızca geçmişe satır düşer', async () => {
-    const result = await service.adminAddHistory('s1', { action: 'called_112' }, {});
+  it('serbest not durumu değiştirmez, yalnızca geçmişe satır düşer', async () => {
+    const result = await service.adminAddHistory('s1', { note: '112 arandı' }, {});
 
     expect(result.status).toBe('active');
     expect(mockState.updates).toHaveLength(0);
+    expect(mockState.history[0]).toMatchObject({ event: '112 arandı', by_kind: 'operator' });
   });
 
   it('gönüllünün iptal ettiği çağrıya operatör kaydı düşmez', async () => {
     mockState.row.status = 'cancelled';
-    await expect(service.adminAddHistory('s1', { action: 'called_112' }, {})).rejects.toMatchObject({
+    await expect(service.adminAddHistory('s1', { note: 'not' }, {})).rejects.toMatchObject({
       code: 'sos_cancelled',
     });
   });
 
-  it('tanımsız aksiyon reddedilir', async () => {
-    await expect(
-      service.adminAddHistory('s1', { action: 'volunteer_safe' }, {}),
-    ).rejects.toMatchObject({ status: 400 });
-  });
+  it.each([['volunteer_safe'], ['called_volunteer'], ['called_112']])(
+    'tanımsız aksiyon (%s) reddedilir',
+    async (action) => {
+      await expect(service.adminAddHistory('s1', { action }, {})).rejects.toMatchObject({
+        status: 400,
+      });
+      expect(mockState.history).toHaveLength(0);
+    },
+  );
 });
