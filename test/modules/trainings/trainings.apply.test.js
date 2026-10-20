@@ -73,8 +73,10 @@ jest.mock('../../../src/modules/equipment/equipment.service', () => ({ deliverKk
 
 const { applySaha, listOnline, listSaha } = require('../../../src/modules/trainings/trainings.service');
 
+const FUTURE_DAY = '2099-12-31';
+
 beforeEach(() => {
-  mockState.training = { id: 's1', is_active: 1, total_seats: 30, start_date: '2026-10-02' };
+  mockState.training = { id: 's1', is_active: 1, total_seats: 30, start_date: FUTURE_DAY };
   mockState.existing = null;
   mockState.enrolled = 0;
   mockState.rejected = 0;
