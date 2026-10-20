@@ -130,6 +130,22 @@ describe('hedef kitle', () => {
     expect(result.recipients).toBe(1);
   });
 
+  it('olay bazlı "hazir" segmenti yalnızca hazır gönüllüye push gönderir, hazırlık tek sorguda okunur', async () => {
+    const { getReadinessMany } = require('../../../src/modules/users/readiness.service');
+    mockState.users = [{ id: 'u1' }, { id: 'u9' }];
+    mockState.readiness.u9 = { kisiDurumu: 'basvuru', zincir: { komisyon: 'pending', eksikAdimlar: ['komisyon'] } };
+
+    await service.send(
+      { category: 'gorev', title: 'Çağrı', body: 'x', missionId: 'm1', segments: ['hazir'] },
+      {},
+    );
+
+    expect(sendPushToUser).toHaveBeenCalledTimes(1);
+    expect(sendPushToUser).toHaveBeenCalledWith('u1', expect.anything());
+    expect(getReadinessMany).toHaveBeenCalledTimes(1);
+    expect(getReadinessMany).toHaveBeenCalledWith(['u1', 'u9']);
+  });
+
   it('gönderim denetim izine yazılır', async () => {
     await service.send({ category: 'bilgi', title: 'Duyuru', body: 'x', audience: 'tumu' }, {});
     expect(mockState.inserts.notification_log).toHaveLength(1);
