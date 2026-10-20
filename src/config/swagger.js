@@ -42,6 +42,7 @@ const definition = {
     { name: 'Legal', description: 'KVKK & rıza metinleri' },
     { name: 'Blog', description: 'Haber & duyurular' },
     { name: 'Admin', description: 'Panel/saha amiri uçları (mobil çağırmaz)' },
+    { name: 'Admin - Auth', description: 'Panel girişi, oturum yenileme ve şifre (mobil çağırmaz)' },
   ],
   components: {
     securitySchemes: {
@@ -57,6 +58,12 @@ const definition = {
         bearerFormat: 'JWT',
         description: 'Telefon doğrulama sonrası kayıt formu için kısa süreli token',
       },
+      panelBearer: {
+        type: 'http',
+        scheme: 'bearer',
+        bearerFormat: 'JWT',
+        description: 'Panel access token\'ı (`POST /admin/auth/login`, 15 dk). Admin uçlarında x-api-key yerine geçer.',
+      },
       adminApiKey: {
         type: 'apiKey',
         in: 'header',
@@ -71,6 +78,23 @@ const definition = {
       },
     },
     schemas: {
+      PanelSession: {
+        type: 'object',
+        properties: {
+          accessToken: { type: 'string' },
+          expiresIn: { type: 'integer', description: 'Access token ömrü (saniye)' },
+          user: {
+            type: 'object',
+            properties: {
+              id: { type: 'string' },
+              name: { type: 'string' },
+              email: { type: 'string' },
+              role: { type: 'string', enum: ['admin', 'super_admin'] },
+              mustChangePassword: { type: 'boolean' },
+            },
+          },
+        },
+      },
       ErrorResponse: {
         type: 'object',
         required: ['error'],

@@ -26,13 +26,14 @@ const equipmentService = require('../equipment/equipment.service');
 const readinessService = require('../users/readiness.service');
 const { KKD_ITEM_KEYS } = require('../../shared/kkd');
 
-// İşlemi yapan admin'in audit bağlamı (x-api-key'de userId NULL kalır — bilinen kısıt).
+// İşlemi yapan admin'in audit bağlamı. Panel token'ında userId panel_users.id'dir;
+// x-api-key'de kimlik yoktur, userId NULL kalır.
 function actorFrom(req) {
   return {
     userId: req.user?.id || null,
-    // Panelde operatör adı x-operator-name ile taşınır (x-api-key'de kimlik yok);
-    // SOS geçmişi ve bildirim kaydı bu adı "by" olarak saklar.
-    name: req.headers['x-operator-name'] || null,
+    // SOS geçmişi ve bildirim kaydı bu adı "by" olarak saklar. x-api-key'de ad yalnız
+    // x-operator-name ile gelir; panel kullanıcısında doğrulanmış ad önceliklidir.
+    name: req.panelUser?.name || req.headers['x-operator-name'] || null,
     ip: req.ip,
     userAgent: req.headers['user-agent'],
   };

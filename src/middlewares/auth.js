@@ -4,6 +4,7 @@ const { errors } = require('../shared/errors');
 const { verifyAccessToken, verifyRegistrationToken } = require('../shared/jwt');
 const { redis } = require('../config/redis');
 const env = require('../config/env');
+const panelAuthService = require('../modules/admin/auth/panelAuth.service');
 
 function extractBearer(req) {
   const header = req.headers.authorization || '';
@@ -100,38 +101,50 @@ async function isRefreshBlacklisted(jti) {
   }
 }
 
+async function authenticatePanel(req, token) {
+  const user = await panelAuthService.findActiveUserByToken(token);
+  if (!user) throw errors.unauthorized('Geçersiz veya süresi dolmuş token');
+  req.panelUser = user;
+  req.user = { id: user.id, role: user.role };
+  req.actor = { type: 'panel_user', role: user.role, userId: user.id };
+}
+
 /**
- * API anahtarı ya da access token'daki `role` claim'i ile yetki kontrolü.
- * Saha amiri (officer) / admin uçları mobil uygulamadan değil ayrı panel/cihazdan çağrılır.
+ * Panel access token'ı zorunlu; şifre değiştirme zorunluluğu olan kullanıcıyı da kabul eder.
+ * Yalnız `/admin/auth/me` ve `/admin/auth/password` için.
  */
-function apiKeyOrRole(roleNames, getKeys) {
+function requirePanelUser(req, _res, next) {
+  const token = extractBearer(req);
+  if (!token) return next(errors.unauthorized('Token gerekli'));
+  return authenticatePanel(req, token).then(() => next(), next);
+}
+
+/**
+ * API anahtarı ya da panel access token'ı ile yetki kontrolü. Mobil access token'ı kabul edilmez.
+ * Panel kullanıcısının durumu her istekte veritabanından okunur (pasifleştirme anında etkili olur).
+ */
+function apiKeyOrPanelUser(apiKeyRole, getKeys) {
   return (req, _res, next) => {
     const provided = req.headers['x-api-key'];
     const validKeys = getKeys().filter(Boolean);
     if (provided && validKeys.includes(provided)) {
-      req.actor = { type: 'api_key', role: roleNames[0] };
+      req.actor = { type: 'api_key', role: apiKeyRole };
       return next();
     }
     const token = extractBearer(req);
-    if (token) {
-      try {
-        const payload = verifyAccessToken(token);
-        if (roleNames.includes(payload.role)) {
-          req.user = { id: payload.sub, ...payload };
-          req.actor = { type: 'token', role: payload.role };
-          return next();
-        }
-      } catch {
-        // düş — yetki yok
+    if (!token) return next(errors.forbidden('Bu işlem için yetkiniz yok'));
+    return authenticatePanel(req, token).then(() => {
+      if (req.panelUser.must_change_password) {
+        return next(errors.forbidden('Devam etmek için şifrenizi değiştirin.', 'password_change_required'));
       }
-    }
-    return next(errors.forbidden('Bu işlem için yetkiniz yok'));
+      return next();
+    }, next);
   };
 }
 
-const requireAdmin = apiKeyOrRole(['admin'], () => [env.admin.apiKey]);
-const requireOfficer = apiKeyOrRole(
-  ['officer', 'admin'],
+const requireAdmin = apiKeyOrPanelUser('admin', () => [env.admin.apiKey]);
+const requireOfficer = apiKeyOrPanelUser(
+  'officer',
   () => [env.admin.officerApiKey, env.admin.apiKey],
 );
 
@@ -142,5 +155,6 @@ module.exports = {
   requireAuthOrRegistration,
   requireAdmin,
   requireOfficer,
+  requirePanelUser,
   isRefreshBlacklisted,
 };
