@@ -1212,6 +1212,8 @@ const assemblyPointKeys = {
     lat: Joi.number().min(-90).max(90).required(),
     lng: Joi.number().min(-180).max(180).required(),
   }).required(),
+  officerName: Joi.string().max(120).allow('', null).optional(),
+  officerPhone: Joi.string().max(20).pattern(/^[+0-9 ()-]*$/).allow('', null).optional(),
 };
 
 const missionCreateSchema = Joi.object({
@@ -1240,6 +1242,21 @@ const missionCreateSchema = Joi.object({
 // §12: şiddet, tip, tahmini alan, ekip sayıları, hava durumu, ihtiyaç listesi ve
 // kapsama yarıçapı BİLİNÇLİ olarak yoktur — panel bu alanlara yazma ucu sunmuyor.
 
+const missionUpdateSchema = Joi.object({
+  title: Joi.string().max(200).optional(),
+  fullTitle: Joi.string().max(200).optional(),
+  shortLocation: Joi.string().max(120).optional(),
+  il: Joi.string().max(60).optional(),
+  ilce: Joi.string().max(60).optional(),
+  regionLabel: Joi.string().max(120).optional(),
+  locationLabel: Joi.string().max(200).optional(),
+  description: Joi.string().max(4000).allow('', null).optional(),
+  coordinates: Joi.object({
+    lat: Joi.number().min(-90).max(90).required(),
+    lng: Joi.number().min(-180).max(180).required(),
+  }).optional(),
+}).min(1);
+
 const assemblyPointUpsertSchema = Joi.object({
   ...assemblyPointKeys,
   isOpen: Joi.boolean().optional(),
@@ -1265,6 +1282,53 @@ router.post(
   validate({ body: missionCreateSchema }),
   asyncHandler(async (req, res) => {
     res.json(await missionsService.adminCreate(req.body, actorFrom(req)));
+  }),
+);
+
+/**
+ * @openapi
+ * /admin/missions/{id}:
+ *   patch:
+ *     tags: [Admin]
+ *     summary: Açık olayı düzenle (panel)
+ *     description: >-
+ *       Kısmi güncelleme: yalnızca gönderilen alanlar değişir. `description` boş veya
+ *       null gönderilirse temizlenir. Durum, ikon, başlangıç ve toplanma noktası bu uçtan
+ *       değişmez (toplanma noktası için PUT /admin/missions/{id}/assembly-point).
+ *       Arşivlenmiş olay düzenlenemez.
+ *     security: [ { adminApiKey: [] } ]
+ *     parameters:
+ *       - { in: path, name: id, required: true, schema: { type: string } }
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             minProperties: 1
+ *             properties:
+ *               title: { type: string, maxLength: 200 }
+ *               fullTitle: { type: string, maxLength: 200 }
+ *               shortLocation: { type: string, maxLength: 120 }
+ *               il: { type: string, maxLength: 60 }
+ *               ilce: { type: string, maxLength: 60 }
+ *               regionLabel: { type: string, maxLength: 120 }
+ *               locationLabel: { type: string, maxLength: 200 }
+ *               description: { type: string, maxLength: 4000, nullable: true }
+ *               coordinates:
+ *                 type: object
+ *                 required: [lat, lng]
+ *                 properties: { lat: { type: number }, lng: { type: number } }
+ *     responses:
+ *       200: { description: '{ok, missionId}' }
+ *       404: { description: mission_not_found }
+ *       409: { description: mission_archived }
+ */
+router.patch(
+  '/missions/:id',
+  validate({ body: missionUpdateSchema }),
+  asyncHandler(async (req, res) => {
+    res.json(await missionsService.adminUpdate(req.params.id, req.body, actorFrom(req)));
   }),
 );
 
