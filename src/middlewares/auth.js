@@ -106,7 +106,7 @@ async function authenticatePanel(req, token) {
   if (!user) throw errors.unauthorized('Geçersiz veya süresi dolmuş token');
   req.panelUser = user;
   req.user = { id: user.id, role: user.role };
-  req.actor = { type: 'panel_user', role: user.role, userId: user.id };
+  req.actor = { type: 'panel_user', role: user.role, userId: user.id, name: user.name };
 }
 
 /**

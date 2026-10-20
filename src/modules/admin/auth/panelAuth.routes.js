@@ -61,6 +61,7 @@ const passwordSchema = Joi.object({
   newPassword: Joi.string()
     .min(8)
     .max(72)
+    .custom((value, helpers) => (Buffer.byteLength(value, 'utf8') > 72 ? helpers.error('string.max', { limit: 72 }) : value))
     .invalid(Joi.ref('currentPassword'))
     .required()
     .messages({ 'any.invalid': 'Yeni şifre mevcut şifreden farklı olmalı.' }),
@@ -118,8 +119,9 @@ router.post(
  *     summary: Panel access token'ını yenile (refresh çerezi, rotasyonlu)
  *     description: >-
  *       Gövde yok; `ogm_panel_rt` çerezi okunur. Her başarılı yenilemede yeni refresh token verilir,
- *       eskisi iptal edilir ve süre 12 saat uzar. İptal edilmiş bir token tekrar sunulursa kullanıcının
- *       tüm oturumları kapatılır (refresh_reused). Hata durumunda çerez silinir.
+ *       eskisi iptal edilir ve süre 12 saat uzar. Yenilenmiş (devredilmiş) bir token tekrar sunulursa
+ *       kullanıcının tüm oturumları kapatılır (refresh_reused); çıkış ya da şifre değişimiyle kapanan token
+ *       yalnız refresh_invalid döner. Hata durumunda çerez silinir.
  *     responses:
  *       200:
  *         description: Yeni access token + yenilenmiş çerez

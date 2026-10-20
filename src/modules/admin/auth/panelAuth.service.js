@@ -121,9 +121,11 @@ function session(user, refreshToken) {
   };
 }
 
+// Sayaç bcrypt'ten önce artırılır: eşzamanlı denemeler de sınırı aşamaz. Başarılı giriş sayacı siler.
 async function assertLoginAllowed(key) {
-  const failures = Number(await redis.get(key)) || 0;
-  if (failures < LOGIN_MAX_FAILURES) return;
+  const attempts = await redis.incr(key);
+  if (attempts === 1) await redis.expire(key, LOGIN_WINDOW_SEC);
+  if (attempts <= LOGIN_MAX_FAILURES) return;
   let ttl = await redis.ttl(key);
   if (ttl < 0) {
     await redis.expire(key, LOGIN_WINDOW_SEC);
@@ -134,11 +136,6 @@ async function assertLoginAllowed(key) {
   });
 }
 
-async function recordLoginFailure(key) {
-  const count = await redis.incr(key);
-  if (count === 1) await redis.expire(key, LOGIN_WINDOW_SEC);
-}
-
 async function login({ email, password }, meta = {}) {
   const normalized = normalizeEmail(email);
   const rlKey = `${LOGIN_RL_PREFIX}${normalized}:${meta.ip || '-'}`;
@@ -146,10 +143,7 @@ async function login({ email, password }, meta = {}) {
 
   const user = await db('panel_users').where({ email: normalized }).first();
   const ok = await bcrypt.compare(String(password), user ? user.password_hash : await dummyHash());
-  if (!user || !ok) {
-    await recordLoginFailure(rlKey);
-    throw invalidCredentials();
-  }
+  if (!user || !ok) throw invalidCredentials();
   await redis.del(rlKey);
   if (!isActive(user)) throw statusError(user);
 
@@ -171,7 +165,11 @@ async function refresh(rawToken, meta = {}) {
     return errors.unauthorized('Oturum geçersiz kılındı, tekrar giriş yapın', 'refresh_reused');
   };
 
-  if (row.revoked_at) throw await reused();
+  // Yalnız rotasyonla devredilmiş token tekrar kullanımdır; çıkış/şifre değişimiyle kapanan token sadece geçersizdir.
+  if (row.revoked_at) {
+    if (row.replaced_by) throw await reused();
+    throw errors.unauthorized('Oturum bulunamadı', 'refresh_invalid');
+  }
   if (new Date(row.expires_at).getTime() <= Date.now()) {
     throw errors.unauthorized('Oturumun süresi doldu', 'refresh_expired');
   }

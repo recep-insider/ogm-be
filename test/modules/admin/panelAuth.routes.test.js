@@ -15,6 +15,7 @@ const { db } = require('../../../src/config/db');
 const { redis } = require('../../../src/config/redis');
 const { signAccessToken, signPanelAccessToken } = require('../../../src/shared/jwt');
 const adminService = require('../../../src/modules/admin/admin.service');
+const missionsService = require('../../../src/modules/missions/missions.service');
 const app = require('../../../src/app');
 
 const PASSWORD = 'dogru-sifre-123';
@@ -172,6 +173,22 @@ describe('POST /v1/admin/auth/login', () => {
     expect(blocked.body.error.details.retryAfterSec).toBeLessThanOrEqual(900);
   });
 
+  it('eşzamanlı hatalı denemeler de 5 ile sınırlanır', async () => {
+    const bcrypt = require('bcrypt');
+    const compare = bcrypt.compare;
+    const spy = jest.spyOn(bcrypt, 'compare').mockImplementation(async (...args) => {
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      return compare(...args);
+    });
+    const results = await Promise.all(
+      Array.from({ length: 8 }, () => login({ email: 'ayse@ogm.gov.tr', password: 'yanlis' })),
+    );
+
+    expect(results.filter((r) => r.status === 401)).toHaveLength(5);
+    expect(results.filter((r) => r.status === 429)).toHaveLength(3);
+    spy.mockRestore();
+  });
+
   it('kilit başka e-postayı etkilemez', async () => {
     seed([user(), user({ id: 'u-2', email: 'mehmet@ogm.gov.tr' })]);
     for (let i = 0; i < 5; i += 1) await login({ email: 'ayse@ogm.gov.tr', password: 'yanlis' });
@@ -255,7 +272,7 @@ describe('POST /v1/admin/auth/refresh', () => {
     expect(res.status).toBe(401);
     expect(res.body.error.code).toBe('refresh_reused');
     expect(db.rows('panel_refresh_tokens').every((r) => r.revoked_at instanceof Date)).toBe(true);
-    expect((await refresh(rotated)).body.error.code).toBe('refresh_reused');
+    expect((await refresh(rotated)).body.error.code).toBe('refresh_invalid');
     expect(db.rows('panel_user_audit').map((a) => a.action)).toContain('auth.refresh_reused');
   });
 
@@ -266,6 +283,30 @@ describe('POST /v1/admin/auth/refresh', () => {
 
     expect((await refresh(first)).body.error.code).toBe('refresh_reused');
     expect(db.rows('panel_refresh_tokens').every((r) => r.revoked_at instanceof Date)).toBe(true);
+  });
+
+  it('şifre değişimiyle kapanan token 401 refresh_invalid döner, korunan oturumu düşürmez', async () => {
+    const first = await loggedInCookie();
+    const kept = await login();
+    const changed = await request(app)
+      .put('/v1/admin/auth/password')
+      .set('Authorization', `Bearer ${kept.body.accessToken}`)
+      .set('Cookie', `ogm_panel_rt=${cookieValue(refreshCookie(kept))}`)
+      .send({ currentPassword: PASSWORD, newPassword: 'yeni-sifre-456' });
+    expect(changed.status).toBe(204);
+
+    const res = await refresh(first);
+    expect(res.status).toBe(401);
+    expect(res.body.error.code).toBe('refresh_invalid');
+    expect(db.rows('panel_user_audit').map((a) => a.action)).not.toContain('auth.refresh_reused');
+    expect((await refresh(cookieValue(refreshCookie(kept)))).status).toBe(200);
+  });
+
+  it('çıkışla kapanan token 401 refresh_invalid döner', async () => {
+    const token = await loggedInCookie();
+    await request(app).post('/v1/admin/auth/logout').set('Cookie', `ogm_panel_rt=${token}`);
+
+    expect((await refresh(token)).body.error.code).toBe('refresh_invalid');
   });
 
   it('kullanıcı artık aktif değilse 403 ve oturumları kapatılır', async () => {
@@ -379,6 +420,7 @@ describe('PUT /v1/admin/auth/password', () => {
   it.each([
     ['8 karakterden kısa', 'kisa'],
     ['mevcut şifreyle aynı', PASSWORD],
+    ['72 bayttan uzun (çok baytlı)', 'ş'.repeat(40)],
   ])('yeni şifre %s ise 400', async (_label, newPassword) => {
     const res = await change(await session(), { currentPassword: PASSWORD, newPassword });
 
@@ -467,5 +509,18 @@ describe('admin işlem bağlamı (actorFrom)', () => {
 
     expect(res.status).toBe(200);
     expect(spy).toHaveBeenCalledWith('v1', expect.objectContaining({ name: 'Ayşe Demir' }));
+  });
+
+  it('QR okutmada panel kullanıcısının adı kaydedilir', async () => {
+    const spy = jest.spyOn(missionsService, 'scan').mockResolvedValue({ ok: true });
+    const { accessToken } = (await login()).body;
+
+    const res = await request(app)
+      .post('/v1/missions/active/m1/scan')
+      .set('Authorization', `Bearer ${accessToken}`)
+      .send({ userId: 'v1' });
+
+    expect(res.status).toBeLessThan(300);
+    expect(spy).toHaveBeenCalledWith('m1', expect.anything(), expect.objectContaining({ name: 'Ayşe Demir' }));
   });
 });
