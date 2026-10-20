@@ -6,7 +6,17 @@
 
 const mockInserted = [];
 const mockHistory = [];
-const mockState = { user: null, redisCount: 0, participation: undefined, whereCalls: [], whereInCalls: [] };
+const mockState = {
+  user: null,
+  redisCount: 0,
+  participation: undefined,
+  whereCalls: [],
+  whereInCalls: [],
+  orderByCalls: [],
+  leftJoinCalls: [],
+  selectCalls: [],
+  adminRows: [],
+};
 
 jest.mock('../../../src/config/db', () => {
   const makeChain = (table) => {
@@ -16,11 +26,26 @@ jest.mock('../../../src/config/db', () => {
         return c;
       }),
       join: jest.fn(() => c),
+      leftJoin: jest.fn((...args) => {
+        mockState.leftJoinCalls.push(args);
+        return c;
+      }),
+      select: jest.fn((...args) => {
+        mockState.selectCalls.push(args);
+        return c;
+      }),
+      clone: jest.fn(() => c),
+      limit: jest.fn(() => c),
+      count: jest.fn(async () => [{ total: mockState.adminRows.length }]),
+      offset: jest.fn(async () => mockState.adminRows),
       whereIn: jest.fn((...args) => {
         mockState.whereInCalls.push([table, ...args]);
         return c;
       }),
-      orderBy: jest.fn(() => c),
+      orderBy: jest.fn((...args) => {
+        mockState.orderByCalls.push([table, ...args]);
+        return c;
+      }),
       first: jest.fn(async () => {
         if (table === 'users') return mockState.user;
         if (table === 'mission_participants as mp') return mockState.participation;
@@ -32,6 +57,7 @@ jest.mock('../../../src/config/db', () => {
         return [1];
       }),
     };
+    if (table === 'sos_history') c.then = (resolve) => resolve([]);
     return c;
   };
   const db = Object.assign(jest.fn((table) => makeChain(table)), { raw: jest.fn() });
@@ -74,6 +100,7 @@ describe('sos.service.create', () => {
     mockState.participation = undefined;
     mockState.whereCalls = [];
     mockState.whereInCalls = [];
+    mockState.orderByCalls = [];
     jest.clearAllMocks();
   });
 
@@ -162,6 +189,14 @@ describe('sos.service.create', () => {
     ]);
   });
 
+  test('birden çok katılım varsa en son güncellenen katılımın olayı seçilir', async () => {
+    mockState.participation = { mission_id: 'm1' };
+
+    await service.create({ userId: 'u1', body: {}, ip: '1.2.3.4', userAgent: 'jest' });
+
+    expect(mockState.orderByCalls).toContainEqual(['mission_participants as mp', 'mp.updated_at', 'desc']);
+  });
+
   test('aktif olayda yolda/sahada katılımı yoksa SOS yine kabul edilir, mission_id null', async () => {
     mockState.participation = undefined;
 
@@ -185,5 +220,24 @@ describe('sos.service.mapAdminSos — bağlı olay', () => {
     const item = service.mapAdminSos({ ...row, mission_id: null }, []);
 
     expect(item).toMatchObject({ missionId: null, missionTitle: null });
+  });
+});
+
+describe('sos.service.adminList — bağlı olay başlığı', () => {
+  beforeEach(() => {
+    mockState.leftJoinCalls = [];
+    mockState.selectCalls = [];
+    mockState.adminRows = [
+      { id: 's1', status: 'active', created_at: new Date('2026-10-20T10:00:00Z'), mission_id: 'm1', mission_title: 'Marmaris Yangını' },
+    ];
+    jest.clearAllMocks();
+  });
+
+  test('missions tablosunu join edip olay başlığını missionTitle olarak döner', async () => {
+    const result = await service.adminList({}, { userId: 'a1' });
+
+    expect(mockState.leftJoinCalls).toContainEqual(['missions as m', 'm.id', 'sr.mission_id']);
+    expect(mockState.selectCalls[0]).toContain('m.title as mission_title');
+    expect(result.items[0]).toMatchObject({ missionId: 'm1', missionTitle: 'Marmaris Yangını' });
   });
 });

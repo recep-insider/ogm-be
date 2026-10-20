@@ -58,6 +58,19 @@ describe('PATCH /admin/missions/:id', () => {
     expect(missionsService.adminUpdate).not.toHaveBeenCalled();
   });
 
+  it.each([
+    ['title', 200],
+    ['fullTitle', 200],
+    ['shortLocation', 120],
+    ['locationLabel', 200],
+  ])('%s alanında %i karakter sınırını aşanı reddeder', async (field, max) => {
+    const ok = await request(app).patch('/admin/missions/m1').send({ [field]: 'a'.repeat(max) });
+    const tooLong = await request(app).patch('/admin/missions/m1').send({ [field]: 'a'.repeat(max + 1) });
+
+    expect(ok.status).toBe(200);
+    expect(tooLong.status).toBe(400);
+  });
+
   it('eksik koordinatı reddeder', async () => {
     const res = await request(app).patch('/admin/missions/m1').send({ coordinates: { lat: 36.8 } });
 
@@ -85,6 +98,21 @@ describe('PUT /admin/missions/:id/assembly-point — görevli alanları', () => 
       officerName: 'Mehmet Kaya',
       officerPhone: '+90 (532) 111-22-33',
     });
+  });
+
+  it.each([
+    ['officerName', 120, 'a'],
+    ['officerPhone', 20, '1'],
+  ])('%s alanında %i karakter sınırını aşanı reddeder', async (field, max, ch) => {
+    const ok = await request(app)
+      .put('/admin/missions/m1/assembly-point')
+      .send({ ...point, [field]: ch.repeat(max) });
+    const tooLong = await request(app)
+      .put('/admin/missions/m1/assembly-point')
+      .send({ ...point, [field]: ch.repeat(max + 1) });
+
+    expect(ok.status).toBe(200);
+    expect(tooLong.status).toBe(400);
   });
 
   it('harf içeren telefonu reddeder', async () => {
