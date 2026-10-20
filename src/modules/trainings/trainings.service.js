@@ -469,6 +469,13 @@ function sahaToRow(body) {
 }
 
 async function adminCreateSaha(body, actor = {}) {
+  if (toDateOnly(body.startDate) < todayLocal()) {
+    throw errors.validation(
+      'Form alanlarında hata var',
+      { errors: [{ field: 'startDate', message: 'Eğitim tarihi bugünden önce olamaz' }] },
+      'start_date_past',
+    );
+  }
   const id = uuidv4();
   const now = new Date();
   await db('saha_trainings').insert({ id, ...sahaToRow(body), created_at: now, updated_at: now });
