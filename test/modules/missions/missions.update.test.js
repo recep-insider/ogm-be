@@ -3,13 +3,14 @@
 // PATCH /admin/missions/:id — kısmi güncelleme: gövdede olmayan alan değişmez, arşiv
 // düzenlenemez. adminCreate toplanma noktası görevlisini de yazar.
 
-const mockState = { mission: null, inserts: {}, updates: {} };
+const mockState = { mission: null, inserts: {}, updates: {}, updateAffects: 1 };
 
 jest.mock('../../../src/config/db', () => {
   const makeChain = (table) => {
     const c = {
       where: jest.fn(() => c),
       whereIn: jest.fn(() => c),
+      whereNot: jest.fn(() => c),
       first: jest.fn(async () => (table === 'missions' ? mockState.mission : undefined)),
       insert: jest.fn(async (row) => {
         mockState.inserts[table] = [...(mockState.inserts[table] || []), row];
@@ -17,7 +18,7 @@ jest.mock('../../../src/config/db', () => {
       }),
       update: jest.fn(async (row) => {
         mockState.updates[table] = [...(mockState.updates[table] || []), row];
-        return 1;
+        return mockState.updateAffects;
       }),
     };
     return c;
@@ -38,6 +39,7 @@ const reset = () => {
   mockState.mission = { id: 'm1', title: 'Marmaris Yangını', status: 'active', description: 'Eski' };
   mockState.inserts = {};
   mockState.updates = {};
+  mockState.updateAffects = 1;
   jest.clearAllMocks();
 };
 
@@ -91,6 +93,22 @@ describe('adminUpdate — kısmi güncelleme', () => {
     });
     expect(mockState.updates.missions).toBeUndefined();
   });
+
+  it('okuma ile güncelleme arasında arşivlenen olay da 409 mission_archived', async () => {
+    mockState.updateAffects = 0;
+
+    await expect(service.adminUpdate('m1', { title: 'Yeni' })).rejects.toMatchObject({ status: 409, code: 'mission_archived' });
+    expect(writeAudit).not.toHaveBeenCalled();
+  });
+
+  it.each([['fullTitle', 'full_title'], ['il', 'il'], ['ilce', 'ilce'], ['regionLabel', 'region_label'], ['locationLabel', 'location_label']])(
+    '%s boş gönderilirse temizlenir',
+    async (key, column) => {
+      await service.adminUpdate('m1', { [key]: '' });
+
+      expect(mockState.updates.missions[0][column]).toBeNull();
+    },
+  );
 
   it('olay yoksa 404 mission_not_found', async () => {
     mockState.mission = undefined;

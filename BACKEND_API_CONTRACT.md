@@ -975,7 +975,8 @@ WGS84 datum. Frontend `react-native-maps` ile uyumlu.
 ---
 
 ### 10.2 POST /sos
-- **Eklendi:** 2026-08-04. `/emergency`'den **ayrı kavram**: kullanıcı **kişisel olarak** acil yardım ister, görev bağlamı yoktur (`missionId` yok). Ana sayfadaki SOS butonu (3 sn basılı tutma) tetikler.
+- **Eklendi:** 2026-08-04. `/emergency`'den **ayrı kavram**: kullanıcı **kişisel olarak** acil yardım ister; istekte görev bağlamı yoktur (`missionId` gönderilmez). Ana sayfadaki SOS butonu (3 sn basılı tutma) tetikler.
+- **Görev bağı (2026-10-20):** Sunucu, gönüllü o anda aktif bir olayda `yolda` ya da `sahada` ise SOS'u o olaya bağlar (`sos_reports.mission_id`); yoksa bağ boş kalır ve çağrı yine kabul edilir. Bağ yalnızca panelin SOS listesinde (`missionId`, `missionTitle`) görünür, bu uç ve mobil yanıt değişmez.
 - **Auth:** Evet (Bearer zorunlu — kullanıcı kimliği token'dan çözülür, body'de user id yok; misafir bu ekranı görmez).
 - **Request Body:**
 ```json

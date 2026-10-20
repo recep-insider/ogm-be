@@ -510,6 +510,14 @@ fi
 
 # ─── docker compose up (build + start) ──────────────────────────────────────────────
 # Dockerfile artık npm ci yapmıyor; sadece COPY ediyor. Build hızlı (~30sn).
+# Güncellemede şema, yeni kod trafik almadan önce yeni imajla taşınır; aksi halde
+# healthy beklenirken yeni kod henüz olmayan kolonlara yazar (ör. POST /sos).
+if [ "$MODE" = "update" ]; then
+  log "Knex migration (yeni kod başlamadan önce)"
+  run_ssh "cd $DEPLOY_DIR && docker compose build backend && docker compose run --rm --no-deps -T backend npx knex migrate:latest"
+  ok "Migration tamam"
+fi
+
 log "docker compose up -d --build"
 run_ssh "cd $DEPLOY_DIR && docker compose up -d --build"
 ok "Container'lar başlatıldı"

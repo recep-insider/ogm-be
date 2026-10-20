@@ -1244,12 +1244,12 @@ const missionCreateSchema = Joi.object({
 
 const missionUpdateSchema = Joi.object({
   title: Joi.string().max(200).optional(),
-  fullTitle: Joi.string().max(200).optional(),
+  fullTitle: Joi.string().max(200).allow('', null).optional(),
   shortLocation: Joi.string().max(120).optional(),
-  il: Joi.string().max(60).optional(),
-  ilce: Joi.string().max(60).optional(),
-  regionLabel: Joi.string().max(120).optional(),
-  locationLabel: Joi.string().max(200).optional(),
+  il: Joi.string().max(60).allow('', null).optional(),
+  ilce: Joi.string().max(60).allow('', null).optional(),
+  regionLabel: Joi.string().max(120).allow('', null).optional(),
+  locationLabel: Joi.string().max(200).allow('', null).optional(),
   description: Joi.string().max(4000).allow('', null).optional(),
   coordinates: Joi.object({
     lat: Joi.number().min(-90).max(90).required(),
@@ -1292,8 +1292,8 @@ router.post(
  *     tags: [Admin]
  *     summary: Açık olayı düzenle (panel)
  *     description: >-
- *       Kısmi güncelleme: yalnızca gönderilen alanlar değişir. `description` boş veya
- *       null gönderilirse temizlenir. Durum, ikon, başlangıç ve toplanma noktası bu uçtan
+ *       Kısmi güncelleme: yalnızca gönderilen alanlar değişir. `title` ve `shortLocation`
+ *       dışındaki metin alanları boş veya null gönderilirse temizlenir. Durum, ikon, başlangıç ve toplanma noktası bu uçtan
  *       değişmez (toplanma noktası için PUT /admin/missions/{id}/assembly-point).
  *       Arşivlenmiş olay düzenlenemez.
  *     security: [ { adminApiKey: [] } ]
@@ -1308,12 +1308,12 @@ router.post(
  *             minProperties: 1
  *             properties:
  *               title: { type: string, maxLength: 200 }
- *               fullTitle: { type: string, maxLength: 200 }
+ *               fullTitle: { type: string, maxLength: 200, nullable: true }
  *               shortLocation: { type: string, maxLength: 120 }
- *               il: { type: string, maxLength: 60 }
- *               ilce: { type: string, maxLength: 60 }
- *               regionLabel: { type: string, maxLength: 120 }
- *               locationLabel: { type: string, maxLength: 200 }
+ *               il: { type: string, maxLength: 60, nullable: true }
+ *               ilce: { type: string, maxLength: 60, nullable: true }
+ *               regionLabel: { type: string, maxLength: 120, nullable: true }
+ *               locationLabel: { type: string, maxLength: 200, nullable: true }
  *               description: { type: string, maxLength: 4000, nullable: true }
  *               coordinates:
  *                 type: object
