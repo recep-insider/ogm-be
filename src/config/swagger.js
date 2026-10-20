@@ -43,6 +43,7 @@ const definition = {
     { name: 'Blog', description: 'Haber & duyurular' },
     { name: 'Admin', description: 'Panel/saha amiri uçları (mobil çağırmaz)' },
     { name: 'Admin - Auth', description: 'Panel girişi, oturum yenileme ve şifre (mobil çağırmaz)' },
+    { name: 'Admin - Panel Kullanıcıları', description: 'Hesap talepleri ve panel kullanıcı yönetimi (yalnız süper admin)' },
   ],
   components: {
     securitySchemes: {
@@ -62,13 +63,7 @@ const definition = {
         type: 'http',
         scheme: 'bearer',
         bearerFormat: 'JWT',
-        description: 'Panel access token\'ı (`POST /admin/auth/login`, 15 dk). Admin uçlarında x-api-key yerine geçer.',
-      },
-      adminApiKey: {
-        type: 'apiKey',
-        in: 'header',
-        name: 'x-api-key',
-        description: 'Panel admin anahtarı (ADMIN_API_KEY)',
+        description: 'Panel access token\'ı (`POST /admin/auth/login`, 15 dk). Tüm /admin uçları bunu ister.',
       },
       officerApiKey: {
         type: 'apiKey',
@@ -93,6 +88,27 @@ const definition = {
               mustChangePassword: { type: 'boolean' },
             },
           },
+        },
+      },
+      PanelUser: {
+        type: 'object',
+        properties: {
+          id: { type: 'string' },
+          name: { type: 'string' },
+          email: { type: 'string' },
+          role: { type: 'string', enum: ['admin', 'super_admin'] },
+          status: { type: 'string', enum: ['pending', 'active', 'rejected', 'disabled'] },
+          isSystem: { type: 'boolean' },
+          bolge: { type: 'string', nullable: true },
+          isletme: { type: 'string', nullable: true },
+          phone: { type: 'string', nullable: true },
+          requestNote: { type: 'string', nullable: true },
+          requestedAt: { type: 'string', format: 'date-time', nullable: true },
+          approvedBy: { type: 'string', nullable: true, description: 'Onaylayan panel kullanıcısının id\'si' },
+          approvedAt: { type: 'string', format: 'date-time', nullable: true },
+          rejectionReason: { type: 'string', nullable: true },
+          lastLoginAt: { type: 'string', format: 'date-time', nullable: true },
+          createdAt: { type: 'string', format: 'date-time', nullable: true },
         },
       },
       ErrorResponse: {

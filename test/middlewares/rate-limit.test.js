@@ -1,19 +1,15 @@
 'use strict';
 
-jest.mock('../../src/config/env', () => ({ admin: { apiKey: 'admin-key' }, jwt: { accessSecret: 'secret' } }));
+jest.mock('../../src/config/env', () => ({ admin: {}, jwt: { accessSecret: 'secret' } }));
 
 const jwt = require('jsonwebtoken');
 const express = require('express');
 const request = require('supertest');
 const { GENERAL_LIMIT, ADMIN_LIMIT } = require('../../src/middlewares/rate-limit');
 
-function buildApp(adminApiKey = 'admin-key') {
+function buildApp() {
   let generalLimiter;
   jest.isolateModules(() => {
-    jest.doMock('../../src/config/env', () => ({
-      admin: { apiKey: adminApiKey },
-      jwt: { accessSecret: 'secret' },
-    }));
     ({ generalLimiter } = require('../../src/middlewares/rate-limit'));
   });
   const app = express();
@@ -47,37 +43,10 @@ describe('generalLimiter', () => {
     expect(blocked.body.error.code).toBe('rate_limited');
   });
 
-  it('geçerli admin anahtarıyla gelen panel trafiği genel limite takılmaz', async () => {
+  it('x-api-key başlığı yüksek sayaca girmez', async () => {
     const app = buildApp();
-    expect((await hit(app, GENERAL_LIMIT + 50, { 'x-api-key': 'admin-key' })).status).toBe(200);
-  });
-
-  it('admin trafiği aynı IP\'deki anahtarsız kullanıcıların kotasını tüketmez', async () => {
-    const app = buildApp();
-    await hit(app, GENERAL_LIMIT + 50, { 'x-api-key': 'admin-key' });
-    expect((await hit(app, 1)).status).toBe(200);
-  });
-
-  it('yanlış anahtar genel limite tabidir', async () => {
-    const app = buildApp();
-    const res = await hit(app, GENERAL_LIMIT + 1, { 'x-api-key': 'wrong' });
+    const res = await hit(app, GENERAL_LIMIT + 1, { 'x-api-key': 'eski-admin-anahtari' });
     expect(res.status).toBe(429);
-  });
-
-  it('admin anahtarı tanımlı değilken boş ya da eksik anahtar genel limite tabidir', async () => {
-    const app = buildApp('');
-    expect((await hit(app, GENERAL_LIMIT + 1, { 'x-api-key': '' })).status).toBe(429);
-
-    const noHeader = buildApp('');
-    expect((await hit(noHeader, GENERAL_LIMIT + 1)).status).toBe(429);
-  });
-
-  it('admin trafiği dakikada ADMIN_LIMIT ile sınırlıdır', async () => {
-    const app = buildApp();
-    expect((await hit(app, ADMIN_LIMIT, { 'x-api-key': 'admin-key' })).status).toBe(200);
-    const blocked = await hit(app, 1, { 'x-api-key': 'admin-key' });
-    expect(blocked.status).toBe(429);
-    expect(blocked.body.error.code).toBe('rate_limited');
   });
 
   describe('panel token', () => {
@@ -93,6 +62,15 @@ describe('generalLimiter', () => {
       const auth = { Authorization: `Bearer ${panelToken()}` };
       expect((await hit(app, GENERAL_LIMIT + 50, auth)).status).toBe(200);
       expect((await hit(app, 1)).status).toBe(200);
+    });
+
+    it('panel trafiği dakikada ADMIN_LIMIT ile sınırlıdır', async () => {
+      const app = buildApp();
+      const auth = { Authorization: `Bearer ${panelToken()}` };
+      expect((await hit(app, ADMIN_LIMIT, auth)).status).toBe(200);
+      const blocked = await hit(app, 1, auth);
+      expect(blocked.status).toBe(429);
+      expect(blocked.body.error.code).toBe('rate_limited');
     });
 
     it('sayaç kullanıcı başınadır (panel:<sub>)', async () => {

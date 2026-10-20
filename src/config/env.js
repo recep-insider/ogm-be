@@ -114,8 +114,7 @@ const env = {
   },
 
   admin: {
-    apiKey: process.env.ADMIN_API_KEY || '',
-    // Saha amiri (officer) scan endpoint'i için ayrı anahtar; boşsa adminApiKey kullanılır.
+    // Saha amiri (officer) scan endpoint'i için anahtar; boşsa yalnız panel oturumu kabul edilir.
     officerApiKey: process.env.OFFICER_API_KEY || '',
     // Opsiyonel HMAC secret (B.1). YALNIZCA çıplak `userId` gövdesine uygulanır: mobilin
     // gösterdiği `OGM:VOL:{id}` QR'ı ve TC ile yedek giriş imza taşımaz, aynı id bu

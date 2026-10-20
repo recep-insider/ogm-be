@@ -9,20 +9,11 @@
 //
 // Geçici şifre yalnız stdout'a bir kez yazılır: uygulama logger'ına ve dosyaya yazılmaz.
 
-const crypto = require('crypto');
 const { parseArgs } = require('util');
 const { v4: uuidv4 } = require('uuid');
+const { generateTempPassword, ALPHABET } = require('../src/shared/temp-password');
 
-// Karışan karakterler (0/O, 1/l/I) çıkarıldı; şifre elle yazılacak.
-const ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789';
-const PASSWORD_LENGTH = 20;
 const DEFAULT_NAME = 'Sistem Yöneticisi';
-
-function generateTempPassword(length = PASSWORD_LENGTH) {
-  let out = '';
-  for (let i = 0; i < length; i += 1) out += ALPHABET[crypto.randomInt(ALPHABET.length)];
-  return out;
-}
 
 async function createSuperAdmin({ db, auth, email, name = DEFAULT_NAME, reset = false }) {
   const normalized = auth.normalizeEmail(email);
@@ -30,7 +21,8 @@ async function createSuperAdmin({ db, auth, email, name = DEFAULT_NAME, reset = 
 
   const existing = await db('panel_users').where({ email: normalized }).first();
   if (existing && !reset) return { status: 'exists', id: existing.id };
-  if (existing && existing.role !== 'super_admin') {
+  // Gömülü hesap panelden düşürülmüş ya da pasifleştirilmiş olabilir; kurtarma yine çalışmalı.
+  if (existing && existing.role !== 'super_admin' && !existing.is_system) {
     throw new Error(`Bu e-posta bir süper admine ait değil (rol: ${existing.role}); --reset yalnız süper adminde çalışır`);
   }
 
@@ -42,6 +34,7 @@ async function createSuperAdmin({ db, auth, email, name = DEFAULT_NAME, reset = 
     await db('panel_users').where({ id: existing.id }).update({
       password_hash: passwordHash,
       must_change_password: true,
+      role: 'super_admin',
       status: 'active',
       updated_at: now,
     });

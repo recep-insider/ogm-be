@@ -26,14 +26,12 @@ const equipmentService = require('../equipment/equipment.service');
 const readinessService = require('../users/readiness.service');
 const { KKD_ITEM_KEYS } = require('../../shared/kkd');
 
-// İşlemi yapan admin'in audit bağlamı. Panel token'ında userId panel_users.id'dir;
-// x-api-key'de kimlik yoktur, userId NULL kalır.
+// İşlemi yapan panel kullanıcısının audit bağlamı; userId panel_users.id'dir.
+// SOS geçmişi ve bildirim kaydı ad'ı "by" olarak saklar.
 function actorFrom(req) {
   return {
     userId: req.user?.id || null,
-    // SOS geçmişi ve bildirim kaydı bu adı "by" olarak saklar. x-api-key'de ad yalnız
-    // x-operator-name ile gelir; panel kullanıcısında doğrulanmış ad önceliklidir.
-    name: req.panelUser?.name || req.headers['x-operator-name'] || null,
+    name: req.panelUser?.name || null,
     ip: req.ip,
     userAgent: req.headers['user-agent'],
   };
@@ -55,9 +53,9 @@ const applicationStatusSchema = Joi.object({
  *     tags: [Admin]
  *     summary: Gönüllü başvuru durumunu güncelle (panel / onay)
  *     description: >-
- *       Mobil uygulamadan ÇAĞRILMAZ. x-api-key (admin) gerektirir.
+ *       Mobil uygulamadan ÇAĞRILMAZ. Panel oturumu (Bearer) gerektirir.
  *       Kullanıcının en güncel başvurusunun status'unu günceller; bildirim göndermez.
- *     security: [ { adminApiKey: [] } ]
+ *     security: [ { panelBearer: [] } ]
  *     parameters:
  *       - in: path
  *         name: userId
@@ -106,8 +104,8 @@ router.put(
  *   put:
  *     tags: [Admin]
  *     summary: Yangın bildirimi statü geçişi (panel)
- *     description: 'Mobil uygulamadan ÇAĞRILMAZ. x-api-key (admin) gerektirir.'
- *     security: [ { adminApiKey: [] } ]
+ *     description: 'Mobil uygulamadan ÇAĞRILMAZ. Panel oturumu (Bearer) gerektirir.'
+ *     security: [ { panelBearer: [] } ]
  *     parameters:
  *       - in: path
  *         name: id
@@ -142,7 +140,7 @@ const photoModerationSchema = Joi.object({
  *   put:
  *     tags: [Admin]
  *     summary: Görev fotoğrafı moderasyonu (panel)
- *     security: [ { adminApiKey: [] } ]
+ *     security: [ { panelBearer: [] } ]
  *     parameters:
  *       - in: path
  *         name: id
@@ -198,10 +196,10 @@ const volunteersQuerySchema = Joi.object({
  *     tags: [Admin]
  *     summary: Gönüllü listesi (panel)
  *     description: >-
- *       Mobil uygulamadan ÇAĞRILMAZ. x-api-key (admin) gerektirir.
+ *       Mobil uygulamadan ÇAĞRILMAZ. Panel oturumu (Bearer) gerektirir.
  *       Misafir/silinmiş kullanıcılar hariç; her kullanıcı en güncel başvurusuyla döner.
  *       PII gözetimi: tcKimlik bu listede dönmez (detay ucunda döner).
- *     security: [ { adminApiKey: [] } ]
+ *     security: [ { panelBearer: [] } ]
  *     parameters:
  *       - { in: query, name: status, schema: { type: string, enum: [pending, approved, rejected, requires_revision] } }
  *       - { in: query, name: q, schema: { type: string }, description: 'ad/soyad/telefon/eposta araması' }
@@ -249,8 +247,8 @@ router.get(
  *   get:
  *     tags: [Admin]
  *     summary: Gönüllü detayı (panel)
- *     description: 'PII (tcKimlik, adres, acil kişi, belgeler) yalnızca bu uçta döner. x-api-key (admin).'
- *     security: [ { adminApiKey: [] } ]
+ *     description: 'PII (tcKimlik, adres, acil kişi, belgeler) yalnızca bu uçta döner. Panel oturumu.'
+ *     security: [ { panelBearer: [] } ]
  *     parameters:
  *       - { in: path, name: userId, required: true, schema: { type: string } }
  *     responses:
@@ -280,8 +278,8 @@ const fireReportsQuerySchema = Joi.object({
  *   get:
  *     tags: [Admin]
  *     summary: Yangın ihbarı listesi (panel)
- *     description: 'Mobil uygulamadan ÇAĞRILMAZ. x-api-key (admin) gerektirir.'
- *     security: [ { adminApiKey: [] } ]
+ *     description: 'Mobil uygulamadan ÇAĞRILMAZ. Panel oturumu (Bearer) gerektirir.'
+ *     security: [ { panelBearer: [] } ]
  *     parameters:
  *       - { in: query, name: status, schema: { type: string, enum: [reviewing, confirmed, rejected] } }
  *       - { in: query, name: page, schema: { type: integer, default: 1 } }
@@ -304,8 +302,8 @@ router.get(
  *   get:
  *     tags: [Admin]
  *     summary: Yangın ihbarı detayı (panel)
- *     description: 'Liste alanları + ip. x-api-key (admin).'
- *     security: [ { adminApiKey: [] } ]
+ *     description: 'Liste alanları + ip. Panel oturumu.'
+ *     security: [ { panelBearer: [] } ]
  *     parameters:
  *       - { in: path, name: id, required: true, schema: { type: string } }
  *     responses:
@@ -333,8 +331,8 @@ const missionsQuerySchema = Joi.object({
  *   get:
  *     tags: [Admin]
  *     summary: Görev listesi (panel)
- *     description: 'Tüm görevler (is_active filtresi opsiyonel) + pendingPhotos sayacı. x-api-key (admin).'
- *     security: [ { adminApiKey: [] } ]
+ *     description: 'Tüm görevler (is_active filtresi opsiyonel) + pendingPhotos sayacı. Panel oturumu.'
+ *     security: [ { panelBearer: [] } ]
  *     parameters:
  *       - { in: query, name: status, schema: { type: string, enum: [active, archived] } }
  *       - { in: query, name: isActive, schema: { type: boolean } }
@@ -361,8 +359,8 @@ const photosQuerySchema = Joi.object({
  *   get:
  *     tags: [Admin]
  *     summary: Görev fotoğraf/moderasyon kuyruğu (panel)
- *     description: 'status=pending ile bekleyen kuyruk. PUT /admin/missions/{id}/photos/{submissionId} ile moderasyon. x-api-key (admin).'
- *     security: [ { adminApiKey: [] } ]
+ *     description: 'status=pending ile bekleyen kuyruk. PUT /admin/missions/{id}/photos/{submissionId} ile moderasyon. Panel oturumu.'
+ *     security: [ { panelBearer: [] } ]
  *     parameters:
  *       - { in: path, name: id, required: true, schema: { type: string } }
  *       - { in: query, name: status, schema: { type: string, enum: [pending, approved, rejected] } }
@@ -390,8 +388,8 @@ const trainingsQuerySchema = Joi.object({
  *     summary: Online eğitim listesi (panel, aggregate)
  *     description: >-
  *       Mobil /trainings/online'dan farklı olarak kullanıcıdan bağımsızdır;
- *       enrolled/completed sayaçları döner. x-api-key (admin) gerektirir.
- *     security: [ { adminApiKey: [] } ]
+ *       enrolled/completed sayaçları döner. Panel oturumu (Bearer) gerektirir.
+ *     security: [ { panelBearer: [] } ]
  *     parameters:
  *       - { in: query, name: isActive, schema: { type: boolean } }
  *     responses:
@@ -413,8 +411,8 @@ router.get(
  *     summary: Saha eğitim listesi (panel, aggregate)
  *     description: >-
  *       Başvuru sayaçları (pending/approved/rejected) ve koltuk durumuyla döner.
- *       x-api-key (admin) gerektirir.
- *     security: [ { adminApiKey: [] } ]
+ *       Panel oturumu (Bearer) gerektirir.
+ *     security: [ { panelBearer: [] } ]
  *     parameters:
  *       - { in: query, name: isActive, schema: { type: boolean } }
  *     responses:
@@ -439,8 +437,8 @@ const emergencyQuerySchema = Joi.object({
  *   get:
  *     tags: [Admin]
  *     summary: Acil durum (SOS) listesi (panel)
- *     description: 'Mobil uygulamadan ÇAĞRILMAZ. x-api-key (admin) gerektirir.'
- *     security: [ { adminApiKey: [] } ]
+ *     description: 'Mobil uygulamadan ÇAĞRILMAZ. Panel oturumu (Bearer) gerektirir.'
+ *     security: [ { panelBearer: [] } ]
  *     parameters:
  *       - { in: query, name: missionId, schema: { type: string } }
  *       - { in: query, name: page, schema: { type: integer, default: 1 } }
@@ -474,12 +472,12 @@ const sosHistorySchema = Joi.object({
  *     tags: [Admin]
  *     summary: SOS çağrı listesi (panel)
  *     description: >-
- *       Mobil uygulamadan ÇAĞRILMAZ. x-api-key (admin) gerektirir.
+ *       Mobil uygulamadan ÇAĞRILMAZ. Panel oturumu (Bearer) gerektirir.
  *       Durum üç değerlidir (active → responded | cancelled) ve her çağrı geçmişiyle
  *       birlikte döner. Kan grubu ve acil durum kişisi TÜRETİLİR (gönüllü kaydından);
  *       kullanıcı silinmişse çağrı anındaki snapshot'a düşülür. Yanıt süresi çağrı saati
  *       ile geçmişteki ilk OPERATÖR kaydı arasındaki farktır, ölçülemiyorsa null döner.
- *     security: [ { adminApiKey: [] } ]
+ *     security: [ { panelBearer: [] } ]
  *     parameters:
  *       - { in: query, name: page, schema: { type: integer, default: 1 } }
  *       - { in: query, name: pageSize, schema: { type: integer, default: 20, maximum: 100 } }
@@ -506,7 +504,7 @@ router.get(
  *       112 arandı, müdahale edildi. Sahadan gelen bilgi serbest nota yazılır ve
  *       operatörün adına düşer. Operatör çağrıyı İPTAL EDEMEZ — `cancelled` yalnızca
  *       gönüllünün mobilden verdiği sinyaldir.
- *     security: [ { adminApiKey: [] } ]
+ *     security: [ { panelBearer: [] } ]
  *     parameters:
  *       - { in: path, name: id, required: true, schema: { type: string } }
  *     requestBody:
@@ -540,8 +538,8 @@ router.post(
  *   get:
  *     tags: [Admin]
  *     summary: Operasyon Merkezi / sidebar sayaçları (panel)
- *     description: 'Tek istekte tüm özet sayaçlar. x-api-key (admin).'
- *     security: [ { adminApiKey: [] } ]
+ *     description: 'Tek istekte tüm özet sayaçlar. Panel oturumu.'
+ *     security: [ { panelBearer: [] } ]
  *     responses:
  *       200:
  *         description: >-
@@ -572,7 +570,7 @@ const reportsRangeKeys = {
  *       "fires" = onaylanmış ihbar sayısı (FIRES domaini netleşene dek vekil metrik);
  *       volunteersTotal = pencere sonu itibarıyla kümülatif; activeVolunteers = pencere içinde
  *       göreve katılan tekil gönüllü; reportAccuracy = confirmed/(confirmed+rejected)%.
- *     security: [ { adminApiKey: [] } ]
+ *     security: [ { panelBearer: [] } ]
  *     parameters:
  *       - { in: query, name: from, required: true, schema: { type: string, format: date } }
  *       - { in: query, name: to, required: true, schema: { type: string, format: date } }
@@ -593,7 +591,7 @@ router.get(
  *   get:
  *     tags: [Admin]
  *     summary: Raporlar zaman serisi (panel grafiği)
- *     security: [ { adminApiKey: [] } ]
+ *     security: [ { panelBearer: [] } ]
  *     parameters:
  *       - { in: query, name: metric, required: true, schema: { type: string, enum: [fireReports, confirmedFireReports, emergency, newUsers] } }
  *       - { in: query, name: interval, required: true, schema: { type: string, enum: [day, week, month] } }
@@ -649,8 +647,8 @@ const blogUpdateSchema = Joi.object(blogBaseKeys).min(1);
  *   get:
  *     tags: [Admin]
  *     summary: Blog yazıları — admin listesi (taslaklar dahil)
- *     description: 'Public /blog/posts''tan farkı: is_active=false kayıtlar da döner; isActive/coverPath/ham content source alanları içerir. x-api-key (admin).'
- *     security: [ { adminApiKey: [] } ]
+ *     description: 'Public /blog/posts''tan farkı: is_active=false kayıtlar da döner; isActive/coverPath/ham content source alanları içerir. Panel oturumu.'
+ *     security: [ { panelBearer: [] } ]
  *     parameters:
  *       - { in: query, name: isActive, schema: { type: boolean } }
  *     responses:
@@ -658,7 +656,7 @@ const blogUpdateSchema = Joi.object(blogBaseKeys).min(1);
  *   post:
  *     tags: [Admin]
  *     summary: Blog yazısı oluştur
- *     security: [ { adminApiKey: [] } ]
+ *     security: [ { panelBearer: [] } ]
  *     requestBody:
  *       required: true
  *       content:
@@ -702,7 +700,7 @@ router.post(
  *   put:
  *     tags: [Admin]
  *     summary: Blog yazısı güncelle (kısmi — isActive:false = yayından kaldır)
- *     security: [ { adminApiKey: [] } ]
+ *     security: [ { panelBearer: [] } ]
  *     parameters:
  *       - { in: path, name: id, required: true, schema: { type: string } }
  *     responses:
@@ -711,7 +709,7 @@ router.post(
  *   delete:
  *     tags: [Admin]
  *     summary: Blog yazısını KALICI sil
- *     security: [ { adminApiKey: [] } ]
+ *     security: [ { panelBearer: [] } ]
  *     parameters:
  *       - { in: path, name: id, required: true, schema: { type: string } }
  *     responses:
@@ -741,7 +739,7 @@ router.delete(
  *     tags: [Admin]
  *     summary: İçerik medyası yükle (blog görseli/kapak, eğitim videosu)
  *     description: 'multipart/form-data, alan adı `file`. jpeg/png/webp/mp4. Dönen `path` blog/eğitim body''lerinde kullanılır.'
- *     security: [ { adminApiKey: [] } ]
+ *     security: [ { panelBearer: [] } ]
  *     requestBody:
  *       content:
  *         multipart/form-data:
@@ -832,7 +830,7 @@ const sahaUpdateSchema = Joi.object(sahaBaseKeys).min(1);
  *   post:
  *     tags: [Admin]
  *     summary: Online eğitim oluştur (panel)
- *     security: [ { adminApiKey: [] } ]
+ *     security: [ { panelBearer: [] } ]
  *     requestBody:
  *       required: true
  *       content:
@@ -859,7 +857,7 @@ const sahaUpdateSchema = Joi.object(sahaBaseKeys).min(1);
  *   put:
  *     tags: [Admin]
  *     summary: Online eğitim güncelle (kısmi)
- *     security: [ { adminApiKey: [] } ]
+ *     security: [ { panelBearer: [] } ]
  *     parameters: [ { in: path, name: id, required: true, schema: { type: string } } ]
  *     responses:
  *       200: { description: Güncellenen eğitim }
@@ -867,7 +865,7 @@ const sahaUpdateSchema = Joi.object(sahaBaseKeys).min(1);
  *   delete:
  *     tags: [Admin]
  *     summary: Online eğitimi KALICI sil (progress kayıtları CASCADE silinir)
- *     security: [ { adminApiKey: [] } ]
+ *     security: [ { panelBearer: [] } ]
  *     parameters: [ { in: path, name: id, required: true, schema: { type: string } } ]
  *     responses:
  *       204: { description: Silindi }
@@ -901,7 +899,7 @@ router.delete(
  *   post:
  *     tags: [Admin]
  *     summary: Saha eğitimi oluştur (panel)
- *     security: [ { adminApiKey: [] } ]
+ *     security: [ { panelBearer: [] } ]
  *     requestBody:
  *       required: true
  *       content:
@@ -926,7 +924,7 @@ router.delete(
  *   put:
  *     tags: [Admin]
  *     summary: Saha eğitimi güncelle (kısmi)
- *     security: [ { adminApiKey: [] } ]
+ *     security: [ { panelBearer: [] } ]
  *     parameters: [ { in: path, name: id, required: true, schema: { type: string } } ]
  *     responses:
  *       200: { description: Güncellenen eğitim }
@@ -934,7 +932,7 @@ router.delete(
  *   delete:
  *     tags: [Admin]
  *     summary: Saha eğitimini KALICI sil (başvurular CASCADE silinir)
- *     security: [ { adminApiKey: [] } ]
+ *     security: [ { panelBearer: [] } ]
  *     parameters: [ { in: path, name: id, required: true, schema: { type: string } } ]
  *     responses:
  *       204: { description: Silindi }
@@ -968,7 +966,7 @@ router.delete(
  *   get:
  *     tags: [Admin]
  *     summary: Saha eğitimi başvuru listesi (panel)
- *     security: [ { adminApiKey: [] } ]
+ *     security: [ { panelBearer: [] } ]
  *     parameters:
  *       - { in: path, name: id, required: true, schema: { type: string } }
  *       - { in: query, name: status, schema: { type: string, enum: [pending, approved, rejected] } }
@@ -990,8 +988,8 @@ router.get(
  *   put:
  *     tags: [Admin]
  *     summary: Saha eğitimi başvurusu onay/red (panel)
- *     description: 'Bildirim göndermez. x-api-key (admin).'
- *     security: [ { adminApiKey: [] } ]
+ *     description: 'Bildirim göndermez. Panel oturumu.'
+ *     security: [ { panelBearer: [] } ]
  *     parameters:
  *       - { in: path, name: applicationId, required: true, schema: { type: string } }
  *     requestBody:
@@ -1034,7 +1032,7 @@ const commissionSchema = Joi.object({
  *       Bölge Müdürlüğü Komisyonunun kararını AYRI bir kayıt olarak yazar (red kararı da
  *       saklanır) ve kararla birlikte gönüllüye sabit şablonlu bilgilendirme SMS'i gönderir.
  *       Karar ve SMS tek işlemdir; ret gerekçesi SMS metnine girmez.
- *     security: [ { adminApiKey: [] } ]
+ *     security: [ { panelBearer: [] } ]
  *     parameters:
  *       - { in: path, name: userId, required: true, schema: { type: string } }
  *     requestBody:
@@ -1078,7 +1076,7 @@ const kkdDeliverSchema = Joi.object({
  *       Tek işlemle standart beş kalemi (kask, tulum, bot, eldiven, maske) açar. Zaten
  *       geçerli zimmeti olan kalem tekrar açılmaz. Ömür sonu tarihi kalem tipinden
  *       hesaplanır; beden gönüllü profilinden türer, zimmete yazılmaz. Gönüllü onayı gerekmez.
- *     security: [ { adminApiKey: [] } ]
+ *     security: [ { panelBearer: [] } ]
  *     parameters:
  *       - { in: path, name: userId, required: true, schema: { type: string } }
  *     responses:
@@ -1087,7 +1085,7 @@ const kkdDeliverSchema = Joi.object({
  *   get:
  *     tags: [Admin]
  *     summary: Gönüllünün KKD seti (panel)
- *     security: [ { adminApiKey: [] } ]
+ *     security: [ { panelBearer: [] } ]
  *     parameters:
  *       - { in: path, name: userId, required: true, schema: { type: string } }
  *     responses:
@@ -1114,7 +1112,7 @@ router.get(
  *   get:
  *     tags: [Admin]
  *     summary: Hazırlık zinciri ve kişi durumu (panel, türetilmiş)
- *     security: [ { adminApiKey: [] } ]
+ *     security: [ { panelBearer: [] } ]
  *     parameters:
  *       - { in: path, name: userId, required: true, schema: { type: string } }
  *     responses:
@@ -1134,7 +1132,7 @@ router.get(
  *     tags: [Admin]
  *     summary: Zimmet iadesi (API hazır — panelde ekranı yok)
  *     description: 'İade akışı panelden geçici olarak kaldırıldı; uç sözleşme gereği hazır tutulur.'
- *     security: [ { adminApiKey: [] } ]
+ *     security: [ { panelBearer: [] } ]
  *     parameters:
  *       - { in: path, name: equipmentId, required: true, schema: { type: string } }
  *     responses:
@@ -1172,7 +1170,7 @@ const attendanceSchema = Joi.object({
  *       Uygulamalı eğitimin tamamlandığını işaretleyen TEK mekanizma. Yetkinlik bayraklı
  *       eğitimde "katıldı" işaretlenen gönüllünün uygulamalı adımı kapanır. Aynı satırda
  *       kkdDelivered işaretlenirse eksik KKD kalemleri o anda aynı zimmet kaydına yazılır.
- *     security: [ { adminApiKey: [] } ]
+ *     security: [ { panelBearer: [] } ]
  *     parameters:
  *       - { in: path, name: id, required: true, schema: { type: string } }
  *     requestBody:
@@ -1274,7 +1272,7 @@ const assemblyPointUpsertSchema = Joi.object({
  *       işlemde açılır. `callVolunteers` yalnızca çağrının hemen gidip gitmeyeceğini
  *       belirler — çağrı YALNIZCA `Hazır` gönüllülere gider, yarıçap admin'de girilmez.
  *       Bölge filtresi yalnızca görünümü süzer: başka bölgede olay açılabilir.
- *     security: [ { adminApiKey: [] } ]
+ *     security: [ { panelBearer: [] } ]
  *     responses:
  *       200: { description: '{ok, missionId, status: active, called}' }
  */
@@ -1297,7 +1295,7 @@ router.post(
  *       dışındaki metin alanları boş veya null gönderilirse temizlenir. Durum, ikon, başlangıç ve toplanma noktası bu uçtan
  *       değişmez (toplanma noktası için PUT /admin/missions/{id}/assembly-point).
  *       Arşivlenmiş olay düzenlenemez.
- *     security: [ { adminApiKey: [] } ]
+ *     security: [ { panelBearer: [] } ]
  *     parameters:
  *       - { in: path, name: id, required: true, schema: { type: string } }
  *     requestBody:
@@ -1345,7 +1343,7 @@ router.patch(
  *       Yeni gönüllü çağrısı durur, toplanma noktası kapanır, `yolda`/`sahada`
  *       gönüllüler `tamamladi` olur ve sahadaki sayı sıfırlanır (check-in kayıtları
  *       korunur). Yanıtsız `cagrildi` satırları değişmez, görev geçmişine girmez.
- *     security: [ { adminApiKey: [] } ]
+ *     security: [ { panelBearer: [] } ]
  *     parameters:
  *       - { in: path, name: id, required: true, schema: { type: string } }
  *     responses:
@@ -1368,7 +1366,7 @@ router.post(
  *     description: >-
  *       Yalnızca `Hazır` gönüllülere push gider — katılamayacak kişiye çağrı
  *       gönderilmez. Gönüllüler bölgeye göre süzülmez.
- *     security: [ { adminApiKey: [] } ]
+ *     security: [ { panelBearer: [] } ]
  *     parameters:
  *       - { in: path, name: id, required: true, schema: { type: string } }
  *     responses:
@@ -1387,7 +1385,7 @@ router.post(
  *   get:
  *     tags: [Admin]
  *     summary: Olayın toplanma noktası (panel)
- *     security: [ { adminApiKey: [] } ]
+ *     security: [ { panelBearer: [] } ]
  *     parameters:
  *       - { in: path, name: id, required: true, schema: { type: string } }
  *     responses:
@@ -1399,7 +1397,7 @@ router.post(
  *       Olay başına TEK nokta vardır. Konum DEĞİŞİRSE operatör elle bildirim yazmaz;
  *       sunucu üç kitleye gönderir: yola çıkmamışa sessiz, yoldakine zorunlu push+SMS,
  *       sahadakine push. Kontenjan alanı yoktur.
- *     security: [ { adminApiKey: [] } ]
+ *     security: [ { panelBearer: [] } ]
  *     parameters:
  *       - { in: path, name: id, required: true, schema: { type: string } }
  *     responses:
@@ -1430,7 +1428,7 @@ router.put(
  *     description: >-
  *       Sahadaki gönüllü sayısının tek kaynağı; panel, mobil ve toplanma noktası ekranı
  *       aynı sayıyı gösterir. Olay arşivlendiğinde sayı sıfırlanır, kayıtlar korunur.
- *     security: [ { adminApiKey: [] } ]
+ *     security: [ { panelBearer: [] } ]
  *     parameters:
  *       - { in: path, name: id, required: true, schema: { type: string } }
  *     responses:
@@ -1455,7 +1453,7 @@ router.get(
  *       Faz 1 kırılımı: yedi coğrafi bölge, varsayılan Akdeniz. 81 il tam olarak bir
  *       bölgeye aittir; eşleşme il alanından yapılır. Kapsam yalnızca OLAY ve İHBAR
  *       kayıtlarını süzer — gönüllüler bölge kapsamına girmez.
- *     security: [ { adminApiKey: [] } ]
+ *     security: [ { panelBearer: [] } ]
  *     responses:
  *       200: { description: '{items:[{key,label,default,cities[]}]}' }
  */
@@ -1495,13 +1493,13 @@ const notificationSendSchema = Joi.object({
  *       eder. Yarıçap admin'de girilmez. Olay bazlı gönderimde segment seçimi Hazır,
  *       Çağrıldı, Yolda, Sahada; genel gönderimde Hazır, Eğitim Bekleyenler, Tüm
  *       Gönüllüler. Gönderim denetim izine yazılır.
- *     security: [ { adminApiKey: [] } ]
+ *     security: [ { panelBearer: [] } ]
  *     responses:
  *       200: { description: '{ok, notificationId, channel, recipients, pushCount, smsCount}' }
  *   get:
  *     tags: [Admin]
  *     summary: Bildirim gönderim geçmişi (panel)
- *     security: [ { adminApiKey: [] } ]
+ *     security: [ { panelBearer: [] } ]
  *     responses:
  *       200: { description: 'items[] + total/page/pageSize' }
  */
@@ -1534,7 +1532,7 @@ const linkReportsSchema = Joi.object({
  *     description: >-
  *       Birden fazla ihbar TEK olay kaydına bağlanabilir. Bağın tek sahibi ihbar
  *       kaydıdır; bağlanan ihbar "Doğrulandı" olur ve medyası olayın galerisini besler.
- *     security: [ { adminApiKey: [] } ]
+ *     security: [ { panelBearer: [] } ]
  *     parameters:
  *       - { in: path, name: id, required: true, schema: { type: string } }
  *     responses:
@@ -1558,7 +1556,7 @@ router.post(
  *     tags: [Admin]
  *     summary: İhbarın olay bağını kaldır
  *     description: 'Bağ kaldırılan ihbar yeniden "İnceleniyor" durumuna döner.'
- *     security: [ { adminApiKey: [] } ]
+ *     security: [ { panelBearer: [] } ]
  *     parameters:
  *       - { in: path, name: id, required: true, schema: { type: string } }
  *       - { in: path, name: reportId, required: true, schema: { type: string } }

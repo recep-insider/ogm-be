@@ -119,34 +119,44 @@ function requirePanelUser(req, _res, next) {
   return authenticatePanel(req, token).then(() => next(), next);
 }
 
-/**
- * API anahtarı ya da panel access token'ı ile yetki kontrolü. Mobil access token'ı kabul edilmez.
- * Panel kullanıcısının durumu her istekte veritabanından okunur (pasifleştirme anında etkili olur).
- */
-function apiKeyOrPanelUser(apiKeyRole, getKeys) {
-  return (req, _res, next) => {
-    const provided = req.headers['x-api-key'];
-    const validKeys = getKeys().filter(Boolean);
-    if (provided && validKeys.includes(provided)) {
-      req.actor = { type: 'api_key', role: apiKeyRole };
-      return next();
+function authenticatePanelAdmin(req, next) {
+  const token = extractBearer(req);
+  if (!token) return next(errors.forbidden('Bu işlem için yetkiniz yok'));
+  return authenticatePanel(req, token).then(() => {
+    if (req.panelUser.must_change_password) {
+      return next(errors.forbidden('Devam etmek için şifrenizi değiştirin.', 'password_change_required'));
     }
-    const token = extractBearer(req);
-    if (!token) return next(errors.forbidden('Bu işlem için yetkiniz yok'));
-    return authenticatePanel(req, token).then(() => {
-      if (req.panelUser.must_change_password) {
-        return next(errors.forbidden('Devam etmek için şifrenizi değiştirin.', 'password_change_required'));
-      }
-      return next();
-    }, next);
-  };
+    return next();
+  }, next);
 }
 
-const requireAdmin = apiKeyOrPanelUser('admin', () => [env.admin.apiKey]);
-const requireOfficer = apiKeyOrPanelUser(
-  'officer',
-  () => [env.admin.officerApiKey, env.admin.apiKey],
-);
+/**
+ * Panel access token'ı ile yetki kontrolü. Mobil access token'ı kabul edilmez.
+ * Panel kullanıcısının durumu ve rolü her istekte veritabanından okunur (pasifleştirme anında etkili olur).
+ */
+function requireAdmin(req, _res, next) {
+  return authenticatePanelAdmin(req, next);
+}
+
+function requireSuperAdmin(req, res, next) {
+  return requireAdmin(req, res, (err) => {
+    if (err) return next(err);
+    if (req.panelUser.role !== 'super_admin') {
+      return next(errors.forbidden('Bu işlem için süper admin yetkisi gerekir.', 'super_admin_required'));
+    }
+    return next();
+  });
+}
+
+/** Saha amiri cihazı OFFICER_API_KEY ile, panel kullanıcısı access token'ıyla gelir. */
+function requireOfficer(req, _res, next) {
+  const key = env.admin.officerApiKey;
+  if (key && req.headers['x-api-key'] === key) {
+    req.actor = { type: 'api_key', role: 'officer' };
+    return next();
+  }
+  return authenticatePanelAdmin(req, next);
+}
 
 module.exports = {
   requireAuth,
@@ -154,6 +164,7 @@ module.exports = {
   requireRegistrationToken,
   requireAuthOrRegistration,
   requireAdmin,
+  requireSuperAdmin,
   requireOfficer,
   requirePanelUser,
   isRefreshBlacklisted,

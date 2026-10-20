@@ -6,6 +6,8 @@
 jest.mock('bcrypt', () => require('./panel-fakes').fakeBcrypt);
 jest.mock('../../../src/config/db', () => ({ db: require('./panel-fakes').createFakeDb() }));
 jest.mock('../../../src/config/redis', () => ({ redis: require('./panel-fakes').createFakeRedis() }));
+// Genel IP limiti kendi testinde (test/middlewares/rate-limit.test.js); burada istek sayısı onu aşıyor.
+jest.mock('../../../src/middlewares/rate-limit', () => ({ generalLimiter: (_req, _res, next) => next() }));
 
 const crypto = require('crypto');
 const jwt = require('jsonwebtoken');
@@ -25,7 +27,8 @@ function user(overrides = {}) {
     id: 'u-active',
     name: 'Ayşe Demir',
     email: 'ayse@ogm.gov.tr',
-    unit_id: 'unit-1',
+    bolge_mudurlugu: 'Antalya OBM',
+    isletme_mudurlugu: 'Manavgat OİM',
     phone: '+905551112233',
     password_hash: `hash:${PASSWORD}`,
     role: 'admin',
@@ -61,20 +64,20 @@ function adminPing(headers = {}) {
   return request(app).get('/v1/admin/regions').set(headers);
 }
 
-let originalApiKey;
 let originalNodeEnv;
+let originalOfficerKey;
 beforeAll(() => {
-  originalApiKey = env.admin.apiKey;
   originalNodeEnv = env.nodeEnv;
+  originalOfficerKey = env.admin.officerApiKey;
 });
 beforeEach(() => {
-  env.admin.apiKey = 'test-admin-key';
   env.nodeEnv = 'test';
+  env.admin.officerApiKey = 'test-officer-key';
   seed();
 });
 afterAll(() => {
-  env.admin.apiKey = originalApiKey;
   env.nodeEnv = originalNodeEnv;
+  env.admin.officerApiKey = originalOfficerKey;
 });
 
 describe('POST /v1/admin/auth/login', () => {
@@ -351,7 +354,8 @@ describe('GET /v1/admin/auth/me', () => {
       email: 'ayse@ogm.gov.tr',
       role: 'admin',
       mustChangePassword: false,
-      unitId: 'unit-1',
+      bolge: 'Antalya OBM',
+      isletme: 'Manavgat OİM',
       phone: '+905551112233',
       lastLoginAt: expect.any(String),
     });
@@ -429,9 +433,10 @@ describe('PUT /v1/admin/auth/password', () => {
   });
 });
 
-describe('requireAdmin — panel token / x-api-key', () => {
-  it('x-api-key bugünkü gibi çalışır', async () => {
-    expect((await adminPing({ 'x-api-key': 'test-admin-key' })).status).toBe(200);
+describe('requireAdmin — panel token', () => {
+  it('x-api-key artık admin uçlarına girmez (saha amiri anahtarı da)', async () => {
+    expect((await adminPing({ 'x-api-key': 'herhangi-bir-anahtar' })).status).toBe(403);
+    expect((await adminPing({ 'x-api-key': 'test-officer-key' })).status).toBe(403);
   });
 
   it('anahtar ve token yoksa 403 forbidden', async () => {
@@ -485,6 +490,19 @@ describe('requireAdmin — panel token / x-api-key', () => {
 
     expect((await scan(accessToken)).status).toBe(400);
     expect((await scan(signAccessToken({ sub: 'u-active', role: 'officer' }))).status).toBe(401);
+  });
+
+  it('requireOfficer saha amiri anahtarını kabul eder, başka anahtarı reddeder', async () => {
+    const scan = (key) => request(app).post('/v1/missions/active/m1/scan').set('x-api-key', key).send({});
+    expect((await scan('test-officer-key')).status).toBe(400);
+    expect((await scan('eski-admin-anahtari')).status).toBe(403);
+  });
+
+  it('requireOfficer anahtar tanımsızken boş ya da eksik x-api-key\'i reddeder', async () => {
+    env.admin.officerApiKey = '';
+    const url = '/v1/missions/active/m1/scan';
+    expect((await request(app).post(url).set('x-api-key', '').send({})).status).toBe(403);
+    expect((await request(app).post(url).send({})).status).toBe(403);
   });
 
   it('yetki rolü token\'dan değil veritabanından okunur', async () => {

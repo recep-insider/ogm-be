@@ -90,6 +90,14 @@
     {
       "name": "Admin",
       "description": "Panel/saha amiri uçları (mobil çağırmaz)"
+    },
+    {
+      "name": "Admin - Auth",
+      "description": "Panel girişi, oturum yenileme ve şifre (mobil çağırmaz)"
+    },
+    {
+      "name": "Admin - Panel Kullanıcıları",
+      "description": "Hesap talepleri ve panel kullanıcı yönetimi (yalnız süper admin)"
     }
   ],
   "components": {
@@ -106,11 +114,11 @@
         "bearerFormat": "JWT",
         "description": "Telefon doğrulama sonrası kayıt formu için kısa süreli token"
       },
-      "adminApiKey": {
-        "type": "apiKey",
-        "in": "header",
-        "name": "x-api-key",
-        "description": "Panel admin anahtarı (ADMIN_API_KEY)"
+      "panelBearer": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT",
+        "description": "Panel access token'ı (`POST /admin/auth/login`, 15 dk). Tüm /admin uçları bunu ister."
       },
       "officerApiKey": {
         "type": "apiKey",
@@ -120,6 +128,120 @@
       }
     },
     "schemas": {
+      "PanelSession": {
+        "type": "object",
+        "properties": {
+          "accessToken": {
+            "type": "string"
+          },
+          "expiresIn": {
+            "type": "integer",
+            "description": "Access token ömrü (saniye)"
+          },
+          "user": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "email": {
+                "type": "string"
+              },
+              "role": {
+                "type": "string",
+                "enum": [
+                  "admin",
+                  "super_admin"
+                ]
+              },
+              "mustChangePassword": {
+                "type": "boolean"
+              }
+            }
+          }
+        }
+      },
+      "PanelUser": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "email": {
+            "type": "string"
+          },
+          "role": {
+            "type": "string",
+            "enum": [
+              "admin",
+              "super_admin"
+            ]
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "active",
+              "rejected",
+              "disabled"
+            ]
+          },
+          "isSystem": {
+            "type": "boolean"
+          },
+          "bolge": {
+            "type": "string",
+            "nullable": true
+          },
+          "isletme": {
+            "type": "string",
+            "nullable": true
+          },
+          "phone": {
+            "type": "string",
+            "nullable": true
+          },
+          "requestNote": {
+            "type": "string",
+            "nullable": true
+          },
+          "requestedAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "approvedBy": {
+            "type": "string",
+            "nullable": true,
+            "description": "Onaylayan panel kullanıcısının id'si"
+          },
+          "approvedAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "rejectionReason": {
+            "type": "string",
+            "nullable": true
+          },
+          "lastLoginAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          }
+        }
+      },
       "ErrorResponse": {
         "type": "object",
         "required": [
@@ -1422,10 +1544,10 @@
           "Admin"
         ],
         "summary": "Gönüllü başvuru durumunu güncelle (panel / onay)",
-        "description": "Mobil uygulamadan ÇAĞRILMAZ. x-api-key (admin) gerektirir. Kullanıcının en güncel başvurusunun status'unu günceller; bildirim göndermez.",
+        "description": "Mobil uygulamadan ÇAĞRILMAZ. Panel oturumu (Bearer) gerektirir. Kullanıcının en güncel başvurusunun status'unu günceller; bildirim göndermez.",
         "security": [
           {
-            "adminApiKey": []
+            "panelBearer": []
           }
         ],
         "parameters": [
@@ -1504,10 +1626,10 @@
           "Admin"
         ],
         "summary": "Yangın bildirimi statü geçişi (panel)",
-        "description": "Mobil uygulamadan ÇAĞRILMAZ. x-api-key (admin) gerektirir.",
+        "description": "Mobil uygulamadan ÇAĞRILMAZ. Panel oturumu (Bearer) gerektirir.",
         "security": [
           {
-            "adminApiKey": []
+            "panelBearer": []
           }
         ],
         "parameters": [
@@ -1556,10 +1678,10 @@
           "Admin"
         ],
         "summary": "Yangın ihbarı detayı (panel)",
-        "description": "Liste alanları + ip. x-api-key (admin).",
+        "description": "Liste alanları + ip. Panel oturumu.",
         "security": [
           {
-            "adminApiKey": []
+            "panelBearer": []
           }
         ],
         "parameters": [
@@ -1590,7 +1712,7 @@
         "summary": "Görev fotoğrafı moderasyonu (panel)",
         "security": [
           {
-            "adminApiKey": []
+            "panelBearer": []
           }
         ],
         "parameters": [
@@ -1646,10 +1768,10 @@
           "Admin"
         ],
         "summary": "Gönüllü listesi (panel)",
-        "description": "Mobil uygulamadan ÇAĞRILMAZ. x-api-key (admin) gerektirir. Misafir/silinmiş kullanıcılar hariç; her kullanıcı en güncel başvurusuyla döner. PII gözetimi: tcKimlik bu listede dönmez (detay ucunda döner).",
+        "description": "Mobil uygulamadan ÇAĞRILMAZ. Panel oturumu (Bearer) gerektirir. Misafir/silinmiş kullanıcılar hariç; her kullanıcı en güncel başvurusuyla döner. PII gözetimi: tcKimlik bu listede dönmez (detay ucunda döner).",
         "security": [
           {
-            "adminApiKey": []
+            "panelBearer": []
           }
         ],
         "parameters": [
@@ -1769,10 +1891,10 @@
           "Admin"
         ],
         "summary": "Gönüllü detayı (panel)",
-        "description": "PII (tcKimlik, adres, acil kişi, belgeler) yalnızca bu uçta döner. x-api-key (admin).",
+        "description": "PII (tcKimlik, adres, acil kişi, belgeler) yalnızca bu uçta döner. Panel oturumu.",
         "security": [
           {
-            "adminApiKey": []
+            "panelBearer": []
           }
         ],
         "parameters": [
@@ -1801,10 +1923,10 @@
           "Admin"
         ],
         "summary": "Yangın ihbarı listesi (panel)",
-        "description": "Mobil uygulamadan ÇAĞRILMAZ. x-api-key (admin) gerektirir.",
+        "description": "Mobil uygulamadan ÇAĞRILMAZ. Panel oturumu (Bearer) gerektirir.",
         "security": [
           {
-            "adminApiKey": []
+            "panelBearer": []
           }
         ],
         "parameters": [
@@ -1851,10 +1973,10 @@
           "Admin"
         ],
         "summary": "Görev listesi (panel)",
-        "description": "Tüm görevler (is_active filtresi opsiyonel) + pendingPhotos sayacı. x-api-key (admin).",
+        "description": "Tüm görevler (is_active filtresi opsiyonel) + pendingPhotos sayacı. Panel oturumu.",
         "security": [
           {
-            "adminApiKey": []
+            "panelBearer": []
           }
         ],
         "parameters": [
@@ -1908,7 +2030,7 @@
         "description": "Olay HER ZAMAN `active` durumunda başlar. Toplanma noktası zorunludur; ikisi tek işlemde açılır. `callVolunteers` yalnızca çağrının hemen gidip gitmeyeceğini belirler — çağrı YALNIZCA `Hazır` gönüllülere gider, yarıçap admin'de girilmez. Bölge filtresi yalnızca görünümü süzer: başka bölgede olay açılabilir.",
         "security": [
           {
-            "adminApiKey": []
+            "panelBearer": []
           }
         ],
         "responses": {
@@ -1924,10 +2046,10 @@
           "Admin"
         ],
         "summary": "Görev fotoğraf/moderasyon kuyruğu (panel)",
-        "description": "status=pending ile bekleyen kuyruk. PUT /admin/missions/{id}/photos/{submissionId} ile moderasyon. x-api-key (admin).",
+        "description": "status=pending ile bekleyen kuyruk. PUT /admin/missions/{id}/photos/{submissionId} ile moderasyon. Panel oturumu.",
         "security": [
           {
-            "adminApiKey": []
+            "panelBearer": []
           }
         ],
         "parameters": [
@@ -1968,10 +2090,10 @@
           "Admin"
         ],
         "summary": "Online eğitim listesi (panel, aggregate)",
-        "description": "Mobil /trainings/online'dan farklı olarak kullanıcıdan bağımsızdır; enrolled/completed sayaçları döner. x-api-key (admin) gerektirir.",
+        "description": "Mobil /trainings/online'dan farklı olarak kullanıcıdan bağımsızdır; enrolled/completed sayaçları döner. Panel oturumu (Bearer) gerektirir.",
         "security": [
           {
-            "adminApiKey": []
+            "panelBearer": []
           }
         ],
         "parameters": [
@@ -1996,7 +2118,7 @@
         "summary": "Online eğitim oluştur (panel)",
         "security": [
           {
-            "adminApiKey": []
+            "panelBearer": []
           }
         ],
         "requestBody": {
@@ -2080,10 +2202,10 @@
           "Admin"
         ],
         "summary": "Saha eğitim listesi (panel, aggregate)",
-        "description": "Başvuru sayaçları (pending/approved/rejected) ve koltuk durumuyla döner. x-api-key (admin) gerektirir.",
+        "description": "Başvuru sayaçları (pending/approved/rejected) ve koltuk durumuyla döner. Panel oturumu (Bearer) gerektirir.",
         "security": [
           {
-            "adminApiKey": []
+            "panelBearer": []
           }
         ],
         "parameters": [
@@ -2108,7 +2230,7 @@
         "summary": "Saha eğitimi oluştur (panel)",
         "security": [
           {
-            "adminApiKey": []
+            "panelBearer": []
           }
         ],
         "requestBody": {
@@ -2180,10 +2302,10 @@
           "Admin"
         ],
         "summary": "Acil durum (SOS) listesi (panel)",
-        "description": "Mobil uygulamadan ÇAĞRILMAZ. x-api-key (admin) gerektirir.",
+        "description": "Mobil uygulamadan ÇAĞRILMAZ. Panel oturumu (Bearer) gerektirir.",
         "security": [
           {
-            "adminApiKey": []
+            "panelBearer": []
           }
         ],
         "parameters": [
@@ -2225,10 +2347,10 @@
           "Admin"
         ],
         "summary": "SOS çağrı listesi (panel)",
-        "description": "Mobil uygulamadan ÇAĞRILMAZ. x-api-key (admin) gerektirir. Durum üç değerlidir (active → responded | cancelled) ve her çağrı geçmişiyle birlikte döner. Kan grubu ve acil durum kişisi TÜRETİLİR (gönüllü kaydından); kullanıcı silinmişse çağrı anındaki snapshot'a düşülür. Yanıt süresi çağrı saati ile geçmişteki ilk OPERATÖR kaydı arasındaki farktır, ölçülemiyorsa null döner.",
+        "description": "Mobil uygulamadan ÇAĞRILMAZ. Panel oturumu (Bearer) gerektirir. Durum üç değerlidir (active → responded | cancelled) ve her çağrı geçmişiyle birlikte döner. Kan grubu ve acil durum kişisi TÜRETİLİR (gönüllü kaydından); kullanıcı silinmişse çağrı anındaki snapshot'a düşülür. Yanıt süresi çağrı saati ile geçmişteki ilk OPERATÖR kaydı arasındaki farktır, ölçülemiyorsa null döner.",
         "security": [
           {
-            "adminApiKey": []
+            "panelBearer": []
           }
         ],
         "parameters": [
@@ -2278,7 +2400,7 @@
         "description": "Hazır aksiyonlar merkezin KENDİ işlemleriyle sınırlıdır: gönüllüyü aradı, 112 arandı, müdahale edildi. Sahadan gelen bilgi serbest nota yazılır ve operatörün adına düşer. Operatör çağrıyı İPTAL EDEMEZ — `cancelled` yalnızca gönüllünün mobilden verdiği sinyaldir.",
         "security": [
           {
-            "adminApiKey": []
+            "panelBearer": []
           }
         ],
         "parameters": [
@@ -2338,10 +2460,10 @@
           "Admin"
         ],
         "summary": "Operasyon Merkezi / sidebar sayaçları (panel)",
-        "description": "Tek istekte tüm özet sayaçlar. x-api-key (admin).",
+        "description": "Tek istekte tüm özet sayaçlar. Panel oturumu.",
         "security": [
           {
-            "adminApiKey": []
+            "panelBearer": []
           }
         ],
         "responses": {
@@ -2360,7 +2482,7 @@
         "description": "[from,to) penceresi + bir önceki eşit uzunlukta pencereyle kıyas döner. \"fires\" = onaylanmış ihbar sayısı (FIRES domaini netleşene dek vekil metrik); volunteersTotal = pencere sonu itibarıyla kümülatif; activeVolunteers = pencere içinde göreve katılan tekil gönüllü; reportAccuracy = confirmed/(confirmed+rejected)%.",
         "security": [
           {
-            "adminApiKey": []
+            "panelBearer": []
           }
         ],
         "parameters": [
@@ -2398,7 +2520,7 @@
         "summary": "Raporlar zaman serisi (panel grafiği)",
         "security": [
           {
-            "adminApiKey": []
+            "panelBearer": []
           }
         ],
         "parameters": [
@@ -2461,10 +2583,10 @@
           "Admin"
         ],
         "summary": "Blog yazıları — admin listesi (taslaklar dahil)",
-        "description": "Public /blog/posts'tan farkı: is_active=false kayıtlar da döner; isActive/coverPath/ham content source alanları içerir. x-api-key (admin).",
+        "description": "Public /blog/posts'tan farkı: is_active=false kayıtlar da döner; isActive/coverPath/ham content source alanları içerir. Panel oturumu.",
         "security": [
           {
-            "adminApiKey": []
+            "panelBearer": []
           }
         ],
         "parameters": [
@@ -2489,7 +2611,7 @@
         "summary": "Blog yazısı oluştur",
         "security": [
           {
-            "adminApiKey": []
+            "panelBearer": []
           }
         ],
         "requestBody": {
@@ -2561,7 +2683,7 @@
         "summary": "Blog yazısı güncelle (kısmi — isActive:false = yayından kaldır)",
         "security": [
           {
-            "adminApiKey": []
+            "panelBearer": []
           }
         ],
         "parameters": [
@@ -2590,7 +2712,7 @@
         "summary": "Blog yazısını KALICI sil",
         "security": [
           {
-            "adminApiKey": []
+            "panelBearer": []
           }
         ],
         "parameters": [
@@ -2622,7 +2744,7 @@
         "description": "multipart/form-data, alan adı `file`. jpeg/png/webp/mp4. Dönen `path` blog/eğitim body'lerinde kullanılır.",
         "security": [
           {
-            "adminApiKey": []
+            "panelBearer": []
           }
         ],
         "requestBody": {
@@ -2674,7 +2796,7 @@
         "summary": "Online eğitim güncelle (kısmi)",
         "security": [
           {
-            "adminApiKey": []
+            "panelBearer": []
           }
         ],
         "parameters": [
@@ -2703,7 +2825,7 @@
         "summary": "Online eğitimi KALICI sil (progress kayıtları CASCADE silinir)",
         "security": [
           {
-            "adminApiKey": []
+            "panelBearer": []
           }
         ],
         "parameters": [
@@ -2734,7 +2856,7 @@
         "summary": "Saha eğitimi güncelle (kısmi)",
         "security": [
           {
-            "adminApiKey": []
+            "panelBearer": []
           }
         ],
         "parameters": [
@@ -2763,7 +2885,7 @@
         "summary": "Saha eğitimini KALICI sil (başvurular CASCADE silinir)",
         "security": [
           {
-            "adminApiKey": []
+            "panelBearer": []
           }
         ],
         "parameters": [
@@ -2794,7 +2916,7 @@
         "summary": "Saha eğitimi başvuru listesi (panel)",
         "security": [
           {
-            "adminApiKey": []
+            "panelBearer": []
           }
         ],
         "parameters": [
@@ -2835,10 +2957,10 @@
           "Admin"
         ],
         "summary": "Saha eğitimi başvurusu onay/red (panel)",
-        "description": "Bildirim göndermez. x-api-key (admin).",
+        "description": "Bildirim göndermez. Panel oturumu.",
         "security": [
           {
-            "adminApiKey": []
+            "panelBearer": []
           }
         ],
         "parameters": [
@@ -2893,7 +3015,7 @@
         "description": "Bölge Müdürlüğü Komisyonunun kararını AYRI bir kayıt olarak yazar (red kararı da saklanır) ve kararla birlikte gönüllüye sabit şablonlu bilgilendirme SMS'i gönderir. Karar ve SMS tek işlemdir; ret gerekçesi SMS metnine girmez.",
         "security": [
           {
-            "adminApiKey": []
+            "panelBearer": []
           }
         ],
         "parameters": [
@@ -2959,7 +3081,7 @@
         "description": "Tek işlemle standart beş kalemi (kask, tulum, bot, eldiven, maske) açar. Zaten geçerli zimmeti olan kalem tekrar açılmaz. Ömür sonu tarihi kalem tipinden hesaplanır; beden gönüllü profilinden türer, zimmete yazılmaz. Gönüllü onayı gerekmez.",
         "security": [
           {
-            "adminApiKey": []
+            "panelBearer": []
           }
         ],
         "parameters": [
@@ -2988,7 +3110,7 @@
         "summary": "Gönüllünün KKD seti (panel)",
         "security": [
           {
-            "adminApiKey": []
+            "panelBearer": []
           }
         ],
         "parameters": [
@@ -3016,7 +3138,7 @@
         "summary": "Hazırlık zinciri ve kişi durumu (panel, türetilmiş)",
         "security": [
           {
-            "adminApiKey": []
+            "panelBearer": []
           }
         ],
         "parameters": [
@@ -3045,7 +3167,7 @@
         "description": "İade akışı panelden geçici olarak kaldırıldı; uç sözleşme gereği hazır tutulur.",
         "security": [
           {
-            "adminApiKey": []
+            "panelBearer": []
           }
         ],
         "parameters": [
@@ -3080,7 +3202,7 @@
         "description": "Uygulamalı eğitimin tamamlandığını işaretleyen TEK mekanizma. Yetkinlik bayraklı eğitimde \"katıldı\" işaretlenen gönüllünün uygulamalı adımı kapanır. Aynı satırda kkdDelivered işaretlenirse eksik KKD kalemleri o anda aynı zimmet kaydına yazılır.",
         "security": [
           {
-            "adminApiKey": []
+            "panelBearer": []
           }
         ],
         "parameters": [
@@ -3139,6 +3261,107 @@
         }
       }
     },
+    "/admin/missions/{id}": {
+      "patch": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "Açık olayı düzenle (panel)",
+        "description": "Kısmi güncelleme: yalnızca gönderilen alanlar değişir. `title` ve `shortLocation` dışındaki metin alanları boş veya null gönderilirse temizlenir. Durum, ikon, başlangıç ve toplanma noktası bu uçtan değişmez (toplanma noktası için PUT /admin/missions/{id}/assembly-point). Arşivlenmiş olay düzenlenemez.",
+        "security": [
+          {
+            "panelBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "minProperties": 1,
+                "properties": {
+                  "title": {
+                    "type": "string",
+                    "maxLength": 200
+                  },
+                  "fullTitle": {
+                    "type": "string",
+                    "maxLength": 200,
+                    "nullable": true
+                  },
+                  "shortLocation": {
+                    "type": "string",
+                    "maxLength": 120
+                  },
+                  "il": {
+                    "type": "string",
+                    "maxLength": 60,
+                    "nullable": true
+                  },
+                  "ilce": {
+                    "type": "string",
+                    "maxLength": 60,
+                    "nullable": true
+                  },
+                  "regionLabel": {
+                    "type": "string",
+                    "maxLength": 120,
+                    "nullable": true
+                  },
+                  "locationLabel": {
+                    "type": "string",
+                    "maxLength": 200,
+                    "nullable": true
+                  },
+                  "description": {
+                    "type": "string",
+                    "maxLength": 4000,
+                    "nullable": true
+                  },
+                  "coordinates": {
+                    "type": "object",
+                    "required": [
+                      "lat",
+                      "lng"
+                    ],
+                    "properties": {
+                      "lat": {
+                        "type": "number"
+                      },
+                      "lng": {
+                        "type": "number"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "{ok, missionId}"
+          },
+          "404": {
+            "description": "mission_not_found"
+          },
+          "409": {
+            "description": "mission_archived"
+          }
+        }
+      }
+    },
     "/admin/missions/{id}/archive": {
       "post": {
         "tags": [
@@ -3148,7 +3371,7 @@
         "description": "Durum geçişi operatör kararıdır, otomatik değişmez. Arşivlendi terminaldir: aynı kayıt tekrar Aktif'e alınamaz, yeniden alevlenirse YENİ olay kaydı açılır. Yeni gönüllü çağrısı durur, toplanma noktası kapanır, `yolda`/`sahada` gönüllüler `tamamladi` olur ve sahadaki sayı sıfırlanır (check-in kayıtları korunur). Yanıtsız `cagrildi` satırları değişmez, görev geçmişine girmez.",
         "security": [
           {
-            "adminApiKey": []
+            "panelBearer": []
           }
         ],
         "parameters": [
@@ -3180,7 +3403,7 @@
         "description": "Yalnızca `Hazır` gönüllülere push gider — katılamayacak kişiye çağrı gönderilmez. Gönüllüler bölgeye göre süzülmez.",
         "security": [
           {
-            "adminApiKey": []
+            "panelBearer": []
           }
         ],
         "parameters": [
@@ -3208,7 +3431,7 @@
         "summary": "Olayın toplanma noktası (panel)",
         "security": [
           {
-            "adminApiKey": []
+            "panelBearer": []
           }
         ],
         "parameters": [
@@ -3235,7 +3458,7 @@
         "description": "Olay başına TEK nokta vardır. Konum DEĞİŞİRSE operatör elle bildirim yazmaz; sunucu üç kitleye gönderir: yola çıkmamışa sessiz, yoldakine zorunlu push+SMS, sahadakine push. Kontenjan alanı yoktur.",
         "security": [
           {
-            "adminApiKey": []
+            "panelBearer": []
           }
         ],
         "parameters": [
@@ -3267,7 +3490,7 @@
         "description": "Sahadaki gönüllü sayısının tek kaynağı; panel, mobil ve toplanma noktası ekranı aynı sayıyı gösterir. Olay arşivlendiğinde sayı sıfırlanır, kayıtlar korunur.",
         "security": [
           {
-            "adminApiKey": []
+            "panelBearer": []
           }
         ],
         "parameters": [
@@ -3296,7 +3519,7 @@
         "description": "Faz 1 kırılımı: yedi coğrafi bölge, varsayılan Akdeniz. 81 il tam olarak bir bölgeye aittir; eşleşme il alanından yapılır. Kapsam yalnızca OLAY ve İHBAR kayıtlarını süzer — gönüllüler bölge kapsamına girmez.",
         "security": [
           {
-            "adminApiKey": []
+            "panelBearer": []
           }
         ],
         "responses": {
@@ -3315,7 +3538,7 @@
         "description": "Kanal KATEGORİDEN TÜRER, operatör seçmez: SMS yalnızca `acil` sınıfına gider, diğer her şey push. `acil` kapatılamaz ve gönüllünün bildirim tercihini bypass eder. Yarıçap admin'de girilmez. Olay bazlı gönderimde segment seçimi Hazır, Çağrıldı, Yolda, Sahada; genel gönderimde Hazır, Eğitim Bekleyenler, Tüm Gönüllüler. Gönderim denetim izine yazılır.",
         "security": [
           {
-            "adminApiKey": []
+            "panelBearer": []
           }
         ],
         "responses": {
@@ -3331,7 +3554,7 @@
         "summary": "Bildirim gönderim geçmişi (panel)",
         "security": [
           {
-            "adminApiKey": []
+            "panelBearer": []
           }
         ],
         "responses": {
@@ -3350,7 +3573,7 @@
         "description": "Birden fazla ihbar TEK olay kaydına bağlanabilir. Bağın tek sahibi ihbar kaydıdır; bağlanan ihbar \"Doğrulandı\" olur ve medyası olayın galerisini besler.",
         "security": [
           {
-            "adminApiKey": []
+            "panelBearer": []
           }
         ],
         "parameters": [
@@ -3382,7 +3605,7 @@
         "description": "Bağ kaldırılan ihbar yeniden \"İnceleniyor\" durumuna döner.",
         "security": [
           {
-            "adminApiKey": []
+            "panelBearer": []
           }
         ],
         "parameters": [
@@ -3409,6 +3632,725 @@
           },
           "409": {
             "description": "not_linked"
+          }
+        }
+      }
+    },
+    "/admin/auth/login": {
+      "post": {
+        "tags": [
+          "Admin - Auth"
+        ],
+        "summary": "Panel girişi (e-posta + şifre)",
+        "description": "Mobil uygulamadan ÇAĞRILMAZ. Başarılı girişte access token gövdede döner, refresh token `ogm_panel_rt` httpOnly çerezine yazılır (Path=/v1/admin/auth, SameSite=Strict, 12 saat). Aynı e-posta + IP için 15 dakikada 5 hatalı denemeden sonra 429 döner. Şifre doğru değilse hesap durumu açıklanmaz (invalid_credentials).",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "email",
+                  "password"
+                ],
+                "properties": {
+                  "email": {
+                    "type": "string",
+                    "format": "email"
+                  },
+                  "password": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Giriş başarılı",
+            "headers": {
+              "Set-Cookie": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "ogm_panel_rt refresh çerezi"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PanelSession"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/ValidationError"
+          },
+          "401": {
+            "description": "invalid_credentials"
+          },
+          "403": {
+            "description": "account_pending | account_rejected (details.reason) | account_disabled"
+          },
+          "429": {
+            "description": "rate_limited (details.retryAfterSec)"
+          }
+        }
+      }
+    },
+    "/admin/auth/refresh": {
+      "post": {
+        "tags": [
+          "Admin - Auth"
+        ],
+        "summary": "Panel access token'ını yenile (refresh çerezi, rotasyonlu)",
+        "description": "Gövde yok; `ogm_panel_rt` çerezi okunur. Her başarılı yenilemede yeni refresh token verilir, eskisi iptal edilir ve süre 12 saat uzar. Yenilenmiş (devredilmiş) bir token tekrar sunulursa kullanıcının tüm oturumları kapatılır (refresh_reused); çıkış ya da şifre değişimiyle kapanan token yalnız refresh_invalid döner. Hata durumunda çerez silinir.",
+        "responses": {
+          "200": {
+            "description": "Yeni access token + yenilenmiş çerez",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PanelSession"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "refresh_invalid | refresh_expired | refresh_reused"
+          },
+          "403": {
+            "description": "account_pending | account_rejected | account_disabled (oturumlar kapatılır)"
+          }
+        }
+      }
+    },
+    "/admin/auth/logout": {
+      "post": {
+        "tags": [
+          "Admin - Auth"
+        ],
+        "summary": "Panel çıkışı — sunulan refresh token'ı iptal eder, çerezi siler",
+        "description": "İdempotent; çerez yoksa ya da zaten iptal edilmişse de 204 döner.",
+        "responses": {
+          "204": {
+            "description": "Çıkış yapıldı"
+          }
+        }
+      }
+    },
+    "/admin/auth/me": {
+      "get": {
+        "tags": [
+          "Admin - Auth"
+        ],
+        "summary": "Oturumdaki panel kullanıcısı",
+        "description": "`mustChangePassword` true iken de çağrılabilir.",
+        "security": [
+          {
+            "panelBearer": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Panel kullanıcısı",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "name": {
+                      "type": "string"
+                    },
+                    "email": {
+                      "type": "string"
+                    },
+                    "role": {
+                      "type": "string",
+                      "enum": [
+                        "admin",
+                        "super_admin"
+                      ]
+                    },
+                    "mustChangePassword": {
+                      "type": "boolean"
+                    },
+                    "bolge": {
+                      "type": "string",
+                      "nullable": true
+                    },
+                    "isletme": {
+                      "type": "string",
+                      "nullable": true
+                    },
+                    "phone": {
+                      "type": "string",
+                      "nullable": true
+                    },
+                    "lastLoginAt": {
+                      "type": "string",
+                      "format": "date-time",
+                      "nullable": true
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        }
+      }
+    },
+    "/admin/auth/password": {
+      "put": {
+        "tags": [
+          "Admin - Auth"
+        ],
+        "summary": "Şifre değiştir",
+        "description": "`mustChangePassword` true iken mevcut şifre geçici şifredir. Başarılı değişiklikte zorunluluk kalkar ve bu oturum dışındaki tüm oturumlar kapatılır.",
+        "security": [
+          {
+            "panelBearer": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "currentPassword",
+                  "newPassword"
+                ],
+                "properties": {
+                  "currentPassword": {
+                    "type": "string"
+                  },
+                  "newPassword": {
+                    "type": "string",
+                    "minLength": 8,
+                    "maxLength": 72,
+                    "description": "Mevcut şifreden farklı olmalı"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": {
+            "description": "Şifre değişti"
+          },
+          "400": {
+            "$ref": "#/components/responses/ValidationError"
+          },
+          "401": {
+            "description": "invalid_credentials (mevcut şifre hatalı) | unauthorized (token)"
+          }
+        }
+      }
+    },
+    "/admin/auth/units": {
+      "get": {
+        "tags": [
+          "Admin - Auth"
+        ],
+        "summary": "Hesap talebi formundaki birimler (bölge → işletme müdürlükleri)",
+        "description": "Oturum gerektirmez. forest_units'ten tekil bölge/işletme çiftleri, Türkçe sıralı.",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "bolge": {
+                            "type": "string"
+                          },
+                          "isletmeler": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/auth/request": {
+      "post": {
+        "tags": [
+          "Admin - Auth"
+        ],
+        "summary": "Panel hesap talebi (onay bekler)",
+        "description": "Oturum gerektirmez; IP başına saatte 10 talep. Kayıt pending olarak açılır, süper admin onaylayınca aynı şifreyle giriş yapılır. Reddedilmiş e-posta yeni bilgilerle tekrar talep açabilir.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "name",
+                  "email",
+                  "password",
+                  "bolge",
+                  "isletme"
+                ],
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  },
+                  "email": {
+                    "type": "string"
+                  },
+                  "password": {
+                    "type": "string",
+                    "minLength": 8,
+                    "description": "En fazla 72 bayt"
+                  },
+                  "bolge": {
+                    "type": "string"
+                  },
+                  "isletme": {
+                    "type": "string"
+                  },
+                  "phone": {
+                    "type": "string"
+                  },
+                  "note": {
+                    "type": "string",
+                    "maxLength": 500
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "{ status: \"pending\" }"
+          },
+          "400": {
+            "description": "validation_error | unit_invalid (bölge/işletme çifti yok)"
+          },
+          "409": {
+            "description": "request_pending | email_taken"
+          },
+          "429": {
+            "description": "rate_limited (details.retryAfterSec)"
+          }
+        }
+      }
+    },
+    "/admin/panel-users": {
+      "get": {
+        "tags": [
+          "Admin - Panel Kullanıcıları"
+        ],
+        "summary": "Panel kullanıcıları ve hesap talepleri (yalnız süper admin)",
+        "description": "status ile süzülür (pending = bekleyen talepler); q ad/e-postada arar. Sayfalama yok.",
+        "security": [
+          {
+            "panelBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "query",
+            "name": "status",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "pending",
+                "active",
+                "rejected",
+                "disabled"
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "q",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Liste",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/PanelUser"
+                      }
+                    },
+                    "total": {
+                      "type": "integer"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "super_admin_required | password_change_required | forbidden"
+          }
+        }
+      }
+    },
+    "/admin/panel-users/{id}": {
+      "get": {
+        "tags": [
+          "Admin - Panel Kullanıcıları"
+        ],
+        "summary": "Panel kullanıcısı / talep detayı",
+        "security": [
+          {
+            "panelBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PanelUser"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "panel_user_not_found"
+          }
+        }
+      }
+    },
+    "/admin/panel-users/{id}/audit": {
+      "get": {
+        "tags": [
+          "Admin - Panel Kullanıcıları"
+        ],
+        "summary": "Hesap geçmişi (son 100 işlem, yeniden eskiye)",
+        "security": [
+          {
+            "panelBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "items: { id, action, actor: { id, name } | null, detail, at }"
+          },
+          "404": {
+            "description": "panel_user_not_found"
+          }
+        }
+      }
+    },
+    "/admin/panel-users/{id}/approve": {
+      "post": {
+        "tags": [
+          "Admin - Panel Kullanıcıları"
+        ],
+        "summary": "Bekleyen hesap talebini onayla (rol admin olarak açılır)",
+        "security": [
+          {
+            "panelBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PanelUser"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "panel_user_not_found"
+          },
+          "409": {
+            "description": "invalid_state (talep bekleyen durumda değil)"
+          }
+        }
+      }
+    },
+    "/admin/panel-users/{id}/reject": {
+      "post": {
+        "tags": [
+          "Admin - Panel Kullanıcıları"
+        ],
+        "summary": "Bekleyen hesap talebini reddet (gerekçe isteğe bağlı, girişte kişiye gösterilir)",
+        "security": [
+          {
+            "panelBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "reason": {
+                    "type": "string",
+                    "maxLength": 500
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PanelUser"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "invalid_state"
+          }
+        }
+      }
+    },
+    "/admin/panel-users/{id}/role": {
+      "put": {
+        "tags": [
+          "Admin - Panel Kullanıcıları"
+        ],
+        "summary": "Rol değiştir (admin ↔ super_admin; yalnız onaylanmış hesap)",
+        "security": [
+          {
+            "panelBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "role"
+                ],
+                "properties": {
+                  "role": {
+                    "type": "string",
+                    "enum": [
+                      "admin",
+                      "super_admin"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PanelUser"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "cannot_change_own_role"
+          },
+          "409": {
+            "description": "last_super_admin | invalid_state (bekleyen ya da reddedilmiş talep)"
+          }
+        }
+      }
+    },
+    "/admin/panel-users/{id}/status": {
+      "put": {
+        "tags": [
+          "Admin - Panel Kullanıcıları"
+        ],
+        "summary": "Hesabı pasifleştir / yeniden etkinleştir (pasifleştirme oturumları kapatır)",
+        "security": [
+          {
+            "panelBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "status"
+                ],
+                "properties": {
+                  "status": {
+                    "type": "string",
+                    "enum": [
+                      "active",
+                      "disabled"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PanelUser"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "cannot_change_own_status"
+          },
+          "409": {
+            "description": "last_super_admin | invalid_state (active yalnız disabled hesaptan)"
+          }
+        }
+      }
+    },
+    "/admin/panel-users/{id}/reset-password": {
+      "post": {
+        "tags": [
+          "Admin - Panel Kullanıcıları"
+        ],
+        "summary": "Geçici şifre üret (ilk girişte değiştirme zorunlu, oturumlar kapanır)",
+        "description": "Geçici şifre yalnız bu yanıtta döner, hiçbir yerde saklanmaz.",
+        "security": [
+          {
+            "panelBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "temporaryPassword": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "cannot_reset_own_password"
+          },
+          "409": {
+            "description": "invalid_state (onaylanmamış hesap)"
           }
         }
       }
@@ -4520,7 +5462,7 @@
           "Missions"
         ],
         "summary": "Yangın sahası giriş kaydı — QR check-in (userStatus → sahada)",
-        "description": "Mobil uygulamadan ÇAĞRILMAZ. Saha amiri (officer) `x-api-key` veya\n`role=officer` token ile çağırır. `qr` (`OGM:VOL:{id}`) ve `tcKimlik` imza\nTAŞIMAZ — güven kaynağı saha amirinin doğrulanmış cihazı ve seçtiği olaydır.\n`SCAN_HMAC_SECRET` doluysa `token` (HMAC `${userId}:${missionId}`) yalnızca\nçıplak `userId` formatında zorunludur (B.1); geçersiz/yanlış uzunlukta token\n400 `invalid_qr` döner.\n\nbackend §13: Gönüllü QR'ı `OGM:VOL:{id}` formatındadır; okutulamazsa TC kimlik\nnumarasıyla manuel kayıt yedek yöntemdir. Hazırlık zincirinde eksik varsa\ncheck-in ENGELLENİR — yalnızca uyarı değil, kayıt oluşmaz ve sahadaki sayıya\ngirmez. Arama bölge kapsamıyla sınırlı değildir. Sahadaki gönüllü sayısının tek\nkaynağı bu kayıttır.\n",
+        "description": "Mobil uygulamadan ÇAĞRILMAZ. Saha amiri cihazı `x-api-key` (OFFICER_API_KEY)\nya da panel kullanıcısı access token'ıyla çağırır. `qr` (`OGM:VOL:{id}`) ve `tcKimlik` imza\nTAŞIMAZ — güven kaynağı saha amirinin doğrulanmış cihazı ve seçtiği olaydır.\n`SCAN_HMAC_SECRET` doluysa `token` (HMAC `${userId}:${missionId}`) yalnızca\nçıplak `userId` formatında zorunludur (B.1); geçersiz/yanlış uzunlukta token\n400 `invalid_qr` döner.\n\nbackend §13: Gönüllü QR'ı `OGM:VOL:{id}` formatındadır; okutulamazsa TC kimlik\nnumarasıyla manuel kayıt yedek yöntemdir. Hazırlık zincirinde eksik varsa\ncheck-in ENGELLENİR — yalnızca uyarı değil, kayıt oluşmaz ve sahadaki sayıya\ngirmez. Arama bölge kapsamıyla sınırlı değildir. Sahadaki gönüllü sayısının tek\nkaynağı bu kayıttır.\n",
         "security": [
           {
             "officerApiKey": []

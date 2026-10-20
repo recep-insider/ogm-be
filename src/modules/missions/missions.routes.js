@@ -111,8 +111,8 @@ router.post(
  *     tags: [Missions]
  *     summary: Yangın sahası giriş kaydı — QR check-in (userStatus → sahada)
  *     description: |
- *       Mobil uygulamadan ÇAĞRILMAZ. Saha amiri (officer) `x-api-key` veya
- *       `role=officer` token ile çağırır. `qr` (`OGM:VOL:{id}`) ve `tcKimlik` imza
+ *       Mobil uygulamadan ÇAĞRILMAZ. Saha amiri cihazı `x-api-key` (OFFICER_API_KEY)
+ *       ya da panel kullanıcısı access token'ıyla çağırır. `qr` (`OGM:VOL:{id}`) ve `tcKimlik` imza
  *       TAŞIMAZ — güven kaynağı saha amirinin doğrulanmış cihazı ve seçtiği olaydır.
  *       `SCAN_HMAC_SECRET` doluysa `token` (HMAC `${userId}:${missionId}`) yalnızca
  *       çıplak `userId` formatında zorunludur (B.1); geçersiz/yanlış uzunlukta token

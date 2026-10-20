@@ -7,6 +7,7 @@ const validate = require('../../../middlewares/validate');
 const { requirePanelUser } = require('../../../middlewares/auth');
 const env = require('../../../config/env');
 const service = require('./panelAuth.service');
+const panelUsersService = require('../panelUsers/panelUsers.service');
 
 const COOKIE_NAME = 'ogm_panel_rt';
 const COOKIE_PATH = '/v1/admin/auth';
@@ -56,15 +57,27 @@ const loginSchema = Joi.object({
   password: Joi.string().max(200).required(),
 });
 
+const newPassword = Joi.string()
+  .min(8)
+  .max(72)
+  .custom((value, helpers) => (Buffer.byteLength(value, 'utf8') > 72 ? helpers.error('string.max', { limit: 72 }) : value));
+
 const passwordSchema = Joi.object({
   currentPassword: Joi.string().max(200).required(),
-  newPassword: Joi.string()
-    .min(8)
-    .max(72)
-    .custom((value, helpers) => (Buffer.byteLength(value, 'utf8') > 72 ? helpers.error('string.max', { limit: 72 }) : value))
+  newPassword: newPassword
     .invalid(Joi.ref('currentPassword'))
     .required()
     .messages({ 'any.invalid': 'Yeni şifre mevcut şifreden farklı olmalı.' }),
+});
+
+const requestSchema = Joi.object({
+  name: Joi.string().trim().min(2).max(120).required(),
+  email: Joi.string().trim().email({ tlds: { allow: false } }).max(254).required(),
+  password: newPassword.required(),
+  bolge: Joi.string().trim().max(100).required(),
+  isletme: Joi.string().trim().max(100).required(),
+  phone: Joi.string().trim().max(20).allow('', null).optional(),
+  note: Joi.string().trim().max(500).allow('', null).optional(),
 });
 
 const router = Router();
@@ -183,7 +196,8 @@ router.post(
  *                 email: { type: string }
  *                 role: { type: string, enum: [admin, super_admin] }
  *                 mustChangePassword: { type: boolean }
- *                 unitId: { type: string, nullable: true }
+ *                 bolge: { type: string, nullable: true }
+ *                 isletme: { type: string, nullable: true }
  *                 phone: { type: string, nullable: true }
  *                 lastLoginAt: { type: string, format: date-time, nullable: true }
  *       401: { $ref: '#/components/responses/Unauthorized' }
@@ -224,6 +238,73 @@ router.put(
   asyncHandler(async (req, res) => {
     await service.changePassword(req.panelUser, req.body, readCookie(req, COOKIE_NAME));
     res.status(204).end();
+  }),
+);
+
+/**
+ * @openapi
+ * /admin/auth/units:
+ *   get:
+ *     tags: [Admin - Auth]
+ *     summary: Hesap talebi formundaki birimler (bölge → işletme müdürlükleri)
+ *     description: Oturum gerektirmez. forest_units'ten tekil bölge/işletme çiftleri, Türkçe sıralı.
+ *     responses:
+ *       200:
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 items:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       bolge: { type: string }
+ *                       isletmeler: { type: array, items: { type: string } }
+ */
+router.get(
+  '/units',
+  asyncHandler(async (_req, res) => {
+    res.json({ items: await panelUsersService.listUnits() });
+  }),
+);
+
+/**
+ * @openapi
+ * /admin/auth/request:
+ *   post:
+ *     tags: [Admin - Auth]
+ *     summary: Panel hesap talebi (onay bekler)
+ *     description: >-
+ *       Oturum gerektirmez; IP başına saatte 10 talep. Kayıt pending olarak açılır, süper admin onaylayınca
+ *       aynı şifreyle giriş yapılır. Reddedilmiş e-posta yeni bilgilerle tekrar talep açabilir.
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [name, email, password, bolge, isletme]
+ *             properties:
+ *               name: { type: string }
+ *               email: { type: string }
+ *               password: { type: string, minLength: 8, description: 'En fazla 72 bayt' }
+ *               bolge: { type: string }
+ *               isletme: { type: string }
+ *               phone: { type: string }
+ *               note: { type: string, maxLength: 500 }
+ *     responses:
+ *       202: { description: '{ status: "pending" }' }
+ *       400: { description: 'validation_error | unit_invalid (bölge/işletme çifti yok)' }
+ *       409: { description: 'request_pending | email_taken' }
+ *       429: { description: 'rate_limited (details.retryAfterSec)' }
+ */
+router.post(
+  '/request',
+  validate({ body: requestSchema }),
+  asyncHandler(async (req, res) => {
+    res.status(202).json(await panelUsersService.submitRequest(req.body, meta(req)));
   }),
 );
 
