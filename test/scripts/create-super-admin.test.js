@@ -1,5 +1,8 @@
 'use strict';
 
+const path = require('path');
+const { spawnSync } = require('child_process');
+
 jest.mock('bcrypt', () => require('../modules/admin/panel-fakes').fakeBcrypt);
 jest.mock('../../src/config/db', () => ({ db: require('../modules/admin/panel-fakes').createFakeDb() }));
 jest.mock('../../src/config/redis', () => ({ redis: {} }));
@@ -30,6 +33,9 @@ describe('create-super-admin', () => {
     });
     expect(result.password).toHaveLength(20);
     expect([...result.password].every((c) => ALPHABET.includes(c))).toBe(true);
+    expect(db.rows('panel_user_audit')).toContainEqual(
+      expect.objectContaining({ target_id: result.id, action: 'auth.super_admin_create' }),
+    );
   });
 
   it('--name verilirse onu kullanır', async () => {
@@ -70,11 +76,23 @@ describe('create-super-admin', () => {
       password_hash: `hash:${result.password}`,
     });
     expect(db.rows('panel_refresh_tokens').every((t) => t.revoked_at instanceof Date)).toBe(true);
+    expect(db.rows('panel_user_audit')).toContainEqual(
+      expect.objectContaining({ target_id: 'p1', action: 'auth.super_admin_reset' }),
+    );
   });
 
   it('geçersiz e-postayı reddeder', async () => {
     await expect(createSuperAdmin({ db, auth, email: 'gecersiz' })).rejects.toThrow('--email');
     expect(db.rows('panel_users')).toHaveLength(0);
+  });
+
+  it('CLI --email olmadan 1 koduyla çıkar ve hatayı stderr\'e yazar', () => {
+    const res = spawnSync(process.execPath, [path.join(__dirname, '../../scripts/create-super-admin.js')], {
+      encoding: 'utf8',
+    });
+
+    expect(res.status).toBe(1);
+    expect(res.stderr).toContain('Süper admin oluşturulamadı: --email gerekli');
   });
 
   it('geçici şifre her çağrıda farklıdır', () => {

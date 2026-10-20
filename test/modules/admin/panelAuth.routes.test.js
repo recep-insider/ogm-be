@@ -14,6 +14,7 @@ const env = require('../../../src/config/env');
 const { db } = require('../../../src/config/db');
 const { redis } = require('../../../src/config/redis');
 const { signAccessToken, signPanelAccessToken } = require('../../../src/shared/jwt');
+const adminService = require('../../../src/modules/admin/admin.service');
 const app = require('../../../src/app');
 
 const PASSWORD = 'dogru-sifre-123';
@@ -229,6 +230,13 @@ describe('POST /v1/admin/auth/refresh', () => {
     expect(refreshCookie(unknown)).toMatch(/Expires=Thu, 01 Jan 1970/);
   });
 
+  it('çözülemeyen çerez değeri 500 değil 401 refresh_invalid döner', async () => {
+    const res = await request(app).post('/v1/admin/auth/refresh').set('Cookie', 'ogm_panel_rt=%E0%A4%A');
+
+    expect(res.status).toBe(401);
+    expect(res.body.error.code).toBe('refresh_invalid');
+  });
+
   it('süresi dolmuş token 401 refresh_expired', async () => {
     const token = await loggedInCookie();
     db.rows('panel_refresh_tokens')[0].expires_at = new Date(Date.now() - 1000);
@@ -345,6 +353,21 @@ describe('PUT /v1/admin/auth/password', () => {
     expect(db.rows('panel_user_audit').map((a) => a.action)).toContain('auth.password_change');
   });
 
+  it('refresh çerezi yoksa kullanıcının tüm oturumlarını kapatır', async () => {
+    const first = await session();
+    await session();
+
+    const res = await request(app)
+      .put('/v1/admin/auth/password')
+      .set('Authorization', `Bearer ${first.accessToken}`)
+      .send({ currentPassword: PASSWORD, newPassword: 'yeni-sifre-456' });
+
+    expect(res.status).toBe(204);
+    const tokens = db.rows('panel_refresh_tokens');
+    expect(tokens).toHaveLength(2);
+    expect(tokens.every((t) => t.revoked_at instanceof Date)).toBe(true);
+  });
+
   it('mevcut şifre yanlışsa 401 invalid_credentials', async () => {
     const res = await change(await session(), { currentPassword: 'yanlis', newPassword: 'yeni-sifre-456' });
 
@@ -427,5 +450,22 @@ describe('requireAdmin — panel token / x-api-key', () => {
     db.rows('panel_users')[0].role = 'admin';
     const res = await request(app).get('/v1/admin/auth/me').set('Authorization', `Bearer ${token}`);
     expect(res.body.role).toBe('admin');
+  });
+});
+
+describe('admin işlem bağlamı (actorFrom)', () => {
+  afterEach(() => jest.restoreAllMocks());
+
+  it('panel token\'ında ad x-operator-name başlığından değil panel_users kaydından alınır', async () => {
+    const spy = jest.spyOn(adminService, 'getVolunteer').mockResolvedValue({ user: null, application: null });
+    const { accessToken } = (await login()).body;
+
+    const res = await request(app)
+      .get('/v1/admin/volunteers/v1')
+      .set('Authorization', `Bearer ${accessToken}`)
+      .set('x-operator-name', 'Baska');
+
+    expect(res.status).toBe(200);
+    expect(spy).toHaveBeenCalledWith('v1', expect.objectContaining({ name: 'Ayşe Demir' }));
   });
 });
