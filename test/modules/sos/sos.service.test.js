@@ -6,13 +6,26 @@
 
 const mockInserted = [];
 const mockHistory = [];
-const mockState = { user: null, redisCount: 0 };
+const mockState = { user: null, redisCount: 0, participation: undefined, whereCalls: [], whereInCalls: [] };
 
 jest.mock('../../../src/config/db', () => {
   const makeChain = (table) => {
     const c = {
-      where: jest.fn(() => c),
-      first: jest.fn(async () => (table === 'users' ? mockState.user : undefined)),
+      where: jest.fn((...args) => {
+        mockState.whereCalls.push([table, ...args]);
+        return c;
+      }),
+      join: jest.fn(() => c),
+      whereIn: jest.fn((...args) => {
+        mockState.whereInCalls.push([table, ...args]);
+        return c;
+      }),
+      orderBy: jest.fn(() => c),
+      first: jest.fn(async () => {
+        if (table === 'users') return mockState.user;
+        if (table === 'mission_participants as mp') return mockState.participation;
+        return undefined;
+      }),
       insert: jest.fn(async (row) => {
         if (table === 'sos_history') mockHistory.push(row);
         else mockInserted.push(row);
@@ -58,6 +71,9 @@ describe('sos.service.create', () => {
     mockHistory.length = 0;
     mockState.user = { ...USER_ROW };
     mockState.redisCount = 0;
+    mockState.participation = undefined;
+    mockState.whereCalls = [];
+    mockState.whereInCalls = [];
     jest.clearAllMocks();
   });
 
@@ -125,5 +141,49 @@ describe('sos.service.create', () => {
       service.create({ userId: 'ghost', body: {}, ip: '1.2.3.4', userAgent: 'jest' }),
     ).rejects.toMatchObject({ status: 404 });
     expect(mockInserted).toHaveLength(0);
+  });
+
+  test('gönüllü aktif bir olayda yolda/sahada ise SOS o olaya bağlanır', async () => {
+    mockState.participation = { mission_id: 'm1' };
+
+    await service.create({ userId: 'u1', body: {}, ip: '1.2.3.4', userAgent: 'jest' });
+
+    expect(mockInserted[0].mission_id).toBe('m1');
+    expect(mockState.whereCalls).toEqual(
+      expect.arrayContaining([
+        ['mission_participants as mp', 'mp.user_id', 'u1'],
+        ['mission_participants as mp', 'm.status', 'active'],
+      ]),
+    );
+    expect(mockState.whereInCalls).toContainEqual([
+      'mission_participants as mp',
+      'mp.status',
+      ['yolda', 'sahada'],
+    ]);
+  });
+
+  test('aktif olayda yolda/sahada katılımı yoksa SOS yine kabul edilir, mission_id null', async () => {
+    mockState.participation = undefined;
+
+    const result = await service.create({ userId: 'u1', body: {}, ip: '1.2.3.4', userAgent: 'jest' });
+
+    expect(result.ok).toBe(true);
+    expect(mockInserted[0].mission_id).toBeNull();
+  });
+});
+
+describe('sos.service.mapAdminSos — bağlı olay', () => {
+  const row = { id: 's1', status: 'active', created_at: new Date('2026-10-20T10:00:00Z') };
+
+  test('missionId ve missionTitle döner', () => {
+    const item = service.mapAdminSos({ ...row, mission_id: 'm1', mission_title: 'Marmaris Yangını' }, []);
+
+    expect(item).toMatchObject({ missionId: 'm1', missionTitle: 'Marmaris Yangını' });
+  });
+
+  test('olaysız SOS için ikisi de null', () => {
+    const item = service.mapAdminSos({ ...row, mission_id: null }, []);
+
+    expect(item).toMatchObject({ missionId: null, missionTitle: null });
   });
 });
