@@ -4,13 +4,13 @@ const express = require('express');
 const helmet = require('helmet');
 const cors = require('cors');
 const compression = require('compression');
-const rateLimit = require('express-rate-limit');
 const swaggerUi = require('swagger-ui-express');
 
 const env = require('./config/env');
 const logger = require('./config/logger');
 const { buildSpec } = require('./config/swagger');
 const { notFoundHandler, errorHandler } = require('./middlewares/error-handler');
+const { generalLimiter } = require('./middlewares/rate-limit');
 
 const healthRoutes = require('./modules/health/health.routes');
 const phoneAuthRoutes = require('./modules/auth/phone.routes');
@@ -53,14 +53,6 @@ app.use((req, _res, next) => {
     ip: req.ip,
   });
   next();
-});
-
-const generalLimiter = rateLimit({
-  windowMs: 60 * 1000,
-  limit: 100,
-  standardHeaders: 'draft-7',
-  legacyHeaders: false,
-  message: { error: { code: 'rate_limited', message: 'İstek limiti aşıldı' } },
 });
 
 app.use('/v1', generalLimiter);
