@@ -72,13 +72,15 @@ router.post(
  *         application/json:
  *           schema:
  *             type: object
- *             required: [sessionId, code, state]
+ *             required: [sessionId, code]
  *             properties:
  *               sessionId: { type: string, format: uuid }
  *               code: { type: string }
  *               state:
  *                 type: string
- *                 description: '`initiate` ile üretilen CSRF state; eksik veya farklıysa istek reddedilir.'
+ *                 description: >-
+ *                   `initiate` ile üretilen CSRF state. Gerçek modda zorunlu; mock modda gönderilmezse
+ *                   uyarı loglanıp geçilir. Gönderildiyse her iki modda da eşleşmelidir.
  *     responses:
  *       200:
  *         description: Doğrulama başarılı
@@ -92,7 +94,7 @@ router.post(
  *                 expiresIn: { type: integer }
  *                 isExisting: { type: boolean }
  *                 user: { $ref: '#/components/schemas/UserPublic' }
- *       400: { description: '`validation_error` (state eksik) veya `invalid_oauth_code` (state eşleşmiyor)' }
+ *       400: { description: '`validation_error` (gerçek modda state eksik) veya `invalid_oauth_code` (state eşleşmiyor)' }
  *       401: { $ref: '#/components/responses/Unauthorized' }
  */
 router.post(

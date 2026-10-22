@@ -91,7 +91,11 @@ async function callback({ sessionId, code, state, ip, userAgent }) {
   if (!raw) throw errors.gone('Oturum bulunamadı veya süresi dolmuş', undefined, 'session_expired');
   const session = JSON.parse(raw);
 
-  if (!state || session.state !== state) {
+  if (!state) {
+    if (!env.edevlet.mockMode) throw errors.validation('state zorunludur', { field: 'state' });
+    // Yayındaki mobil sürüm (v1.3) mock modda state göndermiyor; o sürüm güncellenene kadar uyarıyla geçilir.
+    logger.warn('e-Devlet callback state olmadan geldi (mock mod)');
+  } else if (session.state !== state) {
     throw errors.make(400, 'invalid_oauth_code', 'State eşleşmiyor');
   }
 

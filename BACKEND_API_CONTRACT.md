@@ -218,7 +218,7 @@ WGS84 datum. Frontend `react-native-maps` ile uyumlu.
 ```json
 { "sessionId": "edsess_abc", "code": "ed_oauth_code", "state": "csrf_token" }
 ```
-`state` **zorunludur**: `initiate` ile üretilen CSRF state'i (mock'ta `redirectUrl` sorgusundaki `state`) aynen gönderilir. Eksikse `400 validation_error`, eşleşmezse `400 invalid_oauth_code`.
+`state`: `initiate` ile üretilen CSRF state'i (mock'ta `redirectUrl` sorgusundaki `state`) aynen gönderilmelidir. Gerçek e-Devlet modunda **zorunludur** (eksikse `400 validation_error`). Mock modda yayındaki mobil sürüm (v1.3) göndermediği için eksik state geçici olarak kabul edilir ve sunucu uyarı loglar; mobil uygulama state göndermeye geçmelidir. Gönderilen state her iki modda da eşleşmezse `400 invalid_oauth_code`.
 - **Success Response (200):**
 ```json
 {
@@ -241,7 +241,7 @@ WGS84 datum. Frontend `react-native-maps` ile uyumlu.
 - **Notlar:**
   - **Yeni kullanıcı için `refreshToken: null`** dönmelidir. Onboarding tamamlanmadan kalıcı session açılmamalı; frontend `accessToken`'i registration-equivalent gibi kullanır.
   - **Mevcut kullanıcı için `refreshToken` string** dönmelidir.
-- **Error cases:** `400 validation_error` (state eksik), `400 invalid_oauth_code` (state eşleşmiyor / kimlik alınamadı), `410 session_expired`
+- **Error cases:** `400 validation_error` (gerçek modda state eksik), `400 invalid_oauth_code` (state eşleşmiyor / kimlik alınamadı), `410 session_expired`
 - **TS tipleri:** `EdevletCallbackRequest`, `EdevletCallbackResponse` (`types.ts:135-146`)
 - **Mock:** `mocks.ts:mockApi.edevletCallback`
 
