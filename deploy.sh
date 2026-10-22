@@ -274,7 +274,7 @@ SMTP_PASSWORD=
 SMTP_FROM_NAME=OGM Gönüllü Sistemi
 SMTP_FROM_EMAIL=noreply@localhost
 
-# ── SMS / OTP (mock — OTP'ler log'a yazılır) ───────────────────────────────
+# ── SMS / OTP (mock — SMS gönderilmez, kod loglanmaz; giriş OTP_DUMMY_* ile) ──────────
 SMS_PROVIDER=mock
 SMS_API_URL=
 SMS_API_KEY=
@@ -527,6 +527,16 @@ if [ -d "$LOCAL_REPO/uploads/seed" ] || [ -d "$LOCAL_REPO/uploads/trainings" ]; 
     run_rsync -az "$LOCAL_REPO/uploads/trainings/" "$TARGET:$DEPLOY_DIR/uploads/trainings/"
   run_ssh "cd $DEPLOY_DIR && chown -R 1000:1000 uploads/seed uploads/trainings 2>/dev/null || true"
   ok "Seed statik varlıkları yerinde"
+fi
+
+# ─── Migration öncesi yedek (sadece update) ──────────────────────────────────────
+# Migration'lar mevcut veriyi değiştirebilir (backfill, kolon değişikliği) ve MySQL'de
+# yarıda kalan DDL geri alınmaz: önce yedek alınır, alınamazsa migration çalışmaz.
+if [ "$MODE" = "update" ]; then
+  log "Migration öncesi yedek (scripts/backup.sh → backups/backup.log)"
+  run_ssh "/bin/bash $DEPLOY_DIR/scripts/backup.sh >> $DEPLOY_DIR/backups/backup.log 2>&1" \
+    || die "Yedek alınamadı — migration çalıştırılmadı. Ayrıntı: sunucuda $DEPLOY_DIR/backups/backup.log"
+  ok "Yedek alındı"
 fi
 
 # ─── docker compose up (build + start) ──────────────────────────────────────────────
