@@ -284,3 +284,84 @@ describe('refNo — olay gösteren her yanıtta', () => {
     expect((await service.getHistory('u1', 'm1')).refNo).toBe('OGM-2026-000042');
   });
 });
+
+describe('adminCheckInsBulk — çok olayın check-in listesi', () => {
+  const m1 = { id: 'm1', title: 'Marmaris', status: 'active' };
+  const m2 = { id: 'm2', title: 'Fethiye', status: 'archived' };
+  const checkIn = (over = {}) => ({
+    id: 'c1',
+    mission_id: 'm1',
+    user_id: 'u1',
+    method: 'qr',
+    recorded_by: null,
+    checked_in_at: new Date('2026-10-20T09:00:00Z'),
+    ad: 'Ali',
+    soyad: 'Yılmaz',
+    phone: '+905551112233',
+    stk_text: null,
+    ...over,
+  });
+
+  it('her öğe tekil adminCheckIns yanıtının aynısı + missionId', async () => {
+    const rows = [checkIn(), checkIn({ id: 'c2', user_id: 'u2', method: 'manual', recorded_by: 'Saha Amiri', stk_text: 'AKUT' })];
+    mockState.tables.missions = { first: m1, rows: [m1] };
+    mockState.tables['check_ins as ci'] = { rows };
+    mockState.tables.check_ins = { first: { c: '2' }, grouped: [{ mission_id: 'm1', c: '2' }] };
+
+    const single = await service.adminCheckIns('m1');
+    const bulk = await service.adminCheckInsBulk(['m1']);
+
+    expect(bulk).toEqual({ items: [{ missionId: 'm1', ...single }] });
+    expect(single.trend).toEqual({ windowMinutes: 15, count: 2 });
+  });
+
+  it('istek sırasıyla döner, bilinmeyen id yer almaz; satırlar olayına, trend yoksa 0', async () => {
+    mockState.tables.missions = { rows: [m1, m2] };
+    mockState.tables['check_ins as ci'] = {
+      rows: [checkIn({ id: 'c3', mission_id: 'm2', user_id: 'u3' }), checkIn(), checkIn({ id: 'c2', user_id: 'u2' })],
+    };
+    mockState.tables.check_ins = { grouped: [{ mission_id: 'm1', c: 2 }] };
+
+    const { items } = await service.adminCheckInsBulk(['m2', 'mx', 'm1']);
+
+    expect(items.map((i) => i.missionId)).toEqual(['m2', 'm1']);
+    expect(items[0].mission).toEqual({ id: 'm2', title: 'Fethiye', status: 'archived' });
+    expect(items[0].onSite).toBe(0); // arşivlenmiş olay: sayı 0, kayıtlar korunur
+    expect(items[0].items.map((i) => i.userId)).toEqual(['u3']);
+    expect(items[0].trend).toEqual({ windowMinutes: 15, count: 0 });
+    expect(items[1].onSite).toBe(2);
+    expect(items[1].items.map((i) => i.userId)).toEqual(['u1', 'u2']);
+    expect(items[1].trend).toEqual({ windowMinutes: 15, count: 2 });
+  });
+
+  it('olay sayısından bağımsız 3 sorgu: missions, check-in listesi ve tek GROUP BY trend', async () => {
+    const ids = Array.from({ length: 50 }, (_, i) => `m${i}`);
+    mockState.tables.missions = { rows: ids.map((id) => ({ ...m1, id })) };
+    const before = Date.now();
+
+    await service.adminCheckInsBulk(ids);
+
+    expect(mockState.chains).toHaveLength(3);
+    const [missions] = chainsFor('missions');
+    expect(callsNamed(missions, 'whereIn')).toEqual([['whereIn', 'id', ids]]);
+    const [list] = chainsFor('check_ins as ci');
+    expect(callsNamed(list, 'join')).toEqual([['join', 'users as u', 'u.id', 'ci.user_id']]);
+    expect(callsNamed(list, 'whereIn')).toEqual([['whereIn', 'ci.mission_id', ids]]);
+    expect(callsNamed(list, 'orderBy')).toEqual([['orderBy', 'ci.checked_in_at', 'desc']]);
+    const [trend] = chainsFor('check_ins');
+    expect(callsNamed(trend, 'whereIn')).toEqual([['whereIn', 'mission_id', ids]]);
+    expect(callsNamed(trend, 'groupBy')).toEqual([['groupBy', 'mission_id']]);
+    expect(callsNamed(trend, 'join')).toEqual([]);
+    const [[, col, op, since]] = callsNamed(trend, 'where');
+    expect([col, op]).toEqual(['checked_in_at', '>=']);
+    expect(since.getTime()).toBeGreaterThanOrEqual(before - 15 * 60 * 1000);
+    expect(since.getTime()).toBeLessThanOrEqual(Date.now() - 15 * 60 * 1000);
+  });
+
+  it('hiçbir id bilinmiyorsa boş liste, check-in sorgusu atılmaz', async () => {
+    mockState.tables.missions = { rows: [] };
+
+    expect(await service.adminCheckInsBulk(['mx', 'my'])).toEqual({ items: [] });
+    expect(mockState.chains.map((c) => c.table)).toEqual(['missions']);
+  });
+});
