@@ -501,6 +501,17 @@ log "Volume dizinleri hazırlanıyor"
 run_ssh "cd $DEPLOY_DIR && mkdir -p logs uploads backups/mysql && chown -R 1000:1000 logs uploads"
 ok "Volume dizinleri hazır"
 
+# ─── Yedek cron'u (scripts/backup.sh) ──────────────────────────────────────────
+# Dosya her deploy'da baştan yazılır: tekrar çalıştırmak satırı çoğaltmaz.
+# Kaldırmak: sunucuda rm /etc/cron.d/ogm-backup (ve bu adımı çıkarın, yoksa geri gelir).
+log "Yedek cron'u kuruluyor (her gece 03:30 → backups/backup.log)"
+run_ssh "echo '30 3 * * * root /bin/bash $DEPLOY_DIR/scripts/backup.sh >> $DEPLOY_DIR/backups/backup.log 2>&1' > /etc/cron.d/ogm-backup && chmod 644 /etc/cron.d/ogm-backup"
+if run_ssh "systemctl is-active --quiet cron || systemctl is-active --quiet crond"; then
+  ok "Yedek cron'u: /etc/cron.d/ogm-backup"
+else
+  warn "cron servisi çalışmıyor — yedek otomatik ALINMAZ (apt-get install cron)"
+fi
+
 # ─── Seed statik varlıkları (uploads/seed + örnek eğitim videosu) ─────────────
 # Ana rsync uploads/'ı tamamen hariç tutuyor (--delete kullanıcı içeriğini ezmesin diye).
 # Seed görselleri ve örnek video'yu --delete OLMADAN ayrıca gönder: kullanıcı yüklemelerine

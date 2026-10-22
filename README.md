@@ -128,6 +128,32 @@ docker compose up -d --build
 - Backend `node src/server.js` ile çalışır; container healthcheck `curl /health` üzerinden yapılır.
 - nginx `client_max_body_size` (110m) en büyük upload limitinin (`UPLOAD_MAX_VIDEO_BYTES`, 100 MB) üstünde tutulur; `setup-domain.sh`'deki Stage 1 config de aynı değeri taşır.
 
+### Yedekleme
+
+`deploy.sh` her çalıştığında `/etc/cron.d/ogm-backup` dosyasını yeniden yazar (satır çoğalmaz): her gece 03:30'da `scripts/backup.sh` çalışır, çıktısı `backups/backup.log`'a eklenir.
+
+- `backups/mysql/ogm-<zaman>.sql.gz` — `mysqldump --single-transaction`, gzip. Parola mysql container'ının ortamından (`.env` → `DB_ROOT_PASSWORD`) okunur.
+- `backups/uploads/<zaman>/` — `uploads/` görüntüsü. `rsync --link-dest` ile değişmeyen dosyalar bir önceki görüntüye hardlink'tir; her görüntü tam kopya gibi kullanılır, disk yalnızca yeni/değişen dosya kadar büyür.
+- 14 günden eski yedekler, o geceki yedek başarılıysa silinir.
+- Yedekler aynı sunucunun diskindedir; sunucu kaybına karşı korumaz.
+
+Sunucuda (root):
+
+```bash
+/opt/ogm-gonullu/scripts/backup.sh          # elle yedek
+/opt/ogm-gonullu/scripts/restore-check.sh   # son dump'ı geçici ogm_restore_check DB'sine yükler, sayar, siler
+tail -50 /opt/ogm-gonullu/backups/backup.log
+
+# Gerçek geri yükleme (önce backend'i durdurun)
+cd /opt/ogm-gonullu && docker compose stop backend
+gunzip -c backups/mysql/ogm-<zaman>.sql.gz \
+  | docker exec -i ogm-mysql sh -c 'MYSQL_PWD="$MYSQL_ROOT_PASSWORD" exec mysql -uroot "$MYSQL_DATABASE"'
+rsync -a backups/uploads/<zaman>/ uploads/
+docker compose start backend
+```
+
+Cron'u kapatmak: `rm /etc/cron.d/ogm-backup` ve `deploy.sh`'deki "Yedek cron'u" adımını çıkarın (yoksa sonraki deploy geri kurar).
+
 ## Dış Servis Entegrasyonları
 
 | Servis | Yapılandırma | Default | Notlar |
