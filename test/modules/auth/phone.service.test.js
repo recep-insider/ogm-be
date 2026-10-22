@@ -93,3 +93,44 @@ describe('phone.service — sendOtpFlow limitleri', () => {
     expect(JSON.stringify(logger.error.mock.calls)).not.toContain(PHONE);
   });
 });
+
+describe('phone.service — resendOtpFlow hataları', () => {
+  let env;
+  let logger;
+  let redis;
+  let svc;
+  const PHONE = '+905321112233';
+  const SESSION_ID = 'resend-session';
+
+  beforeEach(() => {
+    jest.resetModules();
+    env = require('../../../src/config/env');
+    logger = require('../../../src/config/logger');
+    ({ redis } = require('../../../src/config/redis'));
+    svc = require('../../../src/modules/auth/phone.service');
+    env.sms.dummyPhones = [];
+    env.sms.provider = 'mock';
+    env.sms.dailyLimitPerUser = 10;
+    redis.store.set(`otp:phone:${SESSION_ID}`, {
+      value: JSON.stringify({ phone: PHONE, codeHash: 'h', attempts: 0, createdAt: 0 }),
+      expiresAt: null,
+    });
+  });
+
+  test('günlük SMS limiti 500e dönüşmeden 429 sms_daily_limit olarak döner', async () => {
+    env.sms.dailyLimitPerUser = 0;
+
+    await expect(svc.resendOtpFlow({ sessionId: SESSION_ID })).rejects.toMatchObject({
+      status: 429, code: 'sms_daily_limit',
+    });
+  });
+
+  test('sağlayıcı hatası 500 döner, log telefonu maskeler', async () => {
+    env.sms.provider = 'netgsm';
+    env.sms.apiKey = '';
+
+    await expect(svc.resendOtpFlow({ sessionId: SESSION_ID })).rejects.toMatchObject({ status: 500 });
+    expect(logger.error).toHaveBeenCalledWith('SMS gönderim hatası', expect.objectContaining({ phone: '***2233' }));
+    expect(JSON.stringify(logger.error.mock.calls)).not.toContain(PHONE);
+  });
+});

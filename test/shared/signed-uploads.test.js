@@ -111,3 +111,21 @@ describe('/uploads — herkese açık medya', () => {
     expect(res.headers['cache-control']).toBe('public, max-age=3600');
   });
 });
+
+describe('/uploads — bozuk yüzde kodlaması', () => {
+  it('çözülemeyen yol 400 validation_error döner, dosya servis edilmez', async () => {
+    const res = await request(app).get('/uploads/onboarding/%E0%A4%A');
+
+    expect(res.status).toBe(400);
+    expect(res.body.error.code).toBe('validation_error');
+  });
+
+  it('guard next\'i 400 hatasıyla bir kez çağırır', () => {
+    const next = jest.fn();
+
+    signedUploadGuard({ path: '/onboarding/%E0%A4%A', query: {} }, { set: jest.fn() }, next);
+
+    expect(next).toHaveBeenCalledTimes(1);
+    expect(next).toHaveBeenCalledWith(expect.objectContaining({ status: 400, code: 'validation_error' }));
+  });
+});

@@ -27,6 +27,16 @@ describe('sendOtp — dummy phone bypass', () => {
     expect(axios.get).not.toHaveBeenCalled();
   });
 
+  test('dummy phone logu telefonu maskeler', async () => {
+    const logger = require('../../src/config/logger');
+    env.sms.dummyPhones = ['+905555555555'];
+
+    await sendOtp('+905555555555', '123456');
+
+    expect(logger.info).toHaveBeenCalledWith('SMS atlandı (dummy phone)', { phone: '***5555' });
+    expect(JSON.stringify(logger.info.mock.calls)).not.toContain('+905555555555');
+  });
+
   test('dummy listede olmayan numara mock provider yolundan geçer', async () => {
     env.sms.dummyPhones = [];
     env.sms.provider = 'mock';

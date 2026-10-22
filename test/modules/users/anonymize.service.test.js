@@ -279,3 +279,28 @@ describe('startSchedule', () => {
     }
   });
 });
+
+describe('runExclusive — kilit bırakma hatası', () => {
+  it('redis.eval reddederse koşunun sonucunu döner ve uyarı loglar', async () => {
+    const logger = require('../../../src/config/logger');
+    redis.eval.mockRejectedValueOnce(new Error('redis kapalı'));
+
+    const result = await service.runExclusive(NOW);
+
+    expect(result).toEqual({ due: 1, anonymized: 1, failed: [] });
+    expect(logger.warn).toHaveBeenCalledWith('KVKK anonimleştirme kilidi bırakılamadı', { error: 'redis kapalı' });
+  });
+});
+
+describe('startSchedule — koşu hatası', () => {
+  it('runExclusive reddederse hata loglanır, işlenmemiş ret kalmaz', async () => {
+    const logger = require('../../../src/config/logger');
+    redis.set.mockRejectedValueOnce(new Error('redis kapalı'));
+
+    const timer = service.startSchedule();
+    clearInterval(timer);
+    await new Promise(setImmediate);
+
+    expect(logger.error).toHaveBeenCalledWith('KVKK anonimleştirme çalıştırılamadı', { error: 'redis kapalı' });
+  });
+});
