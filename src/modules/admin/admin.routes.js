@@ -508,7 +508,7 @@ const sosHistorySchema = Joi.object({
  *       - { in: query, name: pageSize, schema: { type: integer, default: 20, maximum: 100 } }
  *       - { in: query, name: status, schema: { type: string, enum: [active, responded, cancelled] } }
  *     responses:
- *       200: { description: 'items: SOS + status/history/responseSeconds + user{...,kanGrubu,acil{}}' }
+ *       200: { description: 'items: SOS + il/ilce/region/regionName (çağrının basıldığı yerden) + status/history/responseSeconds + user{...,kanGrubu,acil{}}' }
  */
 router.get(
   '/sos-reports',
@@ -595,17 +595,21 @@ const reportsRangeKeys = {
  *       volunteersTotal = pencere sonu itibarıyla kümülatif; activeVolunteers = pencere içinde
  *       göreve katılan (yolda | sahada | tamamladi; yalnız çağrılan sayılmaz) tekil gönüllü;
  *       reportAccuracy = confirmed/(confirmed+rejected)%; missions = pencere içinde açılan olay
- *       sayısı (created_at, arşivlenenler dahil).
+ *       sayısı (created_at, arşivlenenler dahil); sos = pencere içinde açılan SOS çağrısı.
+ *       region verilirse her sayı o bölgeye süzülür: olay missions.il, ihbar fire_reports.il,
+ *       gönüllü (toplam ve görev almış) users.il, SOS sos_reports.il. İli boş kayıt yalnızca
+ *       "Tüm Bölgeler"de (all/parametresiz) sayılır.
  *     security: [ { panelBearer: [] } ]
  *     parameters:
  *       - { in: query, name: from, required: true, schema: { type: string, format: date } }
  *       - { in: query, name: to, required: true, schema: { type: string, format: date } }
+ *       - { in: query, name: region, schema: { type: string }, description: 'all (varsayılan) veya bölge anahtarı (shared/regions.js)' }
  *     responses:
- *       200: { description: 'range + kpis{fires,volunteersTotal,activeVolunteers,reportAccuracy,missions}{current,previous}' }
+ *       200: { description: 'range + region + kpis{fires,volunteersTotal,activeVolunteers,reportAccuracy,missions,sos}{current,previous}' }
  */
 router.get(
   '/reports/summary',
-  validate({ query: Joi.object(reportsRangeKeys) }),
+  validate({ query: Joi.object({ ...reportsRangeKeys, ...regionQueryKey }) }),
   asyncHandler(async (req, res) => {
     res.json(await adminService.reportsSummary(req.query));
   }),
@@ -623,6 +627,7 @@ router.get(
  *       - { in: query, name: interval, required: true, schema: { type: string, enum: [day, week, month] } }
  *       - { in: query, name: from, required: true, schema: { type: string, format: date } }
  *       - { in: query, name: to, required: true, schema: { type: string, format: date } }
+ *       - { in: query, name: region, schema: { type: string }, description: 'all veya bölge anahtarı; özetle aynı il kolonundan süzer; emergency metriği il taşımadığından bölgeyle 400 döner' }
  *     responses:
  *       200: { description: '{ metric, interval, series: [{bucket, count}] } — boş kovalar dönmez, istemci sıfır doldurur' }
  */
@@ -633,6 +638,7 @@ router.get(
       metric: Joi.string().valid(...Object.keys(adminService.SERIES_METRICS)).required(),
       interval: Joi.string().valid(...Object.keys(adminService.SERIES_INTERVALS)).required(),
       ...reportsRangeKeys,
+      ...regionQueryKey,
     }),
   }),
   asyncHandler(async (req, res) => {
