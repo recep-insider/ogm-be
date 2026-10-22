@@ -1712,7 +1712,9 @@ const notificationSendSchema = Joi.object({
  *       diğer her şey push. `acil` kapatılamaz ve gönüllünün bildirim tercihini bypass
  *       eder. Yarıçap admin'de girilmez. Olay bazlı gönderimde segment seçimi Hazır,
  *       Çağrıldı, Yolda, Sahada; genel gönderimde Hazır, Eğitim Bekleyenler, Tüm
- *       Gönüllüler. Gönderim denetim izine yazılır.
+ *       Gönüllüler. Gönderim denetim izine yazılır. `recipients` hedef kitledeki kişi
+ *       sayısıdır; `pushCount` push'u sağlayıcının KABUL ETTİĞİ kişi sayısıdır (cihazı
+ *       olmayan, tercihini kapatan ve hata alan sayılmaz; mock sağlayıcıda 0).
  *     security: [ { panelBearer: [] } ]
  *     parameters:
  *       - in: header
@@ -1732,7 +1734,7 @@ const notificationSendSchema = Joi.object({
  *     summary: Bildirim gönderim geçmişi (panel)
  *     security: [ { panelBearer: [] } ]
  *     responses:
- *       200: { description: 'items[] + total/page/pageSize' }
+ *       200: { description: 'items[] + total/page/pageSize (pushCount: sağlayıcının kabul ettiği kişi sayısı)' }
  */
 router.post(
   '/notifications',
