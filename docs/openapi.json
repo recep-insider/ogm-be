@@ -2178,7 +2178,7 @@
         ],
         "responses": {
           "200": {
-            "description": "user (il, ilce, region, ogrenim, meslek, meslekDiger, giysiBedeni, ayakkabiNumarasi, stkText dahil) + hazirlikZinciri + komisyon + kkd + application (yoksa null)"
+            "description": "user (il, ilce, region, ogrenim, meslek, meslekDiger, giysiBedeni, ayakkabiNumarasi, stkText dahil) + hazirlikZinciri + komisyon + kkd + application (yoksa null). application.saglikRaporu / sabikaKaydi 15 dk geçerli imzalı URL'dir (`?exp=&sig=`); imzasız, süresi dolmuş veya bozuk imzalı istek 403 `signed_url_invalid` alır."
           },
           "404": {
             "description": "user_not_found"
@@ -4982,7 +4982,8 @@
                 "type": "object",
                 "required": [
                   "sessionId",
-                  "code"
+                  "code",
+                  "state"
                 ],
                 "properties": {
                   "sessionId": {
@@ -4993,7 +4994,8 @@
                     "type": "string"
                   },
                   "state": {
-                    "type": "string"
+                    "type": "string",
+                    "description": "`initiate` ile üretilen CSRF state; eksik veya farklıysa istek reddedilir."
                   }
                 }
               }
@@ -5028,6 +5030,9 @@
                 }
               }
             }
+          },
+          "400": {
+            "description": "`validation_error` (state eksik) veya `invalid_oauth_code` (state eşleşmiyor)"
           },
           "401": {
             "$ref": "#/components/responses/Unauthorized"
@@ -5121,7 +5126,14 @@
             "$ref": "#/components/responses/ValidationError"
           },
           "429": {
-            "$ref": "#/components/responses/RateLimited"
+            "description": "`rate_limited` — telefon/IP başına saatlik limit; `sms_daily_limit` — telefona günlük OTP SMS limiti (SMS_DAILY_LIMIT_PER_USER) doldu, `details.retryAfterSec` döner.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
           }
         }
       }
@@ -5272,7 +5284,14 @@
             "description": "Session yok"
           },
           "429": {
-            "$ref": "#/components/responses/RateLimited"
+            "description": "`rate_limited` — telefon/IP başına saatlik limit; `sms_daily_limit` — telefona günlük OTP SMS limiti (SMS_DAILY_LIMIT_PER_USER) doldu, `details.retryAfterSec` döner.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
           }
         }
       }
@@ -7328,6 +7347,9 @@
           },
           "409": {
             "description": "Telefon zaten başka kullanıcıda kayıtlı"
+          },
+          "429": {
+            "description": "`rate_limited` — kullanıcı başına saatte 5 istek; `sms_daily_limit` — hedef telefona günlük OTP SMS limiti (SMS_DAILY_LIMIT_PER_USER) doldu, `details.retryAfterSec` döner."
           }
         }
       }
@@ -7388,6 +7410,9 @@
           },
           "401": {
             "$ref": "#/components/responses/Unauthorized"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
           }
         }
       }
