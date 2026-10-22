@@ -91,7 +91,7 @@ async function callback({ sessionId, code, state, ip, userAgent }) {
   if (!raw) throw errors.gone('Oturum bulunamadı veya süresi dolmuş', undefined, 'session_expired');
   const session = JSON.parse(raw);
 
-  if (state && session.state !== state) {
+  if (!state || session.state !== state) {
     throw errors.make(400, 'invalid_oauth_code', 'State eşleşmiyor');
   }
 

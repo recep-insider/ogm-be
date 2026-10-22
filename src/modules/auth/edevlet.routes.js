@@ -72,11 +72,13 @@ router.post(
  *         application/json:
  *           schema:
  *             type: object
- *             required: [sessionId, code]
+ *             required: [sessionId, code, state]
  *             properties:
  *               sessionId: { type: string, format: uuid }
  *               code: { type: string }
- *               state: { type: string }
+ *               state:
+ *                 type: string
+ *                 description: '`initiate` ile üretilen CSRF state; eksik veya farklıysa istek reddedilir.'
  *     responses:
  *       200:
  *         description: Doğrulama başarılı
@@ -90,6 +92,7 @@ router.post(
  *                 expiresIn: { type: integer }
  *                 isExisting: { type: boolean }
  *                 user: { $ref: '#/components/schemas/UserPublic' }
+ *       400: { description: '`validation_error` (state eksik) veya `invalid_oauth_code` (state eşleşmiyor)' }
  *       401: { $ref: '#/components/responses/Unauthorized' }
  */
 router.post(
