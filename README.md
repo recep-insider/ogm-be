@@ -168,7 +168,6 @@ Sonrasında `deploy.sh` ve `setup-domain.sh` yalnızca yerel makinedeki anahtar 
 | **e-Devlet OAuth** | `EDEVLET_MOCK_MODE` | `true` | Gerçek e-Devlet onayı 2-6 ay sürer. Mock mode dev/test için kullanılır. `EDEVLET_CLIENT_ID/SECRET` üretimde zorunlu. |
 | **Dosya depolama** | `UPLOAD_DIR` | `/app/uploads` | Yerel disk. KVKK için 9 yıl saklama; production'da MinIO / S3 / Türk Telekom Bulut'a geçiş önerilir. |
 | **FCM** | `FIREBASE_*` | — | Push notifications. Service account JSON dosyası container'a mount edilir. |
-| **SMTP** | `SMTP_*` | — | Kurumsal mail sunucusu. |
 
 ## Veritabanı
 

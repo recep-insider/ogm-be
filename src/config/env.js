@@ -94,16 +94,6 @@ const env = {
     maxReportPhotos: toInt(process.env.UPLOAD_MAX_REPORT_PHOTOS, 5),
   },
 
-  smtp: {
-    host: process.env.SMTP_HOST || '',
-    port: toInt(process.env.SMTP_PORT, 587),
-    secure: toBool(process.env.SMTP_SECURE, false),
-    user: process.env.SMTP_USER || '',
-    password: process.env.SMTP_PASSWORD || '',
-    fromName: process.env.SMTP_FROM_NAME || 'OGM Gönüllü Sistemi',
-    fromEmail: process.env.SMTP_FROM_EMAIL || 'noreply@ogm.gov.tr',
-  },
-
   firebase: {
     projectId: process.env.FIREBASE_PROJECT_ID || '',
     credentialsPath: process.env.FIREBASE_CREDENTIALS_PATH || '',

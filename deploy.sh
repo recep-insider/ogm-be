@@ -265,15 +265,6 @@ JWT_ACCESS_EXPIRES_IN=15m
 JWT_REFRESH_EXPIRES_IN=7d
 JWT_REGISTRATION_EXPIRES_IN=30m
 
-# ── Email (SMTP devre dışı — bo gerçek provider eklenince güncelle) ──────────────────────
-SMTP_HOST=
-SMTP_PORT=587
-SMTP_SECURE=false
-SMTP_USER=
-SMTP_PASSWORD=
-SMTP_FROM_NAME=OGM Gönüllü Sistemi
-SMTP_FROM_EMAIL=noreply@localhost
-
 # ── SMS / OTP (mock — SMS gönderilmez, kod loglanmaz; giriş OTP_DUMMY_* ile) ──────────
 SMS_PROVIDER=mock
 SMS_API_URL=
@@ -693,7 +684,6 @@ SCAN_HMAC_SECRET=$SCAN_HMAC_SECRET
 |---|---|---|
 | SMS | mock (OTP log'a yazılır) | \`SMS_PROVIDER=netgsm\` + \`SMS_API_KEY\`, \`SMS_API_SECRET\` |
 | e-Devlet | mock | \`EDEVLET_MOCK_MODE=false\` + \`EDEVLET_CLIENT_ID/SECRET\` |
-| SMTP | boş | \`SMTP_HOST/USER/PASSWORD\` doldur |
 | FCM | boş | \`FIREBASE_PROJECT_ID\` + service account JSON |
 | SSL | yok (HTTP) | Domain + Let's Encrypt (certbot) |
 
