@@ -127,7 +127,7 @@ async function upsert(missionId, body, actor = {}) {
     entityId: missionId,
     ip: actor.ip,
     userAgent: actor.userAgent,
-    payload: { locationChanged, notified },
+    payload: { name: body.name, locationChanged, notified },
   });
 
   return { ok: true, assemblyPoint: point, locationChanged, notified };

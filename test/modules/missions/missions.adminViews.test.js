@@ -15,7 +15,7 @@ jest.mock('../../../src/config/db', () => {
         calls.push([name, ...args]);
         return c;
       });
-    for (const name of ['where', 'whereIn', 'whereNull', 'join', 'leftJoin', 'select', 'orderBy', 'count', 'groupBy', 'limit', 'offset']) {
+    for (const name of ['where', 'whereIn', 'whereNull', 'join', 'leftJoin', 'select', 'orderBy', 'orderByRaw', 'count', 'groupBy', 'limit', 'offset']) {
       c[name] = record(name);
     }
     c.clone = jest.fn(() => makeChain(table, [...calls]));
@@ -233,11 +233,54 @@ describe('getActive — onaylı saha fotoğrafları', () => {
     ]);
   });
 
+  it('operatör medyası (gönüllüsü yok) gönüllü yüklemesiyle aynı sorgudan galeriye ve photos[]a girer', async () => {
+    mockState.tables.mission_photos = {
+      rows: [{ id: 'op1', file_path: 'missions/op.jpg', kind: 'image', submitted_at: new Date('2026-10-20T10:00:00Z'), user_id: null }],
+    };
+
+    const detail = await service.getActive('u1', 'm1');
+
+    expect(detail.photos.map((p) => p.id)).toEqual(['op1']);
+    expect(detail.gallery).toContain('https://api.test/missions/op.jpg');
+    const [photoQuery] = chainsFor('mission_photos');
+    expect(callsNamed(photoQuery, 'join')).toEqual([]);
+    expect(callsNamed(photoQuery, 'leftJoin')).toEqual([]);
+  });
+
   it('onaylı fotoğraf yoksa photos boş, galeri değişmez', async () => {
     mockState.tables.mission_photos = { rows: [] };
     const detail = await service.getActive('u1', 'm1');
 
     expect(detail.photos).toEqual([]);
     expect(detail.gallery).toEqual(['https://api.test/missions/cover.jpg', 'https://api.test/reports/a.jpg']);
+  });
+});
+
+describe('refNo — olay gösteren her yanıtta', () => {
+  const row = { id: 'm1', ref_no: 'OGM-2026-000042', title: 'Marmaris', short_location: 'Muğla', status: 'active', is_active: 1 };
+
+  it('panel listesi', async () => {
+    mockState.tables['missions as m'] = { counted: [{ total: 2 }], rows: [row, { ...row, id: 'm2', ref_no: null }] };
+
+    const { items } = await service.adminList({});
+
+    expect(items.map((m) => m.refNo)).toEqual(['OGM-2026-000042', null]);
+  });
+
+  it('mobil aktif liste ve detay', async () => {
+    mockState.tables.missions = { rows: [row], first: row };
+    mockState.tables.check_ins = { first: { c: 0 } };
+
+    expect((await service.listActive('u1'))[0].refNo).toBe('OGM-2026-000042');
+    expect((await service.getActive('u1', 'm1')).refNo).toBe('OGM-2026-000042');
+  });
+
+  it('mobil görev geçmişi liste ve detay', async () => {
+    mockState.tables.missions = { rows: [{ ...row, user_status: 'tamamladi' }], first: row };
+    mockState.tables.mission_participants = { first: { status: 'tamamladi' } };
+    mockState.tables.check_ins = { first: { c: 3 } };
+
+    expect((await service.listHistory('u1'))[0].refNo).toBe('OGM-2026-000042');
+    expect((await service.getHistory('u1', 'm1')).refNo).toBe('OGM-2026-000042');
   });
 });

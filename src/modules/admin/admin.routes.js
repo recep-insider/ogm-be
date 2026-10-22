@@ -8,7 +8,7 @@ const { requireAdmin } = require('../../middlewares/auth');
 const { idempotent } = require('../../middlewares/idempotency');
 const path = require('path');
 const env = require('../../config/env');
-const { contentUpload } = require('../../middlewares/upload');
+const { contentUpload, missionPhotoUpload } = require('../../middlewares/upload');
 const { assetUrl } = require('../../shared/asset-url');
 const { errors } = require('../../shared/errors');
 const fireReportsController = require('../fireReports/fireReports.controller');
@@ -16,6 +16,7 @@ const { adminStatusSchema } = require('../fireReports/fireReports.validators');
 const fireReportsService = require('../fireReports/fireReports.service');
 const missionsService = require('../missions/missions.service');
 const assemblyPointsService = require('../missions/assemblyPoints.service');
+const missionEventsService = require('../missions/missionEvents.service');
 const emergencyService = require('../emergency/emergency.service');
 const sosService = require('../sos/sos.service');
 const trainingsService = require('../trainings/trainings.service');
@@ -364,7 +365,7 @@ const missionsQuerySchema = Joi.object({
  *       - { in: query, name: page, schema: { type: integer, default: 1 } }
  *       - { in: query, name: pageSize, schema: { type: integer, default: 20, maximum: 100 } }
  *     responses:
- *       200: { description: 'items: görev (camelCase, cover URL, pendingPhotos, assemblyPoint|null), total/page/pageSize' }
+ *       200: { description: 'items: görev (camelCase, refNo, cover URL, pendingPhotos, assemblyPoint|null), total/page/pageSize. refNo: OGM-YYYY-NNNNNN, yıl Türkiye saatine göre; arama panelde istemci tarafındadır.' }
  */
 router.get(
   '/missions',
@@ -390,7 +391,7 @@ const photosQuerySchema = Joi.object({
  *       - { in: path, name: id, required: true, schema: { type: string } }
  *       - { in: query, name: status, schema: { type: string, enum: [pending, approved, rejected] } }
  *     responses:
- *       200: { description: 'mission {id,title} + items[{submissionId,kind,status,url,user}] + total' }
+ *       200: { description: 'mission {id,title} + items[{submissionId,kind,status,url,submittedAt,reviewedAt,source: volunteer|operator,user|null,uploadedBy{id,name}|null}] + total' }
  *       404: { description: mission_not_found }
  */
 router.get(
@@ -1350,7 +1351,7 @@ const assemblyPointUpsertSchema = Joi.object({
  *           Aynı anahtar ve aynı gövdeyle tekrar gelen istek yeniden işlenmez; 24 saat içinde ilk
  *           başarılı yanıt `Idempotent-Replayed: true` başlığıyla döner. 4xx yanıt anahtarı serbest bırakır; 5xx'te anahtar işlem bittikten 60 sn sonra düşer.
  *     responses:
- *       200: { description: '{ok, missionId, status: active, called}' }
+ *       200: { description: '{ok, missionId, refNo, status: active, called}' }
  *       400: { description: idempotency_key_invalid }
  *       409: { description: idempotency_in_flight }
  *       422: { description: idempotency_key_reused }
@@ -1553,6 +1554,108 @@ router.get(
   validate({ query: participantsQuerySchema }),
   asyncHandler(async (req, res) => {
     res.json(await missionsService.adminParticipants(req.params.id, req.query));
+  }),
+);
+
+/**
+ * @openapi
+ * /admin/missions/{id}/media:
+ *   post:
+ *     tags: [Admin]
+ *     summary: Olaya operatör fotoğrafı/videosu ekle (panel)
+ *     description: >-
+ *       multipart/form-data, alan adı `file`; gönüllü saha fotoğrafıyla aynı biçim ve boyut
+ *       sınırları (jpeg/png/mp4/mov). Moderasyon YOKTUR: medya `approved` yazılır ve hemen
+ *       mobil olay detayında `gallery` (yalnız görsel) ve `photos[]` içinde görünür.
+ *       Arşivlenmiş olaya medya eklenemez.
+ *     security: [ { panelBearer: [] } ]
+ *     parameters:
+ *       - { in: path, name: id, required: true, schema: { type: string } }
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         multipart/form-data:
+ *           schema:
+ *             type: object
+ *             required: [file]
+ *             properties:
+ *               file: { type: string, format: binary }
+ *     responses:
+ *       201:
+ *         description: Eklendi
+ *         content:
+ *           application/json:
+ *             schema: { $ref: '#/components/schemas/OperatorMissionMedia' }
+ *       404: { description: mission_not_found }
+ *       409: { description: mission_archived }
+ *       413: { description: file_too_large }
+ *       415: { description: unsupported_media_type }
+ */
+router.post(
+  '/missions/:id/media',
+  missionPhotoUpload,
+  asyncHandler(async (req, res) => {
+    res.status(201).json(await missionsService.adminAddMedia(req.params.id, req.file, actorFrom(req)));
+  }),
+);
+
+/**
+ * @openapi
+ * /admin/missions/{id}/media/{mediaId}:
+ *   delete:
+ *     tags: [Admin]
+ *     summary: Operatör medyasını sil (panel)
+ *     description: >-
+ *       Kayıt ve dosya silinir. Yalnız operatörün yüklediği medya silinebilir; gönüllü
+ *       yüklemesi silinmez, PUT /admin/missions/{id}/photos/{submissionId} ile reddedilir.
+ *       `mediaId`, GET /admin/missions/{id}/photos yanıtındaki `submissionId`'dir.
+ *     security: [ { panelBearer: [] } ]
+ *     parameters:
+ *       - { in: path, name: id, required: true, schema: { type: string } }
+ *       - { in: path, name: mediaId, required: true, schema: { type: string } }
+ *     responses:
+ *       204: { description: Silindi }
+ *       404: { description: not_found }
+ *       409: { description: volunteer_media }
+ */
+router.delete(
+  '/missions/:id/media/:mediaId',
+  asyncHandler(async (req, res) => {
+    await missionsService.adminDeleteMedia(req.params.id, req.params.mediaId, actorFrom(req));
+    res.status(204).end();
+  }),
+);
+
+/**
+ * @openapi
+ * /admin/missions/{id}/events:
+ *   get:
+ *     tags: [Admin]
+ *     summary: Olayın zaman çizelgesi (panel)
+ *     description: >-
+ *       Denetim izi, bildirim kaydı ve check-in kayıtlarından türetilir; `at` artan sırada.
+ *       Silinmiş gönüllünün adı dönmez (`Silinmiş gönüllü`). Olay oluşturulurken bağlanan
+ *       ihbarın eski kayıtlarda bağ kaydı yoktur; bu ihbarlar olayın oluşturulma anında görünür.
+ *     security: [ { panelBearer: [] } ]
+ *     parameters:
+ *       - { in: path, name: id, required: true, schema: { type: string } }
+ *     responses:
+ *       200:
+ *         description: Zaman çizelgesi
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 data:
+ *                   type: array
+ *                   items: { $ref: '#/components/schemas/MissionEvent' }
+ *       404: { description: mission_not_found }
+ */
+router.get(
+  '/missions/:id/events',
+  asyncHandler(async (req, res) => {
+    res.json(await missionEventsService.listForMission(req.params.id));
   }),
 );
 

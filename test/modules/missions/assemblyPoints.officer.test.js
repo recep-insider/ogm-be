@@ -127,6 +127,24 @@ describe('assemblyPoints.upsert — adres ve açık/kapalı durumu', () => {
   });
 });
 
+describe('assemblyPoints.upsert — denetim kaydı', () => {
+  beforeEach(reset);
+
+  it('zaman çizelgesi için noktanın yeni adı kayda yazılır', async () => {
+    const { writeAudit } = require('../../../src/shared/audit');
+
+    await service.upsert('m1', { ...SAME_PLACE, name: 'Stadyum otoparkı' }, { userId: 'p1' });
+
+    expect(writeAudit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: 'assembly_point.update',
+        entityId: 'm1',
+        payload: { name: 'Stadyum otoparkı', locationChanged: false, notified: null },
+      }),
+    );
+  });
+});
+
 describe('assemblyPoints.mapPoint — görevli alanları', () => {
   it('görevli adı ve telefonunu döner', () => {
     expect(service.mapPoint(EXISTING)).toMatchObject({

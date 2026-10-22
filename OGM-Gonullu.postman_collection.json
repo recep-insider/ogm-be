@@ -3244,6 +3244,132 @@
           }
         },
         {
+          "name": "Olaya operatör fotoğrafı/videosu ekle (panel) (POST /v1/admin/missions/:id/media)",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/v1/admin/missions/:id/media",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "admin",
+                "missions",
+                ":id",
+                "media"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": ""
+                }
+              ]
+            },
+            "description": "multipart/form-data, alan adı `file`; gönüllü saha fotoğrafıyla aynı biçim ve boyut sınırları (jpeg/png/mp4/mov). Moderasyon YOKTUR: medya `approved` yazılır ve hemen mobil olay detayında `gallery` (yalnız görsel) ve `photos[]` içinde görünür. Arşivlenmiş olaya medya eklenemez.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{panelAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "file",
+                  "type": "file",
+                  "src": []
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Operatör medyasını sil (panel) (DELETE /v1/admin/missions/:id/media/:mediaId)",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/v1/admin/missions/:id/media/:mediaId",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "admin",
+                "missions",
+                ":id",
+                "media",
+                ":mediaId"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": ""
+                },
+                {
+                  "key": "mediaId",
+                  "value": ""
+                }
+              ]
+            },
+            "description": "Kayıt ve dosya silinir. Yalnız operatörün yüklediği medya silinebilir; gönüllü yüklemesi silinmez, PUT /admin/missions/{id}/photos/{submissionId} ile reddedilir. `mediaId`, GET /admin/missions/{id}/photos yanıtındaki `submissionId`'dir.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{panelAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Olayın zaman çizelgesi (panel) (GET /v1/admin/missions/:id/events)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/v1/admin/missions/:id/events",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "admin",
+                "missions",
+                ":id",
+                "events"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": ""
+                }
+              ]
+            },
+            "description": "Denetim izi, bildirim kaydı ve check-in kayıtlarından türetilir; `at` artan sırada. Silinmiş gönüllünün adı dönmez (`Silinmiş gönüllü`). Olay oluşturulurken bağlanan ihbarın eski kayıtlarda bağ kaydı yoktur; bu ihbarlar olayın oluşturulma anında görünür.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{panelAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          }
+        },
+        {
           "name": "Bölge listesi (kapsam menüsü) (GET /v1/admin/regions)",
           "request": {
             "method": "GET",

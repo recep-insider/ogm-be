@@ -758,6 +758,12 @@
           "id": {
             "type": "string"
           },
+          "refNo": {
+            "type": "string",
+            "nullable": true,
+            "example": "OGM-2026-000123",
+            "description": "Okunabilir olay numarası; yıl Türkiye saatine göre, sayaç her yıl sıfırlanır"
+          },
           "title": {
             "type": "string"
           },
@@ -942,6 +948,12 @@
           "id": {
             "type": "string"
           },
+          "refNo": {
+            "type": "string",
+            "nullable": true,
+            "example": "OGM-2026-000123",
+            "description": "Okunabilir olay numarası; yıl Türkiye saatine göre, sayaç her yıl sıfırlanır"
+          },
           "title": {
             "type": "string"
           },
@@ -978,6 +990,99 @@
             "type": "string",
             "format": "uri",
             "nullable": true
+          }
+        }
+      },
+      "OperatorMissionMedia": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "GET /admin/missions/{id}/photos içinde submissionId"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "image",
+              "video"
+            ]
+          },
+          "url": {
+            "type": "string",
+            "format": "uri"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "approved"
+            ]
+          },
+          "uploadedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "uploadedBy": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string",
+                "nullable": true
+              }
+            }
+          }
+        }
+      },
+      "MissionEvent": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "report_linked",
+              "report_unlinked",
+              "notification_sent",
+              "mission_called",
+              "assembly_point_changed",
+              "mission_closed",
+              "first_checkin"
+            ]
+          },
+          "at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "actor": {
+            "type": "object",
+            "nullable": true,
+            "description": "Bilinmiyorsa null. system: panel kullanıcılarından önceki API anahtarı dönemi kaydı.",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "panel_user",
+                  "volunteer",
+                  "system"
+                ]
+              },
+              "id": {
+                "type": "string",
+                "nullable": true
+              },
+              "name": {
+                "type": "string",
+                "nullable": true
+              }
+            }
+          },
+          "detail": {
+            "type": "object",
+            "description": "report_linked | report_unlinked: {reportId, reportTitle|null}. notification_sent: {notificationId, category, title, recipients, smsCount, segments[]}. mission_called: {recipients, outOfRange, notReady, withoutBaseLocation}. assembly_point_changed: {name|null, locationChanged, notified{yolda,sahada,sms}|null}. mission_closed: {archivedAt}. first_checkin: {volunteer{id|null, name}, method: qr|tc_manual, recordedBy|null}; silinmiş gönüllü 'Silinmiş gönüllü' olarak döner."
           }
         }
       },
@@ -2182,7 +2287,7 @@
         ],
         "responses": {
           "200": {
-            "description": "items: görev (camelCase, cover URL, pendingPhotos, assemblyPoint|null), total/page/pageSize"
+            "description": "items: görev (camelCase, refNo, cover URL, pendingPhotos, assemblyPoint|null), total/page/pageSize. refNo: OGM-YYYY-NNNNNN, yıl Türkiye saatine göre; arama panelde istemci tarafındadır."
           }
         }
       },
@@ -2211,7 +2316,7 @@
         ],
         "responses": {
           "200": {
-            "description": "{ok, missionId, status: active, called}"
+            "description": "{ok, missionId, refNo, status: active, called}"
           },
           "400": {
             "description": "idempotency_key_invalid"
@@ -2261,7 +2366,7 @@
         ],
         "responses": {
           "200": {
-            "description": "mission {id,title} + items[{submissionId,kind,status,url,user}] + total"
+            "description": "mission {id,title} + items[{submissionId,kind,status,url,submittedAt,reviewedAt,source: volunteer|operator,user|null,uploadedBy{id,name}|null}] + total"
           },
           "404": {
             "description": "mission_not_found"
@@ -3778,6 +3883,163 @@
         "responses": {
           "200": {
             "description": "counts{cagrildi,yolda,sahada,tamamladi,katilamiyor} + items[{userId, ad, soyad, phone, status, calledAt, respondedAt, joinedAt, onSiteAt, completedAt, checkIn{checkedInAt, method, recordedBy}|null}]"
+          },
+          "404": {
+            "description": "mission_not_found"
+          }
+        }
+      }
+    },
+    "/admin/missions/{id}/media": {
+      "post": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "Olaya operatör fotoğrafı/videosu ekle (panel)",
+        "description": "multipart/form-data, alan adı `file`; gönüllü saha fotoğrafıyla aynı biçim ve boyut sınırları (jpeg/png/mp4/mov). Moderasyon YOKTUR: medya `approved` yazılır ve hemen mobil olay detayında `gallery` (yalnız görsel) ve `photos[]` içinde görünür. Arşivlenmiş olaya medya eklenemez.",
+        "security": [
+          {
+            "panelBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "file"
+                ],
+                "properties": {
+                  "file": {
+                    "type": "string",
+                    "format": "binary"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Eklendi",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OperatorMissionMedia"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "mission_not_found"
+          },
+          "409": {
+            "description": "mission_archived"
+          },
+          "413": {
+            "description": "file_too_large"
+          },
+          "415": {
+            "description": "unsupported_media_type"
+          }
+        }
+      }
+    },
+    "/admin/missions/{id}/media/{mediaId}": {
+      "delete": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "Operatör medyasını sil (panel)",
+        "description": "Kayıt ve dosya silinir. Yalnız operatörün yüklediği medya silinebilir; gönüllü yüklemesi silinmez, PUT /admin/missions/{id}/photos/{submissionId} ile reddedilir. `mediaId`, GET /admin/missions/{id}/photos yanıtındaki `submissionId`'dir.",
+        "security": [
+          {
+            "panelBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "mediaId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Silindi"
+          },
+          "404": {
+            "description": "not_found"
+          },
+          "409": {
+            "description": "volunteer_media"
+          }
+        }
+      }
+    },
+    "/admin/missions/{id}/events": {
+      "get": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "Olayın zaman çizelgesi (panel)",
+        "description": "Denetim izi, bildirim kaydı ve check-in kayıtlarından türetilir; `at` artan sırada. Silinmiş gönüllünün adı dönmez (`Silinmiş gönüllü`). Olay oluşturulurken bağlanan ihbarın eski kayıtlarda bağ kaydı yoktur; bu ihbarlar olayın oluşturulma anında görünür.",
+        "security": [
+          {
+            "panelBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Zaman çizelgesi",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/MissionEvent"
+                      }
+                    }
+                  }
+                }
+              }
+            }
           },
           "404": {
             "description": "mission_not_found"
