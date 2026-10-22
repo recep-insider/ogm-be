@@ -19,7 +19,7 @@ fs.mkdirSync(outDir, { recursive: true });
 
 const spec = buildSpec();
 const outPath = path.join(outDir, 'openapi.json');
-fs.writeFileSync(outPath, JSON.stringify(spec, null, 2), 'utf8');
+fs.writeFileSync(outPath, `${JSON.stringify(spec, null, 2)}\n`, 'utf8');
 
 const pathCount = Object.keys(spec.paths || {}).length;
 const operationCount = Object.values(spec.paths || {}).reduce(
