@@ -1524,6 +1524,55 @@ router.get(
   }),
 );
 
+const MAX_BULK_CHECK_IN_MISSIONS = 100;
+
+// Virgülle ayrılmış olay id'leri → tekilleştirilmiş dizi (1–100 id, her biri en çok 36 karakter).
+const bulkCheckInsQuerySchema = Joi.object({
+  missionIds: Joi.string()
+    .required()
+    .custom((value, helpers) => {
+      const ids = [...new Set(value.split(',').map((id) => id.trim()).filter(Boolean))];
+      if (!ids.length || ids.length > MAX_BULK_CHECK_IN_MISSIONS || ids.some((id) => id.length > 36)) {
+        return helpers.error('any.invalid');
+      }
+      return ids;
+    })
+    .messages({ 'any.invalid': `missionIds virgülle ayrılmış 1–${MAX_BULK_CHECK_IN_MISSIONS} olay kimliği olmalı` }),
+});
+
+/**
+ * @openapi
+ * /admin/check-ins:
+ *   get:
+ *     tags: [Admin]
+ *     summary: Birden çok olayın yangın sahası giriş kayıtları (panel, toplu)
+ *     description: >-
+ *       Panelin açık olaylar için olay başına attığı GET /admin/missions/{id}/check-ins
+ *       isteklerinin toplu hâli. items içindeki her öğe tekil ucun döndüğü biçimin aynısıdır
+ *       ve ek olarak missionId taşır; istek sırasıyla döner. Bilinmeyen id 404 vermez,
+ *       listede yer almaz. Tekrarlanan id bir kez döner.
+ *     security: [ { panelBearer: [] } ]
+ *     parameters:
+ *       - in: query
+ *         name: missionIds
+ *         required: true
+ *         description: Virgülle ayrılmış olay id'leri (1–100 tekil id, her biri en çok 36 karakter).
+ *         schema: { type: string, example: 'am_marmaris,am_fethiye' }
+ *     responses:
+ *       200:
+ *         description: >-
+ *           {items[{missionId, mission{id,title,status}, onSite, trend{windowMinutes,count},
+ *           items[{userId, ad, soyad, phone, stk, method, recordedBy, checkedInAt}]}]}
+ *       400: { description: validation_error }
+ */
+router.get(
+  '/check-ins',
+  validate({ query: bulkCheckInsQuerySchema }),
+  asyncHandler(async (req, res) => {
+    res.json(await missionsService.adminCheckInsBulk(req.query.missionIds));
+  }),
+);
+
 const participantsQuerySchema = Joi.object({
   status: Joi.string().valid('cagrildi', 'yolda', 'sahada', 'tamamladi', 'katilamiyor').optional(),
 });

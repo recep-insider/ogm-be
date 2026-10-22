@@ -3207,6 +3207,35 @@
           }
         },
         {
+          "name": "Birden çok olayın yangın sahası giriş kayıtları (panel, toplu) (GET /v1/admin/check-ins)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/v1/admin/check-ins",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "admin",
+                "check-ins"
+              ]
+            },
+            "description": "Panelin açık olaylar için olay başına attığı GET /admin/missions/{id}/check-ins isteklerinin toplu hâli. items içindeki her öğe tekil ucun döndüğü biçimin aynısıdır ve ek olarak missionId taşır; istek sırasıyla döner. Bilinmeyen id 404 vermez, listede yer almaz. Tekrarlanan id bir kez döner.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{panelAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          }
+        },
+        {
           "name": "Olayın katılımcıları ve durum sayaçları (panel) (GET /v1/admin/missions/:id/participants)",
           "request": {
             "method": "GET",

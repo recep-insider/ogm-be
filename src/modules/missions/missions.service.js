@@ -54,8 +54,10 @@ async function sahadakiSayisi(missionId, mission) {
   return Number(row?.c || 0);
 }
 
+const CHECK_IN_TREND_MINUTES = 15;
+
 /** Check-in trendi — "son 15 dk +3" penceresi (§1). */
-async function checkInTrend(missionId, windowMinutes = 15) {
+async function checkInTrend(missionId, windowMinutes = CHECK_IN_TREND_MINUTES) {
   const since = new Date(Date.now() - windowMinutes * 60 * 1000);
   const row = await db('check_ins')
     .where({ mission_id: missionId })
@@ -993,10 +995,14 @@ async function adminCheckIns(missionId) {
     .orderBy('ci.checked_in_at', 'desc')
     .select('ci.*', 'u.ad', 'u.soyad', 'u.phone', 'u.stk_text');
 
+  return checkInsPayload(mission, rows, await checkInTrend(missionId));
+}
+
+function checkInsPayload(mission, rows, trend) {
   return {
     mission: { id: mission.id, title: mission.title, status: mission.status },
     onSite: mission.status === 'archived' ? 0 : rows.length,
-    trend: await checkInTrend(missionId),
+    trend,
     items: rows.map((r) => ({
       userId: r.user_id,
       ad: r.ad,
@@ -1007,6 +1013,47 @@ async function adminCheckIns(missionId) {
       recordedBy: r.recorded_by || null,
       checkedInAt: toIso(r.checked_in_at),
     })),
+  };
+}
+
+/**
+ * Panel — birden çok olayın check-in listesi tek istekte. Her öğe adminCheckIns ile aynı
+ * biçimdedir (+ missionId), istek sırasıyla döner; bilinmeyen id listede yer almaz.
+ * Olay sayısından bağımsız en çok 3 sorgu (SIM-1080: olay başına sorgu yok).
+ */
+async function adminCheckInsBulk(missionIds) {
+  const missions = await db('missions').whereIn('id', missionIds).select('id', 'title', 'status');
+  if (!missions.length) return { items: [] };
+  const ids = missions.map((m) => m.id);
+
+  const rows = await db('check_ins as ci')
+    .join('users as u', 'u.id', 'ci.user_id')
+    .whereIn('ci.mission_id', ids)
+    .orderBy('ci.checked_in_at', 'desc')
+    .select('ci.*', 'u.ad', 'u.soyad', 'u.phone', 'u.stk_text');
+
+  // checkInTrend ile aynı pencere, tüm olaylar için tek GROUP BY.
+  const windowMinutes = CHECK_IN_TREND_MINUTES;
+  const since = new Date(Date.now() - windowMinutes * 60 * 1000);
+  const trendRows = await db('check_ins')
+    .whereIn('mission_id', ids)
+    .where('checked_in_at', '>=', since)
+    .groupBy('mission_id')
+    .select('mission_id')
+    .count({ c: '*' });
+  const trendCount = new Map(trendRows.map((r) => [r.mission_id, Number(r.c || 0)]));
+
+  const rowsByMission = new Map(ids.map((id) => [id, []]));
+  for (const r of rows) rowsByMission.get(r.mission_id)?.push(r);
+
+  const byId = new Map(missions.map((m) => [m.id, m]));
+  return {
+    items: missionIds
+      .filter((id) => byId.has(id))
+      .map((id) => ({
+        missionId: id,
+        ...checkInsPayload(byId.get(id), rowsByMission.get(id), { windowMinutes, count: trendCount.get(id) || 0 }),
+      })),
   };
 }
 
@@ -1088,6 +1135,7 @@ module.exports = {
   adminUpdate,
   adminArchive,
   adminCheckIns,
+  adminCheckInsBulk,
   adminParticipants,
   callReadyVolunteers,
   EVENT_STATUS,
