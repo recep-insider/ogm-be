@@ -9,6 +9,7 @@ const { writeAudit } = require('../../../src/shared/audit');
 const { deliverKkdSet } = require('../../../src/modules/equipment/equipment.service');
 const { adminSaveAttendance } = require('../../../src/modules/trainings/trainings.service');
 const { KKD_ITEM_KEYS } = require('../../../src/shared/kkd');
+const { latestCommissionDecisions } = require('../../../src/modules/users/readiness.service');
 
 const user = (id) => ({ id, deleted_at: null });
 const decision = (userId, value, decidedAt) => ({
@@ -129,5 +130,24 @@ describe('adminSaveAttendance — KKD teslimi komisyon onayı', () => {
     expect(result.items.map((i) => i.kkdDelivered)).toEqual([true, false]);
     expect(db.rows('equipment').every((e) => e.user_id === 'u1')).toBe(true);
     expect(db.rows('equipment')).toHaveLength(KKD_ITEM_KEYS.length);
+  });
+});
+
+// Hazırlık zinciri (readiness.collectMany) ve KKD teslim kapısı aynı sorgudan okur.
+describe('latestCommissionDecisions', () => {
+  test('kullanıcı başına en güncel kararı döner; kararı olmayan yer almaz', async () => {
+    db.reset({
+      commission_decisions: [
+        decision('u1', 'approved', '2026-01-01'),
+        decision('u1', 'rejected', '2026-02-01'),
+        decision('u2', 'approved', '2026-01-15'),
+      ],
+    });
+
+    const latest = await latestCommissionDecisions(['u1', 'u2', 'u3']);
+
+    expect(latest.get('u1').decision).toBe('rejected');
+    expect(latest.get('u2').decision).toBe('approved');
+    expect(latest.has('u3')).toBe(false);
   });
 });

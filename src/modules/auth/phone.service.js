@@ -5,9 +5,10 @@ const { db } = require('../../config/db');
 const { redis } = require('../../config/redis');
 const env = require('../../config/env');
 const logger = require('../../config/logger');
-const { errors } = require('../../shared/errors');
+const { AppError, errors } = require('../../shared/errors');
+const { hitFixedWindow } = require('../../shared/fixed-window');
 const { generateOtp, hashOtp, verifyOtp } = require('../../shared/otp');
-const { sendOtp } = require('../../shared/sms-provider');
+const { sendOtp, assertOtpDeliverable, maskPhone } = require('../../shared/sms-provider');
 const { writeAudit } = require('../../shared/audit');
 const { toDateOnly } = require('../../shared/dates');
 const { getApplicationStatus } = require('../users/users.service');
@@ -41,25 +42,39 @@ async function checkRateLimits(phone, ip) {
   const banned = await redis.get(`${BAN_PREFIX}${phone}`);
   if (banned) throw errors.rateLimit('Çok fazla başarısız deneme, lütfen sonra tekrar deneyin');
 
-  const phoneCount = await redis.incr(`${RATE_PHONE_PREFIX}${phone}`);
-  if (phoneCount === 1) await redis.expire(`${RATE_PHONE_PREFIX}${phone}`, 3600);
-  if (phoneCount > 5) throw errors.rateLimit('Telefon başına saatlik OTP limiti aşıldı');
+  await hitFixedWindow(redis, `${RATE_PHONE_PREFIX}${phone}`, {
+    max: 5,
+    windowSec: 3600,
+    message: 'Telefon başına saatlik OTP limiti aşıldı',
+  });
 
   if (ip) {
-    const ipCount = await redis.incr(`${RATE_IP_PREFIX}${ip}`);
-    if (ipCount === 1) await redis.expire(`${RATE_IP_PREFIX}${ip}`, 3600);
-    if (ipCount > 50) throw errors.rateLimit('IP başına saatlik OTP limiti aşıldı');
+    await hitFixedWindow(redis, `${RATE_IP_PREFIX}${ip}`, {
+      max: 50,
+      windowSec: 3600,
+      message: 'IP başına saatlik OTP limiti aşıldı',
+    });
   }
 }
 
 async function sendOtpFlow({ phone, ip }) {
+  assertOtpDeliverable(phone);
   await checkRateLimits(phone, ip);
 
   const code = getOtpForPhone(phone);
   const codeHash = await hashOtp(code);
+
+  // Oturum kod gönderildikten sonra yazılır: limit/sağlayıcı hatası gönderilmemiş koda oturum bırakmaz.
+  try {
+    await sendOtp(phone, code);
+  } catch (err) {
+    if (err instanceof AppError) throw err;
+    logger.error('SMS gönderim hatası', { error: err.message, phone: maskPhone(phone) });
+    throw errors.internal('SMS gönderilemedi');
+  }
+
   const sessionId = uuidv4();
   const ttl = env.sms.otpExpiresIn;
-
   const payload = {
     phone,
     codeHash,
@@ -67,13 +82,6 @@ async function sendOtpFlow({ phone, ip }) {
     createdAt: Date.now(),
   };
   await redis.set(sessionKey(sessionId), JSON.stringify(payload), 'EX', ttl);
-
-  try {
-    await sendOtp(phone, code);
-  } catch (err) {
-    logger.error('SMS gönderim hatası', { error: err.message, phone });
-    throw errors.internal('SMS gönderilemedi');
-  }
 
   return {
     sessionId,
@@ -93,23 +101,26 @@ async function resendOtpFlow({ sessionId, ip }) {
     throw errors.rateLimit(`Lütfen ${Math.ceil(env.sms.resendCooldown - elapsed)} saniye bekleyin`);
   }
 
+  assertOtpDeliverable(session.phone);
   await checkRateLimits(session.phone, ip);
 
   const code = getOtpForPhone(session.phone);
   const codeHash = await hashOtp(code);
-  session.codeHash = codeHash;
-  session.attempts = 0;
-  session.createdAt = Date.now();
 
-  const ttl = env.sms.otpExpiresIn;
-  await redis.set(sessionKey(sessionId), JSON.stringify(session), 'EX', ttl);
-
+  // Yeni kod gönderilemezse oturum değişmez; telefondaki önceki kod geçerli kalır.
   try {
     await sendOtp(session.phone, code);
   } catch (err) {
-    logger.error('SMS gönderim hatası', { error: err.message, phone: session.phone });
+    if (err instanceof AppError) throw err;
+    logger.error('SMS gönderim hatası', { error: err.message, phone: maskPhone(session.phone) });
     throw errors.internal('SMS gönderilemedi');
   }
+
+  session.codeHash = codeHash;
+  session.attempts = 0;
+  session.createdAt = Date.now();
+  const ttl = env.sms.otpExpiresIn;
+  await redis.set(sessionKey(sessionId), JSON.stringify(session), 'EX', ttl);
 
   return { cooldownSec: env.sms.resendCooldown, expiresIn: ttl };
 }

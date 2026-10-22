@@ -44,6 +44,7 @@ async function notifyLocationChange(missionId, point) {
     .join('users as u', 'u.id', 'mp.user_id')
     .where('mp.mission_id', missionId)
     .whereIn('mp.status', ['yolda', 'sahada'])
+    .whereNull('u.deleted_at')
     .select('mp.status', 'u.id as user_id', 'u.phone');
 
   const title = mission?.title || 'Toplanma noktası değişti';
@@ -127,7 +128,7 @@ async function upsert(missionId, body, actor = {}) {
     entityId: missionId,
     ip: actor.ip,
     userAgent: actor.userAgent,
-    payload: { locationChanged, notified },
+    payload: { name: body.name, locationChanged, notified },
   });
 
   return { ok: true, assemblyPoint: point, locationChanged, notified };

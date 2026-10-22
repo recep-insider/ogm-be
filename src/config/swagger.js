@@ -321,6 +321,7 @@ const definition = {
         type: 'object',
         properties: {
           id: { type: 'string' },
+          refNo: { type: 'string', nullable: true, example: 'OGM-2026-000123', description: 'Okunabilir olay numarası; yıl Türkiye saatine göre, sayaç her yıl sıfırlanır' },
           title: { type: 'string' },
           shortLocation: { type: 'string', example: 'Muğla / Marmaris' },
           iconName: { type: 'string', enum: ['water', 'helmet', 'tool', 'first-aid'] },
@@ -400,6 +401,7 @@ const definition = {
         description: 'Görev Aldığım Yangınlar — yalnızca userStatus yolda | sahada | tamamladi olan olaylar.',
         properties: {
           id: { type: 'string' },
+          refNo: { type: 'string', nullable: true, example: 'OGM-2026-000123', description: 'Okunabilir olay numarası; yıl Türkiye saatine göre, sayaç her yıl sıfırlanır' },
           title: { type: 'string' },
           location: { type: 'string' },
           startDate: {
@@ -412,6 +414,60 @@ const definition = {
           status: { type: 'string', enum: ['active', 'archived'] },
           userStatus: { type: 'string', enum: ['yolda', 'sahada', 'tamamladi'] },
           cover: { type: 'string', format: 'uri', nullable: true },
+        },
+      },
+      OperatorMissionMedia: {
+        type: 'object',
+        properties: {
+          id: { type: 'string', description: 'GET /admin/missions/{id}/photos içinde submissionId' },
+          kind: { type: 'string', enum: ['image', 'video'] },
+          url: { type: 'string', format: 'uri' },
+          status: { type: 'string', enum: ['approved'] },
+          uploadedAt: { type: 'string', format: 'date-time' },
+          uploadedBy: {
+            type: 'object',
+            properties: { id: { type: 'string' }, name: { type: 'string', nullable: true } },
+          },
+        },
+      },
+      MissionEvent: {
+        type: 'object',
+        properties: {
+          id: { type: 'string' },
+          type: {
+            type: 'string',
+            enum: [
+              'report_linked',
+              'report_unlinked',
+              'notification_sent',
+              'mission_called',
+              'assembly_point_changed',
+              'mission_closed',
+              'first_checkin',
+            ],
+          },
+          at: { type: 'string', format: 'date-time' },
+          actor: {
+            type: 'object',
+            nullable: true,
+            description: 'Bilinmiyorsa null. system: panel kullanıcılarından önceki API anahtarı dönemi kaydı.',
+            properties: {
+              kind: { type: 'string', enum: ['panel_user', 'volunteer', 'system'] },
+              id: { type: 'string', nullable: true },
+              name: { type: 'string', nullable: true },
+            },
+          },
+          detail: {
+            type: 'object',
+            description: [
+              'report_linked | report_unlinked: {reportId, reportTitle|null}.',
+              'notification_sent: {notificationId, category, title, recipients (hedef kitle), pushCount (sağlayıcının kabul ettiği push; mock\'ta 0), smsCount, segments[]}.',
+              'mission_called: {recipients, outOfRange, notReady, withoutBaseLocation}.',
+              'assembly_point_changed: {name|null, locationChanged, notified{yolda,sahada,sms}|null}.',
+              'mission_closed: {archivedAt}.',
+              "first_checkin: {volunteer{id|null, name}, method: qr|tc_manual, recordedBy|null}; silinmiş gönüllü 'Silinmiş gönüllü' olarak döner.",
+            ].join(' '),
+          },
         },
       },
       FireMissionDetail: {
@@ -431,6 +487,16 @@ const definition = {
           },
         ],
       },
+      ContentBlock: {
+        type: 'object',
+        description: 'Eğitim içerik bloğu (blog içeriğiyle aynı biçim). Video kaynağı yalnız .mp4.',
+        properties: {
+          type: { type: 'string', enum: ['paragraph', 'heading', 'image', 'video'] },
+          text: { type: 'string', description: 'paragraph | heading' },
+          source: { type: 'string', description: 'image: tam URL; video: kaydedilen değer' },
+          caption: { type: 'string' },
+        },
+      },
       OnlineTraining: {
         type: 'object',
         properties: {
@@ -442,6 +508,8 @@ const definition = {
           required: { type: 'boolean' },
           delivery: { type: 'string', enum: ['yuzyuze', 'online'] },
           videoUrl: { type: 'string', format: 'uri', nullable: true },
+          cover: { type: 'string', format: 'uri', nullable: true },
+          content: { type: 'array', items: { $ref: '#/components/schemas/ContentBlock' } },
           startsAt: {
             type: 'string',
             format: 'date-time',
@@ -459,6 +527,8 @@ const definition = {
         properties: {
           id: { type: 'string' },
           title: { type: 'string' },
+          description: { type: 'string' },
+          content: { type: 'array', items: { $ref: '#/components/schemas/ContentBlock' } },
           location: { type: 'string' },
           startDate: { type: 'string', format: 'date' },
           startTime: { type: 'string', example: '09:00' },

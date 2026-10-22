@@ -568,7 +568,7 @@
                 "me"
               ]
             },
-            "description": "Hesap soft-delete yapılır, refresh token'lar iptal edilir, cihaz kayıtları silinir.\nKişisel veriler 30 gün içinde anonimleştirilir/silinir.\n"
+            "description": "Hesap soft-delete yapılır, refresh token'lar iptal edilir, cihaz kayıtları silinir.\nKişisel veriler 30 gün sonra anonimleştirilir/silinir.\n"
           }
         },
         {
@@ -2024,7 +2024,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"title\": \"\",\n  \"description\": \"\",\n  \"durationMin\": 0,\n  \"iconTone\": \"primary\",\n  \"sortOrder\": 0,\n  \"videoPath\": \"\",\n  \"required\": true,\n  \"delivery\": \"yuzyuze\",\n  \"startsAt\": \"2026-01-01T00:00:00Z\",\n  \"location\": \"\",\n  \"instructor\": \"\",\n  \"isActive\": true\n}",
+              "raw": "{\n  \"title\": \"\",\n  \"description\": \"\",\n  \"durationMin\": 0,\n  \"iconTone\": \"primary\",\n  \"sortOrder\": 0,\n  \"videoPath\": \"\",\n  \"coverPath\": \"\",\n  \"content\": [\n    {\n      \"type\": \"paragraph\",\n      \"text\": \"\",\n      \"source\": \"\",\n      \"caption\": \"\"\n    }\n  ],\n  \"required\": true,\n  \"delivery\": \"yuzyuze\",\n  \"startsAt\": \"2026-01-01T00:00:00Z\",\n  \"location\": \"\",\n  \"instructor\": \"\",\n  \"isActive\": true\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -2098,7 +2098,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"title\": \"\",\n  \"location\": \"\",\n  \"startDate\": \"2026-01-01\",\n  \"startTime\": \"09:00\",\n  \"endTime\": \"17:00\",\n  \"instructorName\": \"\",\n  \"instructorAvatarPath\": \"\",\n  \"coverPath\": \"\",\n  \"totalSeats\": 0,\n  \"isActive\": true\n}",
+              "raw": "{\n  \"title\": \"\",\n  \"description\": \"\",\n  \"content\": [\n    {\n      \"type\": \"paragraph\",\n      \"text\": \"\",\n      \"source\": \"\",\n      \"caption\": \"\"\n    }\n  ],\n  \"location\": \"\",\n  \"startDate\": \"2026-01-01\",\n  \"startTime\": \"09:00\",\n  \"endTime\": \"17:00\",\n  \"instructorName\": \"\",\n  \"instructorAvatarPath\": \"\",\n  \"coverPath\": \"\",\n  \"totalSeats\": 0,\n  \"isActive\": true\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -2264,7 +2264,7 @@
                 "summary"
               ]
             },
-            "description": "[from,to) penceresi + bir önceki eşit uzunlukta pencereyle kıyas döner. \"fires\" = onaylanmış ihbar sayısı (FIRES domaini netleşene dek vekil metrik); volunteersTotal = pencere sonu itibarıyla kümülatif; activeVolunteers = pencere içinde göreve katılan (yolda | sahada | tamamladi; yalnız çağrılan sayılmaz) tekil gönüllü; reportAccuracy = confirmed/(confirmed+rejected)%; missions = pencere içinde açılan olay sayısı (created_at, arşivlenenler dahil).",
+            "description": "[from,to) penceresi + bir önceki eşit uzunlukta pencereyle kıyas döner. \"fires\" = onaylanmış ihbar sayısı (FIRES domaini netleşene dek vekil metrik); volunteersTotal = pencere sonu itibarıyla kümülatif; activeVolunteers = pencere içinde göreve katılan (yolda | sahada | tamamladi; yalnız çağrılan sayılmaz) tekil gönüllü; reportAccuracy = confirmed/(confirmed+rejected)%; missions = pencere içinde açılan olay sayısı (created_at, arşivlenenler dahil); sos = pencere içinde açılan SOS çağrısı. region verilirse her sayı o bölgeye süzülür: olay missions.il, ihbar fire_reports.il, gönüllü (toplam ve görev almış) users.il, SOS sos_reports.il. İli boş kayıt yalnızca \"Tüm Bölgeler\"de (all/parametresiz) sayılır.",
             "auth": {
               "type": "bearer",
               "bearer": [
@@ -2624,6 +2624,37 @@
                 }
               ]
             },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{panelAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Tüm saha eğitimlerinin başvuruları (panel, sayfalı) (GET /v1/admin/trainings/saha/applications)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/v1/admin/trainings/saha/applications",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "admin",
+                "trainings",
+                "saha",
+                "applications"
+              ]
+            },
+            "description": "Eğitim başına /admin/trainings/saha/{id}/applications isteğinin toplu karşılığı. Kayıt biçimi o uçla aynıdır; her kayıt trainingId taşır. Panel oturumu.",
             "auth": {
               "type": "bearer",
               "bearer": [
@@ -3213,6 +3244,132 @@
           }
         },
         {
+          "name": "Olaya operatör fotoğrafı/videosu ekle (panel) (POST /v1/admin/missions/:id/media)",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/v1/admin/missions/:id/media",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "admin",
+                "missions",
+                ":id",
+                "media"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": ""
+                }
+              ]
+            },
+            "description": "multipart/form-data, alan adı `file`; gönüllü saha fotoğrafıyla aynı biçimler (jpeg/png/mp4/mov). Görsel en çok UPLOAD_MAX_DOC_BYTES (varsayılan 10 MB), video en çok UPLOAD_MAX_VIDEO_BYTES (varsayılan 100 MB). Moderasyon YOKTUR: medya `approved` yazılır ve hemen mobil olay detayında `gallery` (yalnız görsel) ve `photos[]` içinde görünür. Arşivlenmiş olaya medya eklenemez.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{panelAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "file",
+                  "type": "file",
+                  "src": []
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Operatör medyasını sil (panel) (DELETE /v1/admin/missions/:id/media/:mediaId)",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/v1/admin/missions/:id/media/:mediaId",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "admin",
+                "missions",
+                ":id",
+                "media",
+                ":mediaId"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": ""
+                },
+                {
+                  "key": "mediaId",
+                  "value": ""
+                }
+              ]
+            },
+            "description": "Kayıt ve dosya silinir. Yalnız operatörün yüklediği medya silinebilir; gönüllü yüklemesi silinmez, PUT /admin/missions/{id}/photos/{submissionId} ile reddedilir. `mediaId`, GET /admin/missions/{id}/photos yanıtındaki `submissionId`'dir.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{panelAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Olayın zaman çizelgesi (panel) (GET /v1/admin/missions/:id/events)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/v1/admin/missions/:id/events",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "admin",
+                "missions",
+                ":id",
+                "events"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": ""
+                }
+              ]
+            },
+            "description": "Denetim izi, bildirim kaydı ve check-in kayıtlarından türetilir; `at` artan sırada. Silinmiş gönüllünün adı dönmez (`Silinmiş gönüllü`). Olay oluşturulurken bağlanan ihbarın eski kayıtlarda bağ kaydı yoktur; bu ihbarlar olayın oluşturulma anında görünür.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{panelAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          }
+        },
+        {
           "name": "Bölge listesi (kapsam menüsü) (GET /v1/admin/regions)",
           "request": {
             "method": "GET",
@@ -3257,7 +3414,7 @@
                 "notifications"
               ]
             },
-            "description": "Kanal KATEGORİDEN TÜRER, operatör seçmez: SMS yalnızca `acil` sınıfına gider, diğer her şey push. `acil` kapatılamaz ve gönüllünün bildirim tercihini bypass eder. Yarıçap admin'de girilmez. Olay bazlı gönderimde segment seçimi Hazır, Çağrıldı, Yolda, Sahada; genel gönderimde Hazır, Eğitim Bekleyenler, Tüm Gönüllüler. Gönderim denetim izine yazılır.",
+            "description": "Kanal KATEGORİDEN TÜRER, operatör seçmez: SMS yalnızca `acil` sınıfına gider, diğer her şey push. `acil` kapatılamaz ve gönüllünün bildirim tercihini bypass eder. Yarıçap admin'de girilmez. Olay bazlı gönderimde segment seçimi Hazır, Çağrıldı, Yolda, Sahada; genel gönderimde Hazır, Eğitim Bekleyenler, Tüm Gönüllüler. Gönderim denetim izine yazılır. `recipients` hedef kitledeki kişi sayısıdır; `pushCount` push'u sağlayıcının KABUL ETTİĞİ kişi sayısıdır (cihazı olmayan, tercihini kapatan ve hata alan sayılmaz; mock sağlayıcıda 0).",
             "auth": {
               "type": "bearer",
               "bearer": [

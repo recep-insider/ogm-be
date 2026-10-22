@@ -7,9 +7,9 @@
 // (Bölge Müdürlüğü → İşletme Müdürlüğü → İşletme Şefliği) faz 2'dir ve bundan
 // BAĞIMSIZ kurulacak — teşkilat sınırları mülki sınırlarla örtüşmüyor.
 //
-// Kapsam yalnızca OLAY ve İHBAR kayıtlarını süzer. Gönüllüler bölge kapsamına
-// GİRMEZ: "şu bölgenin gönüllüsü" diye bir kavram yoktur; gönüllü listesi, sayaçlar
-// ve bildirim hedef kitlesi her zaman tüm gönüllüleri kapsar.
+// Kapsam olay, ihbar, gönüllü (ikamet ili) ve SOS (basıldığı yer) kayıtlarını il
+// alanından süzer; ili bilinmeyen kayıt yalnız "all"da görünür. Bildirim hedef
+// kitlesi bölgeyle daraltılmaz.
 
 const REGIONS = [
   {

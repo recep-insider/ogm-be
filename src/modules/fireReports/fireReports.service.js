@@ -6,6 +6,7 @@ const { db } = require('../../config/db');
 const { redis } = require('../../config/redis');
 const env = require('../../config/env');
 const { errors } = require('../../shared/errors');
+const { hitFixedWindow } = require('../../shared/fixed-window');
 const { toIso } = require('../../shared/dates');
 const { writeAudit } = require('../../shared/audit');
 const { sendPushToUser } = require('../../shared/push-provider');
@@ -119,9 +120,7 @@ async function create({ userId, data, files, ip, userAgent }) {
 
   // Saatte 5 (kontrat 9.1 → 429 rate_limited) — üye için userId, guest için IP.
   const key = userId ? `rl:fire:${userId}` : `rl:fire:ip:${ip || 'unknown'}`;
-  const count = await redis.incr(key);
-  if (count === 1) await redis.expire(key, 3600);
-  if (count > 5) throw errors.rateLimit('Saatlik yangın bildirim limiti aşıldı');
+  await hitFixedWindow(redis, key, { max: 5, windowSec: 3600, message: 'Saatlik yangın bildirim limiti aşıldı' });
 
   const { lat, lng } = data.coordinates;
   // İhbar yazma yolu: konum adı "nice to have", ihbarın kaydı hayati. Geocode

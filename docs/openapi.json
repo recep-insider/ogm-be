@@ -758,6 +758,12 @@
           "id": {
             "type": "string"
           },
+          "refNo": {
+            "type": "string",
+            "nullable": true,
+            "example": "OGM-2026-000123",
+            "description": "Okunabilir olay numarası; yıl Türkiye saatine göre, sayaç her yıl sıfırlanır"
+          },
           "title": {
             "type": "string"
           },
@@ -942,6 +948,12 @@
           "id": {
             "type": "string"
           },
+          "refNo": {
+            "type": "string",
+            "nullable": true,
+            "example": "OGM-2026-000123",
+            "description": "Okunabilir olay numarası; yıl Türkiye saatine göre, sayaç her yıl sıfırlanır"
+          },
           "title": {
             "type": "string"
           },
@@ -981,6 +993,99 @@
           }
         }
       },
+      "OperatorMissionMedia": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "GET /admin/missions/{id}/photos içinde submissionId"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "image",
+              "video"
+            ]
+          },
+          "url": {
+            "type": "string",
+            "format": "uri"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "approved"
+            ]
+          },
+          "uploadedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "uploadedBy": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string",
+                "nullable": true
+              }
+            }
+          }
+        }
+      },
+      "MissionEvent": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "report_linked",
+              "report_unlinked",
+              "notification_sent",
+              "mission_called",
+              "assembly_point_changed",
+              "mission_closed",
+              "first_checkin"
+            ]
+          },
+          "at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "actor": {
+            "type": "object",
+            "nullable": true,
+            "description": "Bilinmiyorsa null. system: panel kullanıcılarından önceki API anahtarı dönemi kaydı.",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "panel_user",
+                  "volunteer",
+                  "system"
+                ]
+              },
+              "id": {
+                "type": "string",
+                "nullable": true
+              },
+              "name": {
+                "type": "string",
+                "nullable": true
+              }
+            }
+          },
+          "detail": {
+            "type": "object",
+            "description": "report_linked | report_unlinked: {reportId, reportTitle|null}. notification_sent: {notificationId, category, title, recipients (hedef kitle), pushCount (sağlayıcının kabul ettiği push; mock'ta 0), smsCount, segments[]}. mission_called: {recipients, outOfRange, notReady, withoutBaseLocation}. assembly_point_changed: {name|null, locationChanged, notified{yolda,sahada,sms}|null}. mission_closed: {archivedAt}. first_checkin: {volunteer{id|null, name}, method: qr|tc_manual, recordedBy|null}; silinmiş gönüllü 'Silinmiş gönüllü' olarak döner."
+          }
+        }
+      },
       "FireMissionDetail": {
         "allOf": [
           {
@@ -1014,6 +1119,32 @@
             }
           }
         ]
+      },
+      "ContentBlock": {
+        "type": "object",
+        "description": "Eğitim içerik bloğu (blog içeriğiyle aynı biçim). Video kaynağı yalnız .mp4.",
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "paragraph",
+              "heading",
+              "image",
+              "video"
+            ]
+          },
+          "text": {
+            "type": "string",
+            "description": "paragraph | heading"
+          },
+          "source": {
+            "type": "string",
+            "description": "image: tam URL; video: kaydedilen değer"
+          },
+          "caption": {
+            "type": "string"
+          }
+        }
       },
       "OnlineTraining": {
         "type": "object",
@@ -1051,6 +1182,17 @@
             "type": "string",
             "format": "uri",
             "nullable": true
+          },
+          "cover": {
+            "type": "string",
+            "format": "uri",
+            "nullable": true
+          },
+          "content": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ContentBlock"
+            }
           },
           "startsAt": {
             "type": "string",
@@ -1091,6 +1233,15 @@
           },
           "title": {
             "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "content": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ContentBlock"
+            }
           },
           "location": {
             "type": "string"
@@ -2027,7 +2178,7 @@
         ],
         "responses": {
           "200": {
-            "description": "user (il, ilce, region, ogrenim, meslek, meslekDiger, giysiBedeni, ayakkabiNumarasi, stkText dahil) + hazirlikZinciri + komisyon + kkd + application (yoksa null)"
+            "description": "user (il, ilce, region, ogrenim, meslek, meslekDiger, giysiBedeni, ayakkabiNumarasi, stkText dahil) + hazirlikZinciri + komisyon + kkd + application (yoksa null). application.saglikRaporu / sabikaKaydi 15 dk geçerli imzalı URL'dir (`?exp=&sig=`); imzasız, süresi dolmuş veya bozuk imzalı istek 403 `signed_url_invalid` alır."
           },
           "404": {
             "description": "user_not_found"
@@ -2136,7 +2287,7 @@
         ],
         "responses": {
           "200": {
-            "description": "items: görev (camelCase, cover URL, pendingPhotos, assemblyPoint|null), total/page/pageSize"
+            "description": "items: görev (camelCase, refNo, cover URL, pendingPhotos, assemblyPoint|null), total/page/pageSize. refNo: OGM-YYYY-NNNNNN, yıl Türkiye saatine göre; arama panelde istemci tarafındadır."
           }
         }
       },
@@ -2160,12 +2311,12 @@
               "type": "string",
               "maxLength": 200
             },
-            "description": "Aynı anahtar ve aynı gövdeyle tekrar gelen istek yeniden işlenmez; 24 saat içinde ilk başarılı yanıt `Idempotent-Replayed: true` başlığıyla döner. 4xx yanıt anahtarı serbest bırakır; 5xx'te anahtar işlem bittikten 60 sn sonra düşer."
+            "description": "Aynı anahtar ve aynı gövdeyle tekrar gelen istek yeniden işlenmez; 24 saat içinde ilk başarılı yanıt `Idempotent-Replayed: true` başlığıyla döner. İlk istek sürerken (süre sınırı yok) aynı anahtar 409 idempotency_in_flight alır. 4xx yanıt anahtarı serbest bırakır; 5xx'te anahtar işlem bittikten 40–60 sn sonra düşer, bu sürede tekrar deneme 409 alır."
           }
         ],
         "responses": {
           "200": {
-            "description": "{ok, missionId, status: active, called}"
+            "description": "{ok, missionId, refNo, status: active, called}"
           },
           "400": {
             "description": "idempotency_key_invalid"
@@ -2215,7 +2366,7 @@
         ],
         "responses": {
           "200": {
-            "description": "mission {id,title} + items[{submissionId,kind,status,url,user}] + total"
+            "description": "mission {id,title} + items[{submissionId,kind,status,url,submittedAt,reviewedAt,source: volunteer|operator,user|null,uploadedBy{id,name}|null}] + total"
           },
           "404": {
             "description": "mission_not_found"
@@ -2246,7 +2397,7 @@
         ],
         "responses": {
           "200": {
-            "description": "items[{id,title,description,durationMin,videoUrl,isActive,enrolled,completed}] + total"
+            "description": "items[{id,title,description,durationMin,videoUrl,videoPath,cover,coverPath,content[],isActive,enrolled,completed}] + total"
           }
         }
       },
@@ -2292,7 +2443,20 @@
                   },
                   "videoPath": {
                     "type": "string",
-                    "description": "POST /admin/content/media yanıtındaki path"
+                    "nullable": true,
+                    "description": "POST /admin/content/media yanıtındaki path veya URL; yalnız .mp4 (sorgu dizesi serbest)"
+                  },
+                  "coverPath": {
+                    "type": "string",
+                    "nullable": true,
+                    "description": "Kapak — POST /admin/content/media yanıtındaki path"
+                  },
+                  "content": {
+                    "type": "array",
+                    "maxItems": 100,
+                    "items": {
+                      "$ref": "#/components/schemas/ContentBlock"
+                    }
                   },
                   "required": {
                     "type": "boolean"
@@ -2358,7 +2522,7 @@
         ],
         "responses": {
           "200": {
-            "description": "items[{id,title,location,startDate,instructorName,totalSeats,availableSeats,applications{},isActive}] + total"
+            "description": "items[{id,title,description,content[],location,startDate,instructorName,cover,coverPath,totalSeats,availableSeats,enrolled,attended,isActive}] + total"
           }
         }
       },
@@ -2390,6 +2554,17 @@
                 "properties": {
                   "title": {
                     "type": "string"
+                  },
+                  "description": {
+                    "type": "string",
+                    "maxLength": 2000
+                  },
+                  "content": {
+                    "type": "array",
+                    "maxItems": 100,
+                    "items": {
+                      "$ref": "#/components/schemas/ContentBlock"
+                    }
                   },
                   "location": {
                     "type": "string"
@@ -2525,7 +2700,7 @@
         ],
         "responses": {
           "200": {
-            "description": "items: SOS + status/history/responseSeconds + user{...,kanGrubu,acil{}}"
+            "description": "items: SOS + il/ilce/region/regionName (çağrının basıldığı yerden) + status/history/responseSeconds + user{...,kanGrubu,acil{}}"
           }
         }
       }
@@ -2616,7 +2791,7 @@
           "Admin"
         ],
         "summary": "Raporlar KPI'ları (panel)",
-        "description": "[from,to) penceresi + bir önceki eşit uzunlukta pencereyle kıyas döner. \"fires\" = onaylanmış ihbar sayısı (FIRES domaini netleşene dek vekil metrik); volunteersTotal = pencere sonu itibarıyla kümülatif; activeVolunteers = pencere içinde göreve katılan (yolda | sahada | tamamladi; yalnız çağrılan sayılmaz) tekil gönüllü; reportAccuracy = confirmed/(confirmed+rejected)%; missions = pencere içinde açılan olay sayısı (created_at, arşivlenenler dahil).",
+        "description": "[from,to) penceresi + bir önceki eşit uzunlukta pencereyle kıyas döner. \"fires\" = onaylanmış ihbar sayısı (FIRES domaini netleşene dek vekil metrik); volunteersTotal = pencere sonu itibarıyla kümülatif; activeVolunteers = pencere içinde göreve katılan (yolda | sahada | tamamladi; yalnız çağrılan sayılmaz) tekil gönüllü; reportAccuracy = confirmed/(confirmed+rejected)%; missions = pencere içinde açılan olay sayısı (created_at, arşivlenenler dahil); sos = pencere içinde açılan SOS çağrısı. region verilirse her sayı o bölgeye süzülür: olay missions.il, ihbar fire_reports.il, gönüllü (toplam ve görev almış) users.il, SOS sos_reports.il. İli boş kayıt yalnızca \"Tüm Bölgeler\"de (all/parametresiz) sayılır.",
         "security": [
           {
             "panelBearer": []
@@ -2640,11 +2815,19 @@
               "type": "string",
               "format": "date"
             }
+          },
+          {
+            "in": "query",
+            "name": "region",
+            "schema": {
+              "type": "string"
+            },
+            "description": "all (varsayılan) veya bölge anahtarı (shared/regions.js)"
           }
         ],
         "responses": {
           "200": {
-            "description": "range + kpis{fires,volunteersTotal,activeVolunteers,reportAccuracy,missions}{current,previous}"
+            "description": "range + region + kpis{fires,volunteersTotal,activeVolunteers,reportAccuracy,missions,sos}{current,previous}"
           }
         }
       }
@@ -2706,6 +2889,14 @@
               "type": "string",
               "format": "date"
             }
+          },
+          {
+            "in": "query",
+            "name": "region",
+            "schema": {
+              "type": "string"
+            },
+            "description": "all veya bölge anahtarı; özetle aynı il kolonundan süzer; emergency metriği il taşımadığından bölgeyle 400 döner"
           }
         ],
         "responses": {
@@ -3046,6 +3237,56 @@
         }
       }
     },
+    "/admin/trainings/saha/applications": {
+      "get": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "Tüm saha eğitimlerinin başvuruları (panel, sayfalı)",
+        "description": "Eğitim başına /admin/trainings/saha/{id}/applications isteğinin toplu karşılığı. Kayıt biçimi o uçla aynıdır; her kayıt trainingId taşır. Panel oturumu.",
+        "security": [
+          {
+            "panelBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "query",
+            "name": "status",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "pending",
+                "approved",
+                "rejected"
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "page",
+            "schema": {
+              "type": "integer",
+              "default": 1
+            }
+          },
+          {
+            "in": "query",
+            "name": "pageSize",
+            "schema": {
+              "type": "integer",
+              "default": 20,
+              "maximum": 100
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "items[{trainingId,applicationId,status,attendance,attendanceAt,kkdDelivered,createdAt,user}] + total/page/pageSize"
+          }
+        }
+      }
+    },
     "/admin/trainings/saha/{id}/applications": {
       "get": {
         "tags": [
@@ -3081,7 +3322,7 @@
         ],
         "responses": {
           "200": {
-            "description": "training {id,title} + items[{applicationId,status,user}] + total"
+            "description": "training {id,title} + items[{trainingId,applicationId,status,user}] + total"
           },
           "404": {
             "description": "training_not_found"
@@ -3665,6 +3906,163 @@
         }
       }
     },
+    "/admin/missions/{id}/media": {
+      "post": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "Olaya operatör fotoğrafı/videosu ekle (panel)",
+        "description": "multipart/form-data, alan adı `file`; gönüllü saha fotoğrafıyla aynı biçimler (jpeg/png/mp4/mov). Görsel en çok UPLOAD_MAX_DOC_BYTES (varsayılan 10 MB), video en çok UPLOAD_MAX_VIDEO_BYTES (varsayılan 100 MB). Moderasyon YOKTUR: medya `approved` yazılır ve hemen mobil olay detayında `gallery` (yalnız görsel) ve `photos[]` içinde görünür. Arşivlenmiş olaya medya eklenemez.",
+        "security": [
+          {
+            "panelBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "file"
+                ],
+                "properties": {
+                  "file": {
+                    "type": "string",
+                    "format": "binary"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Eklendi",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OperatorMissionMedia"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "mission_not_found"
+          },
+          "409": {
+            "description": "mission_archived"
+          },
+          "413": {
+            "description": "file_too_large"
+          },
+          "415": {
+            "description": "unsupported_media_type"
+          }
+        }
+      }
+    },
+    "/admin/missions/{id}/media/{mediaId}": {
+      "delete": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "Operatör medyasını sil (panel)",
+        "description": "Kayıt ve dosya silinir. Yalnız operatörün yüklediği medya silinebilir; gönüllü yüklemesi silinmez, PUT /admin/missions/{id}/photos/{submissionId} ile reddedilir. `mediaId`, GET /admin/missions/{id}/photos yanıtındaki `submissionId`'dir.",
+        "security": [
+          {
+            "panelBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "mediaId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Silindi"
+          },
+          "404": {
+            "description": "not_found"
+          },
+          "409": {
+            "description": "volunteer_media"
+          }
+        }
+      }
+    },
+    "/admin/missions/{id}/events": {
+      "get": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "Olayın zaman çizelgesi (panel)",
+        "description": "Denetim izi, bildirim kaydı ve check-in kayıtlarından türetilir; `at` artan sırada. Silinmiş gönüllünün adı dönmez (`Silinmiş gönüllü`). Olay oluşturulurken bağlanan ihbarın eski kayıtlarda bağ kaydı yoktur; bu ihbarlar olayın oluşturulma anında görünür.",
+        "security": [
+          {
+            "panelBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Zaman çizelgesi",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/MissionEvent"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "mission_not_found"
+          }
+        }
+      }
+    },
     "/admin/regions": {
       "get": {
         "tags": [
@@ -3690,7 +4088,7 @@
           "Admin"
         ],
         "summary": "Bildirim gönder (panel)",
-        "description": "Kanal KATEGORİDEN TÜRER, operatör seçmez: SMS yalnızca `acil` sınıfına gider, diğer her şey push. `acil` kapatılamaz ve gönüllünün bildirim tercihini bypass eder. Yarıçap admin'de girilmez. Olay bazlı gönderimde segment seçimi Hazır, Çağrıldı, Yolda, Sahada; genel gönderimde Hazır, Eğitim Bekleyenler, Tüm Gönüllüler. Gönderim denetim izine yazılır.",
+        "description": "Kanal KATEGORİDEN TÜRER, operatör seçmez: SMS yalnızca `acil` sınıfına gider, diğer her şey push. `acil` kapatılamaz ve gönüllünün bildirim tercihini bypass eder. Yarıçap admin'de girilmez. Olay bazlı gönderimde segment seçimi Hazır, Çağrıldı, Yolda, Sahada; genel gönderimde Hazır, Eğitim Bekleyenler, Tüm Gönüllüler. Gönderim denetim izine yazılır. `recipients` hedef kitledeki kişi sayısıdır; `pushCount` push'u sağlayıcının KABUL ETTİĞİ kişi sayısıdır (cihazı olmayan, tercihini kapatan ve hata alan sayılmaz; mock sağlayıcıda 0).",
         "security": [
           {
             "panelBearer": []
@@ -3705,7 +4103,7 @@
               "type": "string",
               "maxLength": 200
             },
-            "description": "Aynı anahtar ve aynı gövdeyle tekrar gelen istek yeniden işlenmez; 24 saat içinde ilk başarılı yanıt `Idempotent-Replayed: true` başlığıyla döner. 4xx yanıt anahtarı serbest bırakır; 5xx'te anahtar işlem bittikten 60 sn sonra düşer."
+            "description": "Aynı anahtar ve aynı gövdeyle tekrar gelen istek yeniden işlenmez; 24 saat içinde ilk başarılı yanıt `Idempotent-Replayed: true` başlığıyla döner. İlk istek sürerken (süre sınırı yok) aynı anahtar 409 idempotency_in_flight alır. 4xx yanıt anahtarı serbest bırakır; 5xx'te anahtar işlem bittikten 40–60 sn sonra düşer, bu sürede tekrar deneme 409 alır."
           }
         ],
         "responses": {
@@ -3735,7 +4133,7 @@
         ],
         "responses": {
           "200": {
-            "description": "items[] + total/page/pageSize"
+            "description": "items[] + total/page/pageSize (pushCount: sağlayıcının kabul ettiği kişi sayısı)"
           }
         }
       }
@@ -4611,7 +5009,8 @@
                     "type": "string"
                   },
                   "state": {
-                    "type": "string"
+                    "type": "string",
+                    "description": "`initiate` ile üretilen CSRF state. Gerçek modda zorunlu; mock modda gönderilmezse uyarı loglanıp geçilir. Gönderildiyse her iki modda da eşleşmelidir."
                   }
                 }
               }
@@ -4646,6 +5045,9 @@
                 }
               }
             }
+          },
+          "400": {
+            "description": "`validation_error` (gerçek modda state eksik) veya `invalid_oauth_code` (state eşleşmiyor)"
           },
           "401": {
             "$ref": "#/components/responses/Unauthorized"
@@ -4739,7 +5141,24 @@
             "$ref": "#/components/responses/ValidationError"
           },
           "429": {
-            "$ref": "#/components/responses/RateLimited"
+            "description": "`rate_limited` — telefon/IP başına saatlik limit; `sms_daily_limit` — telefona günlük OTP SMS limiti (SMS_DAILY_LIMIT_PER_USER) doldu, `details.retryAfterSec` döner.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "`sms_unavailable` — üretimde SMS sağlayıcı bağlı değil (SMS_PROVIDER=mock); yalnız OTP_DUMMY_PHONES numaraları giriş yapabilir. Oturum açılmaz, telefon/günlük SMS limitinden düşülmez.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
           }
         }
       }
@@ -4890,7 +5309,24 @@
             "description": "Session yok"
           },
           "429": {
-            "$ref": "#/components/responses/RateLimited"
+            "description": "`rate_limited` — telefon/IP başına saatlik limit; `sms_daily_limit` — telefona günlük OTP SMS limiti (SMS_DAILY_LIMIT_PER_USER) doldu, `details.retryAfterSec` döner.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "`sms_unavailable` — üretimde SMS sağlayıcı bağlı değil (SMS_PROVIDER=mock); yalnız OTP_DUMMY_PHONES numaraları giriş yapabilir. Oturum açılmaz, telefon/günlük SMS limitinden düşülmez.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
           }
         }
       }
@@ -6662,7 +7098,7 @@
           "Users"
         ],
         "summary": "Hesabı sil (KVKK silme talebi)",
-        "description": "Hesap soft-delete yapılır, refresh token'lar iptal edilir, cihaz kayıtları silinir.\nKişisel veriler 30 gün içinde anonimleştirilir/silinir.\n",
+        "description": "Hesap soft-delete yapılır, refresh token'lar iptal edilir, cihaz kayıtları silinir.\nKişisel veriler 30 gün sonra anonimleştirilir/silinir.\n",
         "security": [
           {
             "bearerAuth": []
@@ -6946,6 +7382,12 @@
           },
           "409": {
             "description": "Telefon zaten başka kullanıcıda kayıtlı"
+          },
+          "429": {
+            "description": "`rate_limited` — kullanıcı başına saatte 5 istek; `sms_daily_limit` — hedef telefona günlük OTP SMS limiti (SMS_DAILY_LIMIT_PER_USER) doldu, `details.retryAfterSec` döner."
+          },
+          "503": {
+            "description": "`sms_unavailable` — üretimde SMS sağlayıcı bağlı değil (SMS_PROVIDER=mock); yalnız OTP_DUMMY_PHONES numaralarına kod gönderilir. Oturum açılmaz."
           }
         }
       }
@@ -7006,6 +7448,9 @@
           },
           "401": {
             "$ref": "#/components/responses/Unauthorized"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
           }
         }
       }

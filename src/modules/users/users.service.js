@@ -50,6 +50,23 @@ async function getApplicationStatus(userId) {
   return application ? application.status : null;
 }
 
+// Mobil profil (getMe) ve panel künyesi (admin.service) aynı alanları aynı biçimde görür.
+function profileFields(u) {
+  return {
+    il: u.il || null,
+    ilce: u.ilce || null,
+    // §11: gönüllünün bölgesi bir yetki alanı değildir; il'den türer ve panelde süzme ile
+    // raporların bölge kırılımında kullanılır.
+    region: regionForCity(u.il),
+    ogrenim: u.ogrenim,
+    meslek: u.meslek,
+    meslekDiger: u.meslek_diger,
+    giysiBedeni: u.giysi_bedeni,
+    ayakkabiNumarasi: u.ayakkabi_numarasi != null ? Number(u.ayakkabi_numarasi) : null,
+    stkText: u.stk_text || null,
+  };
+}
+
 async function getMe(userId) {
   const user = await db('users').where({ id: userId, is_active: true }).first();
   if (!user) throw errors.notFound('Kullanıcı bulunamadı');
@@ -72,19 +89,9 @@ async function getMe(userId) {
     phone: user.phone,
     eposta: user.eposta,
     adres: user.adres,
-    il: user.il || null,
-    ilce: user.ilce || null,
-    // §11: gönüllünün bölgesi bir YETKİ/KAPSAM alanı değildir — yalnızca il'den türeyen
-    // bilgi (gönüllüler hiçbir zaman bölgeye göre süzülmez).
-    region: regionForCity(user.il),
+    ...profileFields(user),
     kanGrubu: user.kan_grubu,
-    ogrenim: user.ogrenim,
-    meslek: user.meslek,
-    meslekDiger: user.meslek_diger,
     hobiler: safeJson(user.hobiler, []),
-    giysiBedeni: user.giysi_bedeni,
-    stkText: user.stk_text || null,
-    ayakkabiNumarasi: user.ayakkabi_numarasi != null ? Number(user.ayakkabi_numarasi) : null,
     acil: {
       ad: user.acil_ad,
       soyad: user.acil_soyad,
@@ -306,8 +313,8 @@ async function dataExport(userId, audit = {}) {
 }
 
 /**
- * KVKK silme talebi — soft delete + 30 gün içinde anonimleştirme cron job'u
- * (faz 4'te yapılacak).
+ * KVKK silme talebi — soft delete; 30 gün sonra kişisel veriler anonimleştirilir
+ * (anonymize.service.js, API sürecinde saatte bir).
  */
 async function softDelete(userId, audit = {}) {
   const now = new Date();
@@ -344,11 +351,12 @@ async function softDelete(userId, audit = {}) {
     deletedAt: now.toISOString(),
     purgeAfterDays: 30,
     note:
-      'Hesabınız devre dışı bırakıldı. KVKK gereği kişisel verileriniz 30 gün içinde anonimleştirilecek/silinecektir.',
+      'Hesabınız devre dışı bırakıldı. KVKK gereği kişisel verileriniz 30 gün sonra anonimleştirilecek/silinecektir.',
   };
 }
 
 module.exports = {
+  profileFields,
   getMe,
   getApplicationStatus,
   patchMe,

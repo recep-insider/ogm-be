@@ -4,8 +4,12 @@ const { v4: uuidv4 } = require('uuid');
 const { db } = require('../../config/db');
 const { redis } = require('../../config/redis');
 const { errors } = require('../../shared/errors');
+const { hitFixedWindow } = require('../../shared/fixed-window');
 const { toIso } = require('../../shared/dates');
 const { writeAudit } = require('../../shared/audit');
+const { reverseGeocode } = require('../../shared/reverse-geocode');
+const { regionForCity, regionLabel } = require('../../shared/regions');
+const logger = require('../../config/logger');
 
 const DISPATCH_TARGET = 'OGM Yangın Harekat Merkezi';
 
@@ -34,12 +38,22 @@ async function addHistory(sosId, { event, by, byKind }, trx = db) {
   return row;
 }
 
+// SOS acil yoldur: il/ilçe çağrıyı bekletmez. Kayıttan sonra arka planda koordinattan
+// çözülür (bölge kapsamı bu il'den eşleşir); çözülemezse null kalır ve
+// scripts/backfill-sos-locations.js ile toparlanır.
+async function fillLocation(sosId, lat, lng) {
+  try {
+    const { il, ilce } = await reverseGeocode(lat, lng, { maxWaitMs: 15000, timeoutMs: 3000 });
+    if (!il) return;
+    await db('sos_reports').where({ id: sosId }).update({ il, ilce, updated_at: new Date() });
+  } catch (err) {
+    logger.warn('SOS konumu çözülemedi', { sosId, error: err.message });
+  }
+}
+
 async function create({ userId, body, ip, userAgent }) {
   // Kötüye kullanımı sınırla — kullanıcı başına dakikada 5 (emergency ile aynı politika, ayrı anahtar).
-  const key = `rl:sos:${userId}`;
-  const count = await redis.incr(key);
-  if (count === 1) await redis.expire(key, 60);
-  if (count > 5) throw errors.rateLimit('Çok sık SOS çağrısı gönderiyorsunuz');
+  await hitFixedWindow(redis, `rl:sos:${userId}`, { max: 5, windowSec: 60, message: 'Çok sık SOS çağrısı gönderiyorsunuz' });
 
   const user = await db('users').where({ id: userId, is_active: true }).first();
   if (!user) throw errors.notFound('Kullanıcı bulunamadı');
@@ -78,6 +92,8 @@ async function create({ userId, body, ip, userAgent }) {
     created_at: now,
     updated_at: now,
   });
+
+  if (body.coordinates) fillLocation(id, body.coordinates.lat, body.coordinates.lng);
 
   await addHistory(id, { event: 'SOS çağrısı gönderildi', by: 'Mobil', byKind: 'mobil' });
 
@@ -255,6 +271,11 @@ function mapAdminSos(r, history) {
     id: r.id,
     status: r.status,
     coordinates: r.lat != null && r.lng != null ? { lat: Number(r.lat), lng: Number(r.lng) } : null,
+    // Bölge çağrının basıldığı yerden türer; il çözülmemişse yalnızca "Tüm Bölgeler"de görünür.
+    il: r.il || null,
+    ilce: r.ilce || null,
+    region: regionForCity(r.il),
+    regionName: regionLabel(regionForCity(r.il)),
     dispatchedTo: r.dispatched_to,
     missionId: r.mission_id || null,
     missionTitle: r.mission_title || null,

@@ -1,10 +1,12 @@
 'use strict';
 
 const crypto = require('crypto');
+const fs = require('fs');
 const path = require('path');
 const { v4: uuidv4 } = require('uuid');
 const { db } = require('../../config/db');
 const env = require('../../config/env');
+const logger = require('../../config/logger');
 const { errors } = require('../../shared/errors');
 const { assetUrl } = require('../../shared/asset-url');
 const { toIso, toDateOnly, toLocalDateOnly } = require('../../shared/dates');
@@ -14,6 +16,7 @@ const readinessService = require('../users/readiness.service');
 const assemblyPoints = require('./assemblyPoints.service');
 const { regionForCity, regionLabel, applyRegionFilter } = require('../../shared/regions');
 const { coversTarget } = require('../../shared/geo-distance');
+const { refYear, formatRefNo } = require('../../shared/mission-ref');
 
 function safeJson(value, fallback) {
   if (value == null) return fallback;
@@ -78,6 +81,7 @@ async function assemblyPointFor(missionId) {
 function mapActiveSummary(m, userStatus) {
   return {
     id: m.id,
+    refNo: m.ref_no || null,
     // mobil §5: görev adı ve rol etiketi YOK — olayın kendisi gösterilir.
     title: m.title,
     shortLocation: m.short_location,
@@ -147,6 +151,7 @@ const ARCHIVE_COMPLETES = ['yolda', 'sahada'];
 function mapHistorySummary(m, userStatus = m.user_status) {
   return {
     id: m.id,
+    refNo: m.ref_no || null,
     title: m.full_title || m.title,
     location: m.location_label || m.short_location,
     // Başlangıç tarihi girilmeden açılan olaylarda olayın başladığı an kullanılır.
@@ -504,6 +509,7 @@ async function getHistory(userId, id) {
 function mapAdminMission(m) {
   return {
     id: m.id,
+    refNo: m.ref_no || null,
     title: m.title,
     fullTitle: m.full_title || m.title,
     shortLocation: m.short_location,
@@ -589,8 +595,9 @@ async function adminListPhotos(missionId, { status } = {}) {
 
   const query = db('mission_photos as mp')
     .leftJoin('users as u', 'u.id', 'mp.user_id')
+    .leftJoin('panel_users as pu', 'pu.id', 'mp.panel_user_id')
     .where('mp.mission_id', missionId)
-    .select('mp.*', 'u.ad as user_ad', 'u.soyad as user_soyad')
+    .select('mp.*', 'u.ad as user_ad', 'u.soyad as user_soyad', 'pu.name as panel_user_name')
     .orderBy('mp.submitted_at', 'desc');
   if (status) query.where('mp.status', status);
 
@@ -604,10 +611,95 @@ async function adminListPhotos(missionId, { status } = {}) {
       url: assetUrl(p.file_path),
       submittedAt: toIso(p.submitted_at),
       reviewedAt: toIso(p.reviewed_at),
+      // Gönüllüsü olmayan satır operatörün panelden yüklediği medyadır.
+      source: p.user_id ? 'volunteer' : 'operator',
       user: p.user_id ? { userId: p.user_id, ad: p.user_ad, soyad: p.user_soyad } : null,
+      uploadedBy: !p.user_id && p.panel_user_id ? { id: p.panel_user_id, name: p.panel_user_name || null } : null,
     })),
     total: rows.length,
   };
+}
+
+/**
+ * Operatörün panelden eklediği fotoğraf/video — moderasyonsuz, hemen onaylı yayınlanır ve
+ * gönüllü yüklemeleriyle aynı yoldan mobil galeriye (`gallery`, `photos[]`) girer.
+ */
+async function adminAddMedia(missionId, file, actor = {}) {
+  if (!file) throw errors.validation('Dosya zorunludur', { field: 'file' });
+  const mission = await db('missions').where({ id: missionId }).first('id', 'status');
+  if (!mission || mission.status === 'archived') {
+    fs.unlink(file.path, () => {});
+    if (!mission) throw errors.notFound('Görev bulunamadı', 'mission_not_found');
+    throw errors.conflict('Olay arşivlendi, medya eklenemez', undefined, 'mission_archived');
+  }
+
+  const id = uuidv4();
+  const now = new Date();
+  const kind = (file.mimetype || '').startsWith('video/') ? 'video' : 'image';
+  const filePath = path.relative(env.upload.dir, file.path);
+  try {
+    await db('mission_photos').insert({
+      id,
+      mission_id: missionId,
+      user_id: null,
+      panel_user_id: actor.userId || null,
+      file_path: filePath,
+      kind,
+      status: 'approved',
+      submitted_at: now,
+      reviewed_at: now,
+      reviewed_by: actor.userId || null,
+      created_at: now,
+      updated_at: now,
+    });
+  } catch (err) {
+    // Kayıt düşerse yüklenen dosya diskte sahipsiz kalmasın (yedeğe de girer).
+    fs.unlink(file.path, () => {});
+    throw err;
+  }
+
+  await writeAudit({
+    userId: actor.userId || null,
+    action: 'missions.media.add',
+    entity: 'mission_photo',
+    entityId: id,
+    ip: actor.ip,
+    userAgent: actor.userAgent,
+    payload: { missionId, kind },
+  });
+
+  return {
+    id,
+    kind,
+    url: assetUrl(filePath),
+    status: 'approved',
+    uploadedAt: toIso(now),
+    uploadedBy: { id: actor.userId || null, name: actor.name || null },
+  };
+}
+
+/** Operatör medyasını ve dosyasını siler; gönüllü yüklemeleri silinmez, moderasyonla reddedilir. */
+async function adminDeleteMedia(missionId, mediaId, actor = {}) {
+  const row = await db('mission_photos').where({ id: mediaId, mission_id: missionId }).first();
+  if (!row) throw errors.notFound('Medya bulunamadı', 'not_found');
+  if (row.user_id) {
+    throw errors.conflict('Gönüllü yüklemesi silinemez, moderasyonla reddedilir', undefined, 'volunteer_media');
+  }
+
+  await db('mission_photos').where({ id: mediaId }).del();
+  fs.unlink(path.join(env.upload.dir, row.file_path), (err) => {
+    if (err && err.code !== 'ENOENT') logger.warn('Olay medyası dosyası silinemedi', { mediaId, error: err.message });
+  });
+
+  await writeAudit({
+    userId: actor.userId || null,
+    action: 'missions.media.delete',
+    entity: 'mission_photo',
+    entityId: mediaId,
+    ip: actor.ip,
+    userAgent: actor.userAgent,
+    payload: { missionId, kind: row.kind },
+  });
 }
 
 // ── Admin (panel) — olay kaydı yaşam döngüsü (§2) ────────────────────────────
@@ -623,10 +715,13 @@ async function adminListPhotos(missionId, { status } = {}) {
 async function adminCreate(body, actor = {}) {
   const id = uuidv4();
   const now = new Date();
+  let refNo;
 
   await db.transaction(async (trx) => {
+    refNo = await nextRefNo(trx, now);
     await trx('missions').insert({
       id,
+      ref_no: refNo,
       title: body.title,
       full_title: body.fullTitle || null,
       short_location: body.shortLocation,
@@ -666,6 +761,19 @@ async function adminCreate(body, actor = {}) {
       await trx('fire_reports')
         .whereIn('id', body.linkedReportIds)
         .update({ mission_id: id, status: 'confirmed', updated_at: now });
+      // Zaman çizelgesi bağı bu kayıttan okur.
+      await writeAudit(
+        {
+          userId: actor.userId || null,
+          action: 'fire_reports.link',
+          entity: 'mission',
+          entityId: id,
+          ip: actor.ip,
+          userAgent: actor.userAgent,
+          payload: { reportIds: body.linkedReportIds },
+        },
+        trx,
+      );
     }
   });
 
@@ -682,7 +790,21 @@ async function adminCreate(body, actor = {}) {
     payload: { callVolunteers: !!body.callVolunteers, linkedReports: body.linkedReportIds?.length || 0 },
   });
 
-  return { ok: true, missionId: id, status: 'active', called };
+  return { ok: true, missionId: id, refNo, status: 'active', called };
+}
+
+/**
+ * Yılın sıradaki olay numarası. Sayaç satırı upsert ile kilitlenir ve işlem bitene dek
+ * kilitli kalır; eşzamanlı oluşturmalar aynı numarayı alamaz, geri alınan işlem numara yakmaz.
+ */
+async function nextRefNo(trx, at) {
+  const year = refYear(at);
+  await trx('mission_ref_counters')
+    .insert({ year, last_no: 1 })
+    .onConflict('year')
+    .merge({ last_no: trx.raw('last_no + 1') });
+  const row = await trx('mission_ref_counters').where({ year }).forUpdate().first('last_no');
+  return formatRefNo(year, row.last_no);
 }
 
 const REQUIRED_FIELDS = { title: 'title', shortLocation: 'short_location' };
@@ -977,6 +1099,8 @@ module.exports = {
   HISTORY_STATUSES,
   adminList,
   adminListPhotos,
+  adminAddMedia,
+  adminDeleteMedia,
   mapAdminMission,
   approvedPhotosFor,
 };

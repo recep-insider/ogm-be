@@ -7,6 +7,7 @@ const { assetUrl } = require('../../shared/asset-url');
 const { toDateOnly, toLocalDateOnly, toIso } = require('../../shared/dates');
 const { writeAudit } = require('../../shared/audit');
 const { deliverKkdSet, assertCommissionApproved } = require('../equipment/equipment.service');
+const { safeJson, mapContentBlock, mapAdminContentBlock } = require('../blog/blog.service');
 
 const LAST_SEATS_THRESHOLD = 5;
 
@@ -43,6 +44,8 @@ async function listOnline(userId) {
       required: !!t.required,
       delivery: t.delivery,
       videoUrl: assetUrl(t.video_path),
+      cover: assetUrl(t.cover_path),
+      content: safeJson(t.content, []).map(mapContentBlock),
       // Yüz yüze teorik eğitimin oturum bilgisi — online eğitimde her zaman null.
       ...sessionFields(t),
       status: p ? p.status : 'not_started',
@@ -113,6 +116,8 @@ async function listSaha(userId) {
     out.push({
       id: t.id,
       title: t.title,
+      description: t.description || '',
+      content: safeJson(t.content, []).map(mapContentBlock),
       location: t.location,
       // §8: yetkinlik bayrağı — bayraksız kayıt (buluşma, tanıtım) müdahale kapısından geçirmez.
       grantsCompetency: !!t.grants_competency,
@@ -209,6 +214,7 @@ function mapFieldCompletion(row) {
     id: row.training_id,
     kind: 'uygulamali',
     title: row.title,
+    description: row.description || '',
     location: row.location,
     instructorName: row.instructor_name,
     // Yetkinlik kazandırmayan kayıtlar (buluşma, tanıtım) da listelenir ama
@@ -230,7 +236,7 @@ async function listCompleted(userId) {
       .join('saha_trainings as t', 't.id', 'a.training_id')
       .where({ 'a.user_id': userId, 'a.attendance': 'katildi' })
       .orderBy('a.attendance_at', 'desc')
-      .select('a.training_id', 'a.attendance_at', 'a.certificate_path', 't.title', 't.location', 't.instructor_name', 't.grants_competency'),
+      .select('a.training_id', 'a.attendance_at', 'a.certificate_path', 't.title', 't.description', 't.location', 't.instructor_name', 't.grants_competency'),
   ]);
 
   return {
@@ -295,6 +301,10 @@ function mapAdminOnlineRow(t) {
     delivery: t.delivery,
     sortOrder: t.sort_order,
     videoUrl: assetUrl(t.video_path),
+    videoPath: t.video_path || null, // panel roundtrip
+    cover: assetUrl(t.cover_path),
+    coverPath: t.cover_path || null, // panel roundtrip
+    content: safeJson(t.content, []).map(mapAdminContentBlock),
     // Panel roundtrip — delivery'den bağımsız ham değerler.
     startsAt: toIso(t.session_starts_at),
     location: t.session_location || null,
@@ -344,6 +354,8 @@ function mapAdminSahaRow(t) {
   return {
     id: t.id,
     title: t.title,
+    description: t.description || '',
+    content: safeJson(t.content, []).map(mapAdminContentBlock),
     location: t.location,
     startDate: toDateOnly(t.start_date),
     startTime: t.start_time,
@@ -384,6 +396,8 @@ function onlineToRow(body) {
   if (body.delivery !== undefined) row.delivery = body.delivery;
   if (body.sortOrder !== undefined) row.sort_order = body.sortOrder;
   if (body.videoPath !== undefined) row.video_path = body.videoPath || null;
+  if (body.coverPath !== undefined) row.cover_path = body.coverPath || null;
+  if (body.content !== undefined) row.content = JSON.stringify(body.content || []);
   if (body.startsAt !== undefined) row.session_starts_at = body.startsAt ? new Date(body.startsAt) : null;
   if (body.location !== undefined) row.session_location = body.location || null;
   if (body.instructor !== undefined) row.session_instructor = body.instructor || null;
@@ -455,6 +469,8 @@ async function adminRemoveOnline(id, actor = {}) {
 function sahaToRow(body) {
   const row = {};
   if (body.title !== undefined) row.title = body.title;
+  if (body.description !== undefined) row.description = body.description || null;
+  if (body.content !== undefined) row.content = JSON.stringify(body.content || []);
   if (body.location !== undefined) row.location = body.location;
   if (body.startDate !== undefined) row.start_date = toLocalDateOnly(body.startDate);
   if (body.startTime !== undefined) row.start_time = body.startTime;
@@ -536,14 +552,7 @@ async function adminListSahaApplications(trainingId, { status } = {}) {
   const training = await db('saha_trainings').where({ id: trainingId }).first('id', 'title', 'start_date', 'grants_competency');
   if (!training) throw errors.notFound('Eğitim bulunamadı', 'training_not_found');
 
-  const query = db('saha_training_applications as a')
-    .leftJoin('users as u', 'u.id', 'a.user_id')
-    .where('a.training_id', trainingId)
-    .select('a.*', 'u.ad as user_ad', 'u.soyad as user_soyad', 'u.phone as user_phone')
-    .orderBy([
-      { column: 'a.created_at', order: 'desc' },
-      { column: 'a.id', order: 'desc' },
-    ]);
+  const query = selectSahaApplications(db('saha_training_applications as a').where('a.training_id', trainingId));
   if (status) query.where('a.status', status);
 
   const rows = await query;
@@ -559,18 +568,50 @@ async function adminListSahaApplications(trainingId, { status } = {}) {
       grantsCompetency: !!training.grants_competency,
     },
     mode,
-    items: rows.map((a) => ({
-      applicationId: a.id,
-      status: a.status,
-      // §8: katılımcı durumu yalnızca kayitli | katildi.
-      attendance: a.attendance,
-      attendanceAt: toIso(a.attendance_at),
-      kkdDelivered: !!a.kkd_delivered,
-      createdAt: toIso(a.created_at),
-      user: a.user_id ? { userId: a.user_id, ad: a.user_ad, soyad: a.user_soyad, phone: a.user_phone } : null,
-    })),
+    items: rows.map(mapAdminSahaApplication),
     total: rows.length,
   };
+}
+
+// Eğitim bazlı ve toplu başvuru listesi aynı sorguyu ve kayıt biçimini paylaşır.
+function selectSahaApplications(query) {
+  return query
+    .leftJoin('users as u', 'u.id', 'a.user_id')
+    .select('a.*', 'u.ad as user_ad', 'u.soyad as user_soyad', 'u.phone as user_phone')
+    .orderBy([
+      { column: 'a.created_at', order: 'desc' },
+      { column: 'a.id', order: 'desc' },
+    ]);
+}
+
+function mapAdminSahaApplication(a) {
+  return {
+    trainingId: a.training_id,
+    applicationId: a.id,
+    status: a.status,
+    // §8: katılımcı durumu yalnızca kayitli | katildi.
+    attendance: a.attendance,
+    attendanceAt: toIso(a.attendance_at),
+    kkdDelivered: !!a.kkd_delivered,
+    createdAt: toIso(a.created_at),
+    user: a.user_id ? { userId: a.user_id, ad: a.user_ad, soyad: a.user_soyad, phone: a.user_phone } : null,
+  };
+}
+
+/**
+ * Admin — tüm saha eğitimlerinin başvuruları, sayfalı. Panel eğitim başına ayrı istek
+ * atmasın diye; kayıt biçimi eğitim bazlı listeyle aynıdır ve `trainingId` taşır.
+ * @param {{status?:string, page?:number, pageSize?:number}} params
+ */
+async function adminListAllSahaApplications({ status, page = 1, pageSize = 20 } = {}) {
+  const base = db('saha_training_applications as a');
+  if (status) base.where('a.status', status);
+  const [{ total }] = await base.clone().count({ total: 'a.id' });
+  const rows = await selectSahaApplications(base.clone())
+    .limit(pageSize)
+    .offset((page - 1) * pageSize);
+
+  return { items: rows.map(mapAdminSahaApplication), total: Number(total), page, pageSize };
 }
 
 /** Admin — saha başvurusu onay/red. Bildirim göndermez (application status ucuyla aynı ilke). */
@@ -696,6 +737,7 @@ module.exports = {
   adminUpdateSaha,
   adminRemoveSaha,
   adminListSahaApplications,
+  adminListAllSahaApplications,
   adminSetSahaApplicationStatus,
   adminSaveAttendance,
 };

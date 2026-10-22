@@ -15,6 +15,19 @@ async function requiredTheoryIds(trx = db) {
 }
 
 /**
+ * Her gönüllünün EN GÜNCEL komisyon kararı — kaydı olmayan Map'te yer almaz ('pending').
+ * Hazırlık zinciri ve KKD teslim kapısı bu tek sorgudan okur.
+ * @param {string[]} userIds
+ * @returns {Promise<Map<string, object>>} userId → commission_decisions satırı
+ */
+async function latestCommissionDecisions(userIds, trx = db) {
+  const rows = await trx('commission_decisions').whereIn('user_id', userIds).orderBy('decided_at', 'desc');
+  const latest = new Map();
+  for (const row of rows) if (!latest.has(row.user_id)) latest.set(row.user_id, row);
+  return latest;
+}
+
+/**
  * Gönüllülerin zincir girdilerini kullanıcı sayısından bağımsız SABİT sayıda sorguyla toplar
  * (liste ucu kişi başı sorgu atmasın).
  * @param {string[]} userIds
@@ -25,7 +38,7 @@ async function collectMany(userIds, trx = db) {
   if (!ids.length) return new Map();
 
   const [decisions, requiredIds, completedRows, attendanceRows, equipmentRows, users] = await Promise.all([
-    trx('commission_decisions').whereIn('user_id', ids).orderBy('decided_at', 'desc'),
+    latestCommissionDecisions(ids, trx),
     requiredTheoryIds(trx),
     trx('online_training_progress')
       .whereIn('user_id', ids)
@@ -42,13 +55,9 @@ async function collectMany(userIds, trx = db) {
   const out = new Map(
     ids.map((id) => [
       id,
-      { decision: undefined, requiredIds, completedIds: [], attendanceRows: [], equipmentRows: [], user: undefined },
+      { decision: decisions.get(id), requiredIds, completedIds: [], attendanceRows: [], equipmentRows: [], user: undefined },
     ]),
   );
-  for (const d of decisions) {
-    const entry = out.get(d.user_id);
-    if (entry && !entry.decision) entry.decision = d;
-  }
   for (const r of completedRows) out.get(r.user_id)?.completedIds.push(r.training_id);
   for (const r of attendanceRows) out.get(r.user_id)?.attendanceRows.push(r);
   for (const r of equipmentRows) out.get(r.user_id)?.equipmentRows.push(r);
@@ -142,5 +151,5 @@ async function kkdSet(userId, trx = db) {
 }
 
 module.exports = {
-  getReadiness, getReadinessMany, kkdSet, collect, collectMany, requiredTheoryIds,
+  getReadiness, getReadinessMany, kkdSet, collect, collectMany, requiredTheoryIds, latestCommissionDecisions,
 };

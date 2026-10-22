@@ -76,6 +76,8 @@ Tüm domain fieldları **Türkçe**: `ad`, `soyad`, `dogumTarihi`, `tcKimlik`, `
 ### 0.8 Görsel Asset'leri
 Tüm asset alanları (`cover`, `gallery`, `instructorAvatar`, `avatarUrl`, `BlogContentBlock.image.source`, `certificateUrl`) backend tarafından **fully-qualified HTTPS URL** olarak dönmelidir (S3/Cloudflare R2/eşdeğeri CDN). Mock'larda yerel `require()` referansları var — production'da string URL beklenir. Frontend tip narrowing'i `FRONTEND_CHANGES.md` madde 1'de.
 
+KVKK özel nitelikli belgeler (`onboarding/` altındaki sağlık raporu ve sabıka kaydı) herkese açık servis edilmez: URL 15 dakika geçerli imza taşır (`...?exp=<unix sn>&sig=<imza>`). Sorgu dizesi URL'in parçasıdır, atılmamalı veya önbelleğe alınmamalıdır; süresi dolunca URL'i dönen uç yeniden çağrılır. İmzasız, süresi dolmuş veya bozuk imzalı istek `403 signed_url_invalid` alır. Diğer asset'ler (avatar, görev/galeri, blog, ihbar medyası) imzasız ve Range destekli kalır.
+
 ### 0.9 Coordinates
 Tüm konum fieldları:
 ```json
@@ -113,6 +115,8 @@ WGS84 datum. Frontend `react-native-maps` ile uyumlu.
 - **Error cases:**
   - `400 invalid_phone` — E.164 değil
   - `429 rate_limited` — çok sık deneme
+  - `429 sms_daily_limit` — numaraya günlük OTP SMS limiti (`SMS_DAILY_LIMIT_PER_USER`, varsayılan 10) doldu; `details.retryAfterSec` döner
+  - `503 sms_unavailable` — üretimde SMS sağlayıcı bağlı değil (`SMS_PROVIDER=mock`); yalnız `OTP_DUMMY_PHONES` numaraları giriş yapabilir. Oturum açılmaz, telefon/günlük SMS limitinden düşülmez. Mesaj: "SMS servisi henüz bağlı değil; şu an yalnız test numaralarıyla giriş yapılabilir."
 - **TS tipleri:** `SendOtpRequest`, `SendOtpResponse` (`src/services/api/types.ts:87-94`)
 - **Mock:** `src/services/api/mocks.ts:172` (`mockApi.sendOtp`)
 - **Notlar:** `cooldownSec` saniye geçmeden resendOtp çağrılmamalı.
@@ -179,7 +183,7 @@ WGS84 datum. Frontend `react-native-maps` ile uyumlu.
 ```json
 { "cooldownSec": 60, "expiresIn": 300 }
 ```
-- **Error cases:** `429 rate_limited`, `404 session_not_found`
+- **Error cases:** `429 rate_limited`, `429 sms_daily_limit`, `503 sms_unavailable` (bkz. 1.1; oturumdaki kod değişmez), `404 session_not_found`
 - **TS tipleri:** `ResendOtpRequest`, `ResendOtpResponse` (`src/services/api/types.ts:118-124`)
 - **Mock:** `mocks.ts:mockApi.resendOtp`
 
@@ -215,6 +219,7 @@ WGS84 datum. Frontend `react-native-maps` ile uyumlu.
 ```json
 { "sessionId": "edsess_abc", "code": "ed_oauth_code", "state": "csrf_token" }
 ```
+`state`: `initiate` ile üretilen CSRF state'i (mock'ta `redirectUrl` sorgusundaki `state`) aynen gönderilmelidir. Gerçek e-Devlet modunda **zorunludur** (eksikse `400 validation_error`). Mock modda yayındaki mobil sürüm (v1.3) göndermediği için eksik state geçici olarak kabul edilir ve sunucu uyarı loglar; mobil uygulama state göndermeye geçmelidir. Gönderilen state her iki modda da eşleşmezse `400 invalid_oauth_code`.
 - **Success Response (200):**
 ```json
 {
@@ -237,7 +242,7 @@ WGS84 datum. Frontend `react-native-maps` ile uyumlu.
 - **Notlar:**
   - **Yeni kullanıcı için `refreshToken: null`** dönmelidir. Onboarding tamamlanmadan kalıcı session açılmamalı; frontend `accessToken`'i registration-equivalent gibi kullanır.
   - **Mevcut kullanıcı için `refreshToken` string** dönmelidir.
-- **Error cases:** `400 invalid_oauth_code`, `410 session_expired`
+- **Error cases:** `400 validation_error` (gerçek modda state eksik), `400 invalid_oauth_code` (state eşleşmiyor / kimlik alınamadı), `410 session_expired`
 - **TS tipleri:** `EdevletCallbackRequest`, `EdevletCallbackResponse` (`types.ts:135-146`)
 - **Mock:** `mocks.ts:mockApi.edevletCallback`
 
@@ -538,7 +543,10 @@ WGS84 datum. Frontend `react-native-maps` ile uyumlu.
 ```
 - **TS tipleri:** `OnlineTraining`, `OnlineTrainingStatus`, `OnlineTrainingTone` (`types.ts:193-204`)
 - **Mock:** `mocks.ts:562-581` (`MOCK_ONLINE_TRAININGS`)
-- **Notlar:** Kullanıcı bazlı progress; backend per-user filter yapmalı.
+- **Notlar:**
+  - Kullanıcı bazlı progress; backend per-user filter yapmalı.
+  - `cover`: kapak görseli **URL string** veya `null`.
+  - `content`: panelde girilen içerik blokları (blog `content` ile aynı biçim), boşsa `[]`. Blok: `{ type: 'paragraph' | 'heading', text }`, `{ type: 'image', source /* tam URL */, caption? }`, `{ type: 'video', source /* yalnız .mp4 */, caption? }`.
 
 ---
 
@@ -573,6 +581,7 @@ WGS84 datum. Frontend `react-native-maps` ile uyumlu.
   - **Doluluk `availableSeats === 0` ile anlaşılır.** Dolu eğitimde `seatStatus` `available` döner; ayrı bir `full` değeri bilerek yoktur (yayındaki sürümler `seatStatus`'u doğrudan rozet varyantına eşler, bilinmeyen değer onları bozar). İstemci `availableSeats > 0 || applied` olmayan kaydı göstermemelidir; gösterirse başvuru 410 `training_full` alır.
   - Kontenjan kesin sınırdır; `rejected` başvurular koltuk tutmaz (`enrolled`/`availableSeats` sayımına girmez).
   - `applied: true` → kullanıcının önceden başvurduğu kayıt.
+  - `description`: eğitim açıklaması, girilmemişse `''`. `content`: 5.1'deki içerik blokları, boşsa `[]`.
 
 ---
 

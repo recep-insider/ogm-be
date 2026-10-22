@@ -23,9 +23,11 @@ async function init({ userId, newPhone, ip, userAgent }) {
 
   const code = generateOtp();
   const codeHash = await hashOtp(code);
+  // Oturum kod gönderildikten sonra yazılır: limit/sağlayıcı hatası gönderilmemiş koda oturum bırakmaz.
+  await sendOtp(newPhone, code);
+
   const sessionId = uuidv4();
   const ttl = env.sms.otpExpiresIn;
-
   await redis.set(
     `${PREFIX}${sessionId}`,
     JSON.stringify({ userId, newPhone, codeHash, attempts: 0, createdAt: Date.now() }),
@@ -33,7 +35,6 @@ async function init({ userId, newPhone, ip, userAgent }) {
     ttl,
   );
 
-  await sendOtp(newPhone, code);
   await writeAudit({
     userId,
     action: 'users.phone-change.init',

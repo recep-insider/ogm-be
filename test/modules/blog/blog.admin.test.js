@@ -96,4 +96,12 @@ describe('blog.service — admin CRUD', () => {
     const img = dto.content.find((b) => b.type === 'image');
     expect(img).toMatchObject({ source: 'content/ic.jpg', sourceUrl: 'https://cdn.test/content/ic.jpg' });
   });
+
+  test('mobil görünüm görsel bloğunun açıklamasını düşürmez, kaynağı tam URL döner', async () => {
+    mockQueue.push({ ...dbRow, is_active: 1, content: '[{"type":"image","source":"content/ic.jpg","caption":"Ekip"}]' });
+
+    const post = await blogService.getById('bp_x');
+
+    expect(post.content).toEqual([{ type: 'image', source: 'https://cdn.test/content/ic.jpg', caption: 'Ekip' }]);
+  });
 });

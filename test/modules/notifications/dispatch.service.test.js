@@ -7,9 +7,14 @@ const mockState = { users: [], prefs: null, participants: [], inserts: {}, readi
 
 jest.mock('../../../src/config/db', () => {
   const makeChain = (table) => {
+    const nullCols = [];
     const c = {
       where: jest.fn(() => c),
-      whereNull: jest.fn(() => c),
+      join: jest.fn(() => c),
+      whereNull: jest.fn((col) => {
+        nullCols.push(col);
+        return c;
+      }),
       whereIn: jest.fn(() => c),
       orderBy: jest.fn(() => c),
       limit: jest.fn(() => c),
@@ -18,7 +23,12 @@ jest.mock('../../../src/config/db', () => {
       count: jest.fn(() => c),
       pluck: jest.fn(async () => {
         if (table === 'users') return mockState.users.map((u) => u.id);
-        if (table === 'mission_participants') return mockState.participants;
+        if (table === 'mission_participants as mp') {
+          // Katılımcı satırı silinen hesapta da kalır; süzme users join'i üzerinden yapılmalı.
+          return mockState.participants
+            .filter((p) => !(nullCols.includes('u.deleted_at') && p.deleted_at))
+            .map((p) => p.id);
+        }
         return [];
       }),
       first: jest.fn(async () => {
@@ -38,20 +48,21 @@ jest.mock('../../../src/config/db', () => {
   return { db };
 });
 jest.mock('../../../src/shared/audit', () => ({ writeAudit: jest.fn() }));
-jest.mock('../../../src/shared/push-provider', () => ({ sendPushToUser: jest.fn() }));
+jest.mock('../../../src/shared/push-provider', () => ({ sendPushToUser: jest.fn(async () => ({ sent: 1, failed: 0 })) }));
 jest.mock('../../../src/shared/sms-provider', () => ({ sendSms: jest.fn(async () => ({ ok: true })) }));
 jest.mock('../../../src/modules/users/readiness.service', () => ({
   getReadiness: jest.fn(async (id) => mockState.readiness[id]),
   getReadinessMany: jest.fn(async (ids) => new Map(ids.map((id) => [id, mockState.readiness[id]]))),
 }));
 
+const { writeAudit } = require('../../../src/shared/audit');
 const { sendPushToUser } = require('../../../src/shared/push-provider');
 const { sendSms } = require('../../../src/shared/sms-provider');
 const service = require('../../../src/modules/notifications/dispatch.service');
 
 beforeEach(() => {
   mockState.users = [{ id: 'u1', phone: '+905321112233' }];
-  mockState.participants = ['u2'];
+  mockState.participants = [{ id: 'u2', deleted_at: null }];
   mockState.inserts = {};
   mockState.readiness = {
     u1: { kisiDurumu: 'hazir', zincir: { komisyon: 'approved', eksikAdimlar: [] } },
@@ -146,9 +157,45 @@ describe('hedef kitle', () => {
     expect(getReadinessMany).toHaveBeenCalledWith(['u1', 'u9']);
   });
 
+  it('olay bazlı gönderim silinmiş (KVKK) katılımcıyı hedeflemez', async () => {
+    mockState.participants = [{ id: 'u2', deleted_at: null }, { id: 'u3', deleted_at: new Date('2026-10-01') }];
+
+    const result = await service.send(
+      { category: 'acil', title: 'Tahliye', body: 'x', missionId: 'm1', segments: ['yolda', 'sahada'] },
+      {},
+    );
+
+    expect(result.recipients).toBe(1);
+    expect(sendPushToUser).not.toHaveBeenCalledWith('u3', expect.anything());
+  });
+
   it('gönderim denetim izine yazılır', async () => {
     await service.send({ category: 'bilgi', title: 'Duyuru', body: 'x', audience: 'tumu' }, {});
     expect(mockState.inserts.notification_log).toHaveLength(1);
     expect(mockState.inserts.notification_log[0]).toMatchObject({ category: 'bilgi', push_count: 1 });
+  });
+});
+
+describe('pushCount yalnız sağlayıcının kabul ettiği teslimi sayar', () => {
+  it.each([
+    ['cihazı yok', { sent: 0, noDevices: true }],
+    ['tercihini kapatmış', { sent: 0, skipped: true }],
+    ['sağlayıcı hatası', { sent: 0, error: 'timeout' }],
+    ['tüm token reddedildi', { sent: 0, failed: 2 }],
+    ['mock sağlayıcı', { sent: 1, failed: 0, mock: true }],
+  ])('%s → sayılmaz', async (_label, outcome) => {
+    mockState.users = [{ id: 'u1' }, { id: 'u2' }];
+    sendPushToUser.mockResolvedValueOnce({ sent: 2, failed: 0 }).mockResolvedValueOnce(outcome);
+
+    const result = await service.send({ category: 'bilgi', title: 'Duyuru', body: 'x', audience: 'tumu' }, {});
+
+    expect(result.recipients).toBe(2);
+    expect(result.pushCount).toBe(1);
+    expect(mockState.inserts.notification_log[0]).toMatchObject({ push_count: 1 });
+    // Zaman çizelgesi hedef kitleyi denetim izinden okur.
+    expect(writeAudit).toHaveBeenCalledWith(expect.objectContaining({
+      action: 'notifications.send',
+      payload: expect.objectContaining({ recipients: 2, pushCount: 1 }),
+    }));
   });
 });

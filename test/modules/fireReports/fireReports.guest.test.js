@@ -21,9 +21,11 @@ jest.mock('../../../src/config/db', () => {
   const db = Object.assign(jest.fn(() => chain), { raw: jest.fn() });
   return { db, __chain: chain };
 });
-jest.mock('../../../src/config/redis', () => ({
-  redis: { incr: jest.fn(async () => 1), expire: jest.fn(async () => 1) },
-}));
+jest.mock('../../../src/config/redis', () => {
+  const redis = require('../admin/panel-fakes').createFakeRedis();
+  jest.spyOn(redis, 'incr');
+  return { redis };
+});
 jest.mock('../../../src/config/env', () => ({
   geo: {},
   upload: { dir: '/tmp' },
@@ -70,5 +72,16 @@ describe('fireReports.service.create — guest (userId=null)', () => {
     expect(inserted[0].user_id).toBe('u1');
     expect(inserted[0].anonymous).toBe(false);
     expect(redis.incr).toHaveBeenCalledWith('rl:fire:u1');
+  });
+
+  test('saatte 5 ihbardan sonra 429 rate_limited; sayaç 1 saat TTL taşır', async () => {
+    for (let i = 0; i < 5; i += 1) {
+      // eslint-disable-next-line no-await-in-loop
+      await service.create({ userId: null, data, files, ip: '9.9.9.9', userAgent: 'jest' });
+    }
+    await expect(
+      service.create({ userId: null, data, files, ip: '9.9.9.9', userAgent: 'jest' }),
+    ).rejects.toMatchObject({ status: 429, code: 'rate_limited' });
+    expect(await redis.ttl('rl:fire:ip:9.9.9.9')).toBe(3600);
   });
 });

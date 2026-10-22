@@ -11,6 +11,7 @@ const logger = require('./config/logger');
 const { buildSpec } = require('./config/swagger');
 const { notFoundHandler, errorHandler } = require('./middlewares/error-handler');
 const { generalLimiter } = require('./middlewares/rate-limit');
+const { signedUploadGuard } = require('./shared/asset-url');
 
 const healthRoutes = require('./modules/health/health.routes');
 const phoneAuthRoutes = require('./modules/auth/phone.routes');
@@ -81,8 +82,8 @@ if (env.api.swaggerEnabled) {
 // ─── Statik dosya servisi (uploads: avatar, blog görseli, eğitim videosu, yangın foto) ──
 // assetUrl() çıktısı `<UPLOAD_PUBLIC_BASE_URL>/<path>` ve base `/uploads` ile bittiği için
 // mount yolu `/uploads`. express.static, video seek'i için HTTP Range'i (Accept-Ranges:
-// bytes / 206) kendiliğinden destekler.
-app.use('/uploads', express.static(env.upload.dir, { maxAge: '1h' }));
+// bytes / 206) kendiliğinden destekler. KVKK belgeleri (onboarding/) yalnız imzalı URL ile.
+app.use('/uploads', signedUploadGuard, express.static(env.upload.dir, { maxAge: '1h' }));
 
 // ─── API v1 modülleri ─────────────────────────────────────────
 app.use('/v1/auth/phone', phoneAuthRoutes);

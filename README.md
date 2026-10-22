@@ -126,6 +126,39 @@ docker compose up -d --build
 - Nginx 80/443 portlarında trafiği karşılar, backend'e proxy yapar.
 - MySQL/Redis portları yalnızca `127.0.0.1` üzerinden açılır.
 - Backend `node src/server.js` ile çalışır; container healthcheck `curl /health` üzerinden yapılır.
+- nginx `client_max_body_size` (110m) en büyük upload limitinin (`UPLOAD_MAX_VIDEO_BYTES`, 100 MB) üstünde tutulur; `setup-domain.sh`'deki Stage 1 config de aynı değeri taşır.
+
+### Yedekleme
+
+`deploy.sh` her çalıştığında `/etc/cron.d/ogm-backup` dosyasını yeniden yazar (satır çoğalmaz): her gece 03:30'da `scripts/backup.sh` çalışır, çıktısı `backups/backup.log`'a eklenir.
+
+- `backups/mysql/ogm-<zaman>.sql.gz` — `mysqldump --single-transaction`, gzip. Parola mysql container'ının ortamından (`.env` → `DB_ROOT_PASSWORD`) okunur.
+- `backups/uploads/<zaman>/` — `uploads/` görüntüsü. `rsync --link-dest` ile değişmeyen dosyalar bir önceki görüntüye hardlink'tir; her görüntü tam kopya gibi kullanılır, disk yalnızca yeni/değişen dosya kadar büyür.
+- 14 günden eski yedekler, o geceki yedek başarılıysa silinir.
+- Yedekler aynı sunucunun diskindedir; sunucu kaybına karşı korumaz.
+
+Sunucuda (root):
+
+```bash
+/opt/ogm-gonullu/scripts/backup.sh          # elle yedek
+/opt/ogm-gonullu/scripts/restore-check.sh   # son dump'ı geçici ogm_restore_check DB'sine yükler, sayar, siler
+tail -50 /opt/ogm-gonullu/backups/backup.log
+
+# Gerçek geri yükleme (önce backend'i durdurun)
+cd /opt/ogm-gonullu && docker compose stop backend
+gunzip -c backups/mysql/ogm-<zaman>.sql.gz \
+  | docker exec -i ogm-mysql sh -c 'MYSQL_PWD="$MYSQL_ROOT_PASSWORD" exec mysql -uroot "$MYSQL_DATABASE"'
+rsync -a backups/uploads/<zaman>/ uploads/
+docker compose start backend
+```
+
+Cron'u kapatmak: `rm /etc/cron.d/ogm-backup` ve `deploy.sh`'deki "Yedek cron'u" adımını çıkarın (yoksa sonraki deploy geri kurar).
+
+### SSH sertleştirme
+
+`scripts/harden-ssh.sh` deploy'a bağlı değildir; sunucuda elle çalıştırılır: `sudo bash /opt/ogm-gonullu/scripts/harden-ssh.sh`. fail2ban'ı (sshd jail) kurar, `/etc/ssh/sshd_config.d/00-ogm-hardening.conf` ile parola ve klavye-etkileşimli girişi kapatır. Çalıştıran kullanıcının `~/.ssh/authorized_keys`'i boşsa durur; `sshd -t` ve etkin değer kontrolü geçmeden sshd'yi yeniden yüklemez.
+
+Sonrasında `deploy.sh` ve `setup-domain.sh` yalnızca yerel makinedeki anahtar (ssh-agent) sunucuda yetkiliyse bağlanır. Geri alma: `rm /etc/ssh/sshd_config.d/00-ogm-hardening.conf && sshd -t && systemctl reload ssh`; fail2ban için `systemctl disable --now fail2ban`.
 
 ## Dış Servis Entegrasyonları
 
@@ -135,7 +168,6 @@ docker compose up -d --build
 | **e-Devlet OAuth** | `EDEVLET_MOCK_MODE` | `true` | Gerçek e-Devlet onayı 2-6 ay sürer. Mock mode dev/test için kullanılır. `EDEVLET_CLIENT_ID/SECRET` üretimde zorunlu. |
 | **Dosya depolama** | `UPLOAD_DIR` | `/app/uploads` | Yerel disk. KVKK için 9 yıl saklama; production'da MinIO / S3 / Türk Telekom Bulut'a geçiş önerilir. |
 | **FCM** | `FIREBASE_*` | — | Push notifications. Service account JSON dosyası container'a mount edilir. |
-| **SMTP** | `SMTP_*` | — | Kurumsal mail sunucusu. |
 
 ## Veritabanı
 
@@ -272,7 +304,7 @@ Deploy için ek adım gerekmez: `deploy.sh` güncelleme modunda migration'ları 
 - [ ] PostgreSQL + PostGIS migrasyonu (yangın & görev konum sorguları için — opsiyonel)
 - [ ] Sertifika pinning + gelişmiş rate limit (faz 4)
 - [ ] Eğitimler / Blog / Aktif görevler API'leri (faz 2-3)
-- [ ] `DELETE /users/me` (KVKK silme talebi) + 30 gün anonim/sil cron job
+- [x] `DELETE /users/me` (KVKK silme talebi) + 30 gün anonimleştirme işi (API sürecinde saatte bir; elle: `npm run kvkk:anonymize`)
 
 ## Sonraki Adımlar
 

@@ -265,16 +265,7 @@ JWT_ACCESS_EXPIRES_IN=15m
 JWT_REFRESH_EXPIRES_IN=7d
 JWT_REGISTRATION_EXPIRES_IN=30m
 
-# ── Email (SMTP devre dışı — bo gerçek provider eklenince güncelle) ──────────────────────
-SMTP_HOST=
-SMTP_PORT=587
-SMTP_SECURE=false
-SMTP_USER=
-SMTP_PASSWORD=
-SMTP_FROM_NAME=OGM Gönüllü Sistemi
-SMTP_FROM_EMAIL=noreply@localhost
-
-# ── SMS / OTP (mock — OTP'ler log'a yazılır) ───────────────────────────────
+# ── SMS / OTP (mock — SMS gönderilmez, kod loglanmaz; giriş OTP_DUMMY_* ile) ──────────
 SMS_PROVIDER=mock
 SMS_API_URL=
 SMS_API_KEY=
@@ -501,6 +492,17 @@ log "Volume dizinleri hazırlanıyor"
 run_ssh "cd $DEPLOY_DIR && mkdir -p logs uploads backups/mysql && chown -R 1000:1000 logs uploads"
 ok "Volume dizinleri hazır"
 
+# ─── Yedek cron'u (scripts/backup.sh) ──────────────────────────────────────────
+# Dosya her deploy'da baştan yazılır: tekrar çalıştırmak satırı çoğaltmaz.
+# Kaldırmak: sunucuda rm /etc/cron.d/ogm-backup (ve bu adımı çıkarın, yoksa geri gelir).
+log "Yedek cron'u kuruluyor (her gece 03:30 → backups/backup.log)"
+run_ssh "echo '30 3 * * * root /bin/bash $DEPLOY_DIR/scripts/backup.sh >> $DEPLOY_DIR/backups/backup.log 2>&1' > /etc/cron.d/ogm-backup && chmod 644 /etc/cron.d/ogm-backup"
+if run_ssh "systemctl is-active --quiet cron || systemctl is-active --quiet crond"; then
+  ok "Yedek cron'u: /etc/cron.d/ogm-backup"
+else
+  warn "cron servisi çalışmıyor — yedek otomatik ALINMAZ (apt-get install cron)"
+fi
+
 # ─── Seed statik varlıkları (uploads/seed + örnek eğitim videosu) ─────────────
 # Ana rsync uploads/'ı tamamen hariç tutuyor (--delete kullanıcı içeriğini ezmesin diye).
 # Seed görselleri ve örnek video'yu --delete OLMADAN ayrıca gönder: kullanıcı yüklemelerine
@@ -516,6 +518,16 @@ if [ -d "$LOCAL_REPO/uploads/seed" ] || [ -d "$LOCAL_REPO/uploads/trainings" ]; 
     run_rsync -az "$LOCAL_REPO/uploads/trainings/" "$TARGET:$DEPLOY_DIR/uploads/trainings/"
   run_ssh "cd $DEPLOY_DIR && chown -R 1000:1000 uploads/seed uploads/trainings 2>/dev/null || true"
   ok "Seed statik varlıkları yerinde"
+fi
+
+# ─── Migration öncesi yedek (sadece update) ──────────────────────────────────────
+# Migration'lar mevcut veriyi değiştirebilir (backfill, kolon değişikliği) ve MySQL'de
+# yarıda kalan DDL geri alınmaz: önce yedek alınır, alınamazsa migration çalışmaz.
+if [ "$MODE" = "update" ]; then
+  log "Migration öncesi yedek (scripts/backup.sh → backups/backup.log)"
+  run_ssh "/bin/bash $DEPLOY_DIR/scripts/backup.sh >> $DEPLOY_DIR/backups/backup.log 2>&1" \
+    || die "Yedek alınamadı — migration çalıştırılmadı. Ayrıntı: sunucuda $DEPLOY_DIR/backups/backup.log"
+  ok "Yedek alındı"
 fi
 
 # ─── docker compose up (build + start) ──────────────────────────────────────────────
@@ -584,6 +596,21 @@ else
   log "Knex seed: 07_forest_units (idempotent katalog)"
   run_ssh "cd $DEPLOY_DIR && docker compose exec -T backend npx knex seed:run --specific=07_forest_units.js"
   ok "forest_units seed tamam"
+fi
+
+# ─── nginx config ──────────────────────────────────────────────
+# nginx.conf tek dosya olarak bind-mount: rsync dosyayı yeni inode'la değiştirir,
+# çalışan container eskisini görmeye devam eder ve compose up nginx'i yeniden
+# yaratmaz. İçerik farklıysa yeni config tek seferlik container'da doğrulanır,
+# sonra nginx yeniden yaratılır. Geri alma: nginx.conf'u geri alıp tekrar deploy.
+if run_ssh "cd $DEPLOY_DIR && docker exec ogm-nginx cat /etc/nginx/nginx.conf 2>/dev/null | cmp -s - docker/nginx/nginx.conf"; then
+  ok "nginx config değişmemiş"
+else
+  log "nginx config değişmiş — doğrulanıyor (nginx -t)"
+  run_ssh "cd $DEPLOY_DIR && docker compose run --rm --no-deps -T nginx nginx -t" \
+    || die "Yeni nginx.conf geçersiz — çalışan nginx'e dokunulmadı"
+  run_ssh "cd $DEPLOY_DIR && docker compose up -d --no-deps --force-recreate nginx"
+  ok "nginx yeni config ile yeniden yaratıldı"
 fi
 
 # ─── Smoke test ──────────────────────────────────────────────
@@ -655,9 +682,8 @@ SCAN_HMAC_SECRET=$SCAN_HMAC_SECRET
 
 | Entegrasyon | Durum | Aktifleştirmek için |
 |---|---|---|
-| SMS | mock (OTP log'a yazılır) | \`SMS_PROVIDER=netgsm\` + \`SMS_API_KEY\`, \`SMS_API_SECRET\` |
+| SMS | mock (OTP gönderilmez ve loglanmaz; yalnız \`OTP_DUMMY_PHONES\` giriş yapabilir, diğer numaralar 503 \`sms_unavailable\`) | \`SMS_PROVIDER=netgsm\` + \`SMS_API_KEY\`, \`SMS_API_SECRET\` |
 | e-Devlet | mock | \`EDEVLET_MOCK_MODE=false\` + \`EDEVLET_CLIENT_ID/SECRET\` |
-| SMTP | boş | \`SMTP_HOST/USER/PASSWORD\` doldur |
 | FCM | boş | \`FIREBASE_PROJECT_ID\` + service account JSON |
 | SSL | yok (HTTP) | Domain + Let's Encrypt (certbot) |
 

@@ -31,6 +31,8 @@ jest.mock('../src/shared/push-provider', () => ({
   }),
 }));
 
+jest.mock('../src/modules/users/anonymize.service', () => ({ startSchedule: jest.fn() }));
+
 const flush = () => new Promise((resolve) => setImmediate(resolve));
 
 describe('server — bootstrap', () => {
@@ -67,5 +69,23 @@ describe('server — bootstrap', () => {
     await flush();
 
     expect(calls).toEqual(['verifyPushProvider', 'listen']);
+  });
+
+  it('KVKK anonimleştirme işini testte başlatmaz, diğer ortamlarda bir kez başlatır', async () => {
+    let schedule;
+    jest.isolateModules(() => {
+      schedule = require('../src/modules/users/anonymize.service').startSchedule;
+      require('../src/server');
+    });
+    await flush();
+    expect(schedule).not.toHaveBeenCalled();
+
+    jest.isolateModules(() => {
+      require('../src/config/env').nodeEnv = 'production';
+      schedule = require('../src/modules/users/anonymize.service').startSchedule;
+      require('../src/server');
+    });
+    await flush();
+    expect(schedule).toHaveBeenCalledTimes(1);
   });
 });

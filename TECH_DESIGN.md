@@ -53,7 +53,6 @@
                           │                                         │
                           │   ── Outbound HTTPS ──►  FCM (Google)   │
                           │   ── Outbound HTTPS ──►  SMS Sağlayıcı  │
-                          │   ── Outbound SMTP  ──►  Kurumsal SMTP  │
                           └─────────────────────────────────────────┘
 ```
 
@@ -146,7 +145,6 @@ modules/volunteers/
 | `multer` | Dosya upload (fotoğraf) |
 | `node-cron` | Zamanlanmış görevler (SKT kontrolü vb.) |
 | `bcrypt` | Parola hash'leme |
-| `nodemailer` | E-posta gönderimi (doğrulama, parola sıfırlama) |
 | `uuid` | Unique ID üretimi |
 | `dotenv` | Ortam değişkenleri |
 | `compression` | Response sıkıştırma |
@@ -200,10 +198,6 @@ Tüm kullanıcıların (gönüllü + admin) temel kimlik tablosu.
 | `phone_otp_attempts` | TINYINT UNSIGNED | NOT NULL, DEFAULT 0 | Yanlış OTP deneme sayısı (maks 5) |
 | `role` | ENUM('volunteer', 'admin', 'ogm_officer') | NOT NULL, DEFAULT 'volunteer' | Kullanıcı rolü |
 | `status` | ENUM('pending', 'active', 'suspended', 'inactive') | NOT NULL, DEFAULT 'pending' | Hesap durumu |
-| `email_verified` | BOOLEAN | NOT NULL, DEFAULT FALSE | E-posta doğrulandı mı |
-| `email_verified_at` | DATETIME | NULL | E-posta doğrulama zamanı |
-| `password_reset_token` | VARCHAR(255) | NULL | Parola sıfırlama token'ı |
-| `password_reset_expires` | DATETIME | NULL | Token geçerlilik süresi |
 | `last_login_at` | DATETIME | NULL | Son giriş zamanı |
 | `created_at` | DATETIME | NOT NULL, DEFAULT NOW() | Oluşturulma zamanı |
 | `updated_at` | DATETIME | NOT NULL, DEFAULT NOW() ON UPDATE | Güncellenme zamanı |
@@ -591,45 +585,40 @@ Kritik işlemlerin kayıt altına alınması.
 ### 4.1 Kimlik Doğrulama Akışı (Email / Password + Telefon Doğrulama)
 
 ```
-Mobile App                    Backend                  Email / SMS Service
+Mobile App                    Backend                  SMS Service
     │                            │                            │
     │  1. POST /auth/register    │                            │
     │ ──────────────────────────►│                            │
     │                            │  2. Kullanıcı oluştur      │
     │                            │     (password hash)         │
     │                            │                            │
-    │                            │  3. Doğrulama e-postası     │
-    │                            │ ──────────────────────────►│ (Email)
-    │                            │                            │
-    │  4. 201 Created            │                            │
+    │  3. 201 Created            │                            │
     │ ◄──────────────────────────│                            │
     │                            │                            │
-    │  5. POST /auth/phone/      │                            │
+    │  4. POST /auth/phone/      │                            │
     │     send-otp               │                            │
     │ ──────────────────────────►│                            │
-    │                            │  6. SMS OTP gönder          │
+    │                            │  5. SMS OTP gönder          │
     │                            │ ──────────────────────────►│ (SMS)
-    │  7. OTP kodu döner         │                            │
+    │  6. OTP kodu döner         │                            │
     │ ◄──────────────────────────│                            │
     │                            │                            │
-    │  8. POST /auth/phone/      │                            │
+    │  7. POST /auth/phone/      │                            │
     │     verify-otp             │                            │
     │ ──────────────────────────►│                            │
-    │  9. Telefon doğrulandı     │                            │
+    │  8. Telefon doğrulandı     │                            │
     │ ◄──────────────────────────│                            │
     │                            │                            │
-    │  10. POST /auth/login      │                            │
+    │  9. POST /auth/login       │                            │
     │ ──────────────────────────►│                            │
-    │                            │  11. Email+password doğrula │
-    │                            │  12. JWT (access+refresh)   │
+    │                            │  10. Email+password doğrula │
+    │                            │  11. JWT (access+refresh)   │
     │ ◄──────────────────────────│                            │
 ```
 
 **Register Akışı:**
 1. Kullanıcı email + password + telefon + temel bilgilerle kayıt olur
 2. Parola bcrypt ile hash'lenir ve `users` tablosuna kaydedilir
-3. E-posta doğrulama link'i gönderilir
-4. Kullanıcı e-postasını doğrulayana kadar `email_verified = false`
 
 **Telefon Doğrulama Akışı:**
 1. Kullanıcı `/auth/phone/send-otp` ile SMS doğrulama kodu talep eder
@@ -645,11 +634,9 @@ Mobile App                    Backend                  Email / SMS Service
 2. bcrypt ile parola doğrulanır
 3. JWT access token (15dk) + refresh token (30 gün) döner
 
-**Parolamı Unuttum Akışı:**
-1. Kullanıcı email adresini girer
-2. Parola sıfırlama token'ı üretilir (crypto.randomBytes), 1 saat geçerli
-3. Sıfırlama link'i e-posta ile gönderilir
-4. Kullanıcı yeni parolasını belirler
+**Parola Sıfırlama:**
+E-posta doğrulama ve e-postayla parola sıfırlama akışı YOKTUR (karar: sistem e-posta göndermez).
+Parolayı süper admin sıfırlar: geçici şifre üretilir, ilk girişte değiştirilmesi zorunludur.
 
 ### 4.2 JWT Token Yapısı
 
@@ -761,11 +748,10 @@ Yeni kullanıcı kaydı.
       "phone": "+905559876543",
       "role": "volunteer",
       "status": "pending",
-      "email_verified": false,
       "phone_verified": false,
       "is_profile_complete": false
     },
-    "message": "Kayıt başarılı. Lütfen e-posta ve telefon numaranızı doğrulayınız."
+    "message": "Kayıt başarılı. Lütfen telefon numaranızı doğrulayınız."
   }
 }
 ```
@@ -810,7 +796,6 @@ Kullanıcı girişi (tüm roller için).
       "phone": "+905559876543",
       "role": "volunteer",
       "status": "active",
-      "email_verified": true,
       "phone_verified": true,
       "is_profile_complete": true
     }
@@ -825,87 +810,6 @@ Kullanıcı girişi (tüm roller için).
   "error": {
     "code": "UNAUTHORIZED",
     "message": "E-posta veya parola hatalı"
-  }
-}
-```
-
----
-
-#### `POST /auth/forgot-password`
-Parola sıfırlama talebi. Rate limit: 3 req/saat/email.
-
-**Request:**
-```json
-{
-  "email": "ahmet@example.com"
-}
-```
-
-**Response (200):**
-```json
-{
-  "success": true,
-  "data": {
-    "message": "Parola sıfırlama bağlantısı e-posta adresinize gönderildi"
-  }
-}
-```
-
-> Not: Güvenlik nedeniyle, kayıtlı olmayan e-posta adresleri için de aynı başarılı yanıt döner.
-
----
-
-#### `POST /auth/reset-password`
-Parola sıfırlama (token ile).
-
-**Request:**
-```json
-{
-  "token": "reset_token_from_email",
-  "password": "NewSecure456!",
-  "password_confirmation": "NewSecure456!"
-}
-```
-
-**Response (200):**
-```json
-{
-  "success": true,
-  "data": {
-    "message": "Parolanız başarıyla güncellendi. Yeni parolanızla giriş yapabilirsiniz."
-  }
-}
-```
-
-**Hata Response (400):**
-```json
-{
-  "success": false,
-  "error": {
-    "code": "INVALID_TOKEN",
-    "message": "Sıfırlama bağlantısı geçersiz veya süresi dolmuş"
-  }
-}
-```
-
----
-
-#### `POST /auth/verify-email`
-E-posta doğrulama.
-
-**Request:**
-```json
-{
-  "token": "email_verification_token"
-}
-```
-
-**Response (200):**
-```json
-{
-  "success": true,
-  "data": {
-    "message": "E-posta adresiniz başarıyla doğrulandı"
   }
 }
 ```
@@ -1003,21 +907,6 @@ SMS ile gönderilen OTP kodunu doğrular. 🔒 Auth required. Maksimum 5 deneme 
   "error": {
     "code": "OTP_EXPIRED",
     "message": "Doğrulama kodunun süresi dolmuş. Lütfen yeni kod talep ediniz"
-  }
-}
-```
-
----
-
-#### `POST /auth/resend-verification`
-E-posta doğrulama link'ini tekrar gönderme. 🔒 Auth required. Rate limit: 3 req/saat.
-
-**Response (200):**
-```json
-{
-  "success": true,
-  "data": {
-    "message": "Doğrulama bağlantısı tekrar gönderildi"
   }
 }
 ```
@@ -2664,7 +2553,7 @@ Admin kullanıcı güncelleme. 🔒 Auth required (admin — superadmin yetkisi)
 
 ## 6. 3rd Party Entegrasyonlar
 
-> **On-Premise Prensip:** Tüm temel servisler kurumun kendi sunucularında çalışır. Dış bağımlılıklar yalnızca push notification (FCM) ve e-posta gönderimi (SMTP) ile sınırlıdır; bu ikisi outbound bağlantı gerektirir.
+> **On-Premise Prensip:** Tüm temel servisler kurumun kendi sunucularında çalışır. Dış bağımlılıklar push notification (FCM) ve SMS sağlayıcısı ile sınırlıdır; ikisi de outbound bağlantı gerektirir. Sistem e-posta göndermez.
 
 ### 6.1 MinIO — Object Storage (On-Premise)
 
@@ -2678,16 +2567,9 @@ Admin kullanıcı güncelleme. 🔒 Auth required (admin — superadmin yetkisi)
 | **Yedekleme** | Günlük cronjob ile `mc mirror` komutuyla yedek diske kopyalama |
 | **Dashboard** | MinIO Console (`http://minio-host:9001`) ile görsel yönetim |
 
-### 6.2 E-posta Gönderim Servisi
+### 6.2 E-posta Gönderimi — Yok
 
-| Özellik | Detay |
-|---------|-------|
-| **Amaç** | E-posta doğrulama, parola sıfırlama, bilgilendirme e-postaları |
-| **Servis** | Nodemailer + Kurumsal SMTP sunucusu (OGM'nin mevcut mail altyapısı) |
-| **SDK** | `nodemailer` (Node.js) |
-| **Şablonlar** | E-posta doğrulama, parola sıfırlama, hoş geldiniz |
-| **Rate Limit** | Doğrulama: 3/saat, Sıfırlama: 3/saat |
-| **Not** | Kurumsal SMTP yoksa, aynı sunucuya Postfix kurularak lokal SMTP sağlanabilir |
+Sistem e-posta göndermez (karar). E-posta doğrulama ve e-postayla parola sıfırlama akışları kaldırıldı; parolayı süper admin sıfırlar (geçici şifre, ilk girişte değiştirme zorunlu). SMTP sunucusu ve `nodemailer` gerekmez.
 
 ### 6.3 SMS Gönderim Servisi (Telefon Doğrulama)
 
@@ -2913,7 +2795,7 @@ Winston ile yapısal JSON loglama:
 | HTTPS | Tüm iletişim TLS 1.2+ üzerinden |
 | CORS | Yalnızca izin verilen origin'ler (admin panel domain, mobile deep link) |
 | Helmet | HTTP güvenlik header'ları (X-Frame-Options, CSP, HSTS vb.) |
-| Rate Limiting | IP bazlı — genel: 100 req/dk, login: 10 req/dk, register: 5 req/dk, forgot-password: 3 req/saat, send-otp: 1 req/2dk, verify-otp: 5 deneme/kod, SOS: 5 req/dk |
+| Rate Limiting | IP bazlı — genel: 100 req/dk, login: 10 req/dk, register: 5 req/dk, send-otp: 1 req/2dk, verify-otp: 5 deneme/kod, SOS: 5 req/dk |
 | Input Validation | Joi ile tüm request body/query/params doğrulanır |
 | SQL Injection | Knex.js parameterized queries |
 | XSS | Blog içeriği için HTML sanitize (DOMPurify server-side) |
@@ -2925,7 +2807,7 @@ Winston ile yapısal JSON loglama:
 | Katman | Uygulama |
 |--------|----------|
 | Ağ İzolasyonu | Docker internal network — DB, Redis, MinIO dışarıya kapalı (yalnızca 127.0.0.1) |
-| Firewall | Sadece 80/443 inbound açık; outbound sadece FCM + SMTP |
+| Firewall | Sadece 80/443 inbound açık; outbound sadece FCM + SMS sağlayıcı |
 | SSL/TLS | Kurumsal CA sertifikası, Nginx SSL termination, TLS 1.2+ zorunlu |
 | Container Güvenliği | Non-root user, read-only filesystem (mümkün olduğunca), resource limits |
 | Log Merkezi | Tüm loglar host dosya sistemine yazılır, SIEM entegrasyonu mümkün |
@@ -3163,15 +3045,6 @@ MINIO_BUCKET=ogm-gonullu-storage
 MINIO_USE_SSL=false
 MINIO_PUBLIC_URL=https://api.ogm-gonullu.gov.tr/files
 
-# ── Email (Kurumsal SMTP) ──────────────────────
-SMTP_HOST=mail.ogm.gov.tr
-SMTP_PORT=587
-SMTP_SECURE=false
-SMTP_USER=gonullu-sistem@ogm.gov.tr
-SMTP_PASSWORD=***
-SMTP_FROM_NAME=OGM Gönüllü Sistemi
-SMTP_FROM_EMAIL=noreply@ogm.gov.tr
-
 # ── SMS (Kurumsal SMS Sağlayıcı) ───────────────
 SMS_PROVIDER=netgsm                          # netgsm | ileti_merkezi | mutlucell
 SMS_API_URL=https://api.netgsm.com.tr
@@ -3272,7 +3145,7 @@ seeds/
 │  ┌───────────────────────┐  ┌──────────────────────────┐     │
 │  │  Monitoring (Ops.)    │  │  Firewall Kuralları      │     │
 │  │  Prometheus + Grafana │  │  Inbound:  443/TCP only  │     │
-│  │  (Docker container)   │  │  Outbound: FCM, SMTP     │     │
+│  │  (Docker container)   │  │  Outbound: FCM, SMS      │     │
 │  └───────────────────────┘  └──────────────────────────┘     │
 └──────────────────────────────────────────────────────────────┘
 ```
@@ -3333,7 +3206,6 @@ gunzip -c $LATEST | docker exec -i ogm-mysql mysql -u root -p${DB_ROOT_PASSWORD}
 | **Inbound** | 80/TCP | Tüm client'lar | HTTP → HTTPS redirect |
 | **Outbound** | 443/TCP | `fcm.googleapis.com` | Firebase push notification |
 | **Outbound** | 443/TCP | `oauth2.googleapis.com` | Firebase auth |
-| **Outbound** | 587/TCP | `mail.ogm.gov.tr` | Kurumsal SMTP (e-posta gönderimi) |
 | **Outbound** | 443/TCP | `api.netgsm.com.tr` (veya SMS sağlayıcı) | SMS OTP gönderimi |
 | **Internal** | 3000, 3306, 6379, 9000, 9001 | Sadece Docker network | Container'lar arası iletişim |
 
@@ -3383,66 +3255,62 @@ echo "0 2 * * * /opt/ogm-gonullu/scripts/backup.sh" | crontab -
 |---|--------|----------|------|-----|
 | 1 | POST | `/auth/register` | - | - |
 | 2 | POST | `/auth/login` | - | - |
-| 3 | POST | `/auth/forgot-password` | - | - |
-| 4 | POST | `/auth/reset-password` | - | - |
-| 5 | POST | `/auth/verify-email` | - | - |
-| 6 | POST | `/auth/phone/send-otp` | Yes | All |
-| 7 | POST | `/auth/phone/verify-otp` | Yes | All |
-| 8 | POST | `/auth/resend-verification` | Yes | All |
-| 9 | POST | `/auth/change-password` | Yes | All |
-| 10 | POST | `/auth/refresh` | - | - |
-| 11 | POST | `/auth/logout` | Yes | All |
-| 12 | POST | `/volunteers/profile` | Yes | volunteer |
-| 13 | GET | `/volunteers/profile` | Yes | volunteer |
-| 14 | PUT | `/volunteers/profile` | Yes | volunteer |
-| 15 | PUT | `/volunteers/profile/location` | Yes | volunteer |
-| 16 | GET | `/volunteers/trainings` | Yes | volunteer |
-| 17 | GET | `/volunteers/equipment` | Yes | volunteer |
-| 18 | GET | `/trainings` | Yes | All |
-| 19 | GET | `/trainings/:id` | Yes | All |
-| 20 | POST | `/trainings/:id/enroll` | Yes | volunteer |
-| 21 | DELETE | `/trainings/:id/enroll` | Yes | volunteer |
-| 22 | POST | `/fires/report` | Yes | volunteer |
-| 23 | POST | `/fires/:fireId/respond` | Yes | volunteer |
-| 24 | POST | `/sos` | Yes | volunteer |
-| 25 | GET | `/notifications` | Yes | volunteer |
-| 26 | PATCH | `/notifications/:id/read` | Yes | volunteer |
-| 27 | POST | `/notifications/read-all` | Yes | volunteer |
-| 28 | GET | `/blog/posts` | Yes | All |
-| 29 | GET | `/blog/posts/:slug` | Yes | All |
-| 30 | GET | `/admin/volunteers` | Yes | admin, ogm_officer |
-| 31 | GET | `/admin/volunteers/:id` | Yes | admin, ogm_officer |
-| 32 | PATCH | `/admin/volunteers/:id/status` | Yes | admin, ogm_officer |
-| 33 | POST | `/admin/volunteers/:id/evaluate` | Yes | admin, ogm_officer |
-| 34 | POST | `/admin/volunteers/:id/equipment` | Yes | admin, ogm_officer |
-| 35 | GET | `/admin/volunteers/:id/equipment` | Yes | admin, ogm_officer |
-| 36 | POST | `/admin/trainings` | Yes | admin, ogm_officer |
-| 37 | PUT | `/admin/trainings/:id` | Yes | admin, ogm_officer |
-| 38 | PATCH | `/admin/trainings/:id/volunteers/:volunteerId/status` | Yes | admin, ogm_officer |
-| 39 | GET | `/admin/equipment/types` | Yes | admin, ogm_officer |
-| 40 | POST | `/admin/equipment/types` | Yes | admin |
-| 41 | GET | `/admin/equipment/stock` | Yes | admin, ogm_officer |
-| 42 | PUT | `/admin/equipment/stock/:id` | Yes | admin, ogm_officer |
-| 43 | PATCH | `/admin/equipment/assignments/:id` | Yes | admin, ogm_officer |
-| 44 | GET | `/admin/equipment/expiring` | Yes | admin, ogm_officer |
-| 45 | POST | `/admin/fires` | Yes | admin |
-| 46 | GET | `/admin/fires` | Yes | admin, ogm_officer |
-| 47 | GET | `/admin/fires/:id` | Yes | admin, ogm_officer |
-| 48 | PUT | `/admin/fires/:id` | Yes | admin |
-| 49 | POST | `/admin/fires/:id/call-volunteers` | Yes | admin |
-| 50 | GET | `/admin/fires/:id/volunteers` | Yes | admin, ogm_officer |
-| 51 | GET | `/admin/fires/reports` | Yes | admin, ogm_officer |
-| 52 | PATCH | `/admin/fires/reports/:id` | Yes | admin |
-| 53 | GET | `/admin/sos` | Yes | admin, ogm_officer |
-| 54 | PATCH | `/admin/sos/:id` | Yes | admin, ogm_officer |
-| 55 | POST | `/admin/notifications` | Yes | admin |
-| 56 | GET | `/admin/notifications` | Yes | admin |
-| 57 | POST | `/admin/blog/posts` | Yes | admin |
-| 58 | PUT | `/admin/blog/posts/:id` | Yes | admin |
-| 59 | DELETE | `/admin/blog/posts/:id` | Yes | admin |
-| 60 | GET | `/admin/dashboard/summary` | Yes | admin, ogm_officer |
-| 61 | GET | `/admin/dashboard/active-fires` | Yes | admin, ogm_officer |
-| 62 | GET | `/admin/dashboard/volunteers-map` | Yes | admin |
-| 63 | POST | `/admin/users` | Yes | admin (superadmin) |
-| 64 | GET | `/admin/users` | Yes | admin (superadmin) |
-| 65 | PUT | `/admin/users/:id` | Yes | admin (superadmin) |
+| 3 | POST | `/auth/phone/send-otp` | Yes | All |
+| 4 | POST | `/auth/phone/verify-otp` | Yes | All |
+| 5 | POST | `/auth/change-password` | Yes | All |
+| 6 | POST | `/auth/refresh` | - | - |
+| 7 | POST | `/auth/logout` | Yes | All |
+| 8 | POST | `/volunteers/profile` | Yes | volunteer |
+| 9 | GET | `/volunteers/profile` | Yes | volunteer |
+| 10 | PUT | `/volunteers/profile` | Yes | volunteer |
+| 11 | PUT | `/volunteers/profile/location` | Yes | volunteer |
+| 12 | GET | `/volunteers/trainings` | Yes | volunteer |
+| 13 | GET | `/volunteers/equipment` | Yes | volunteer |
+| 14 | GET | `/trainings` | Yes | All |
+| 15 | GET | `/trainings/:id` | Yes | All |
+| 16 | POST | `/trainings/:id/enroll` | Yes | volunteer |
+| 17 | DELETE | `/trainings/:id/enroll` | Yes | volunteer |
+| 18 | POST | `/fires/report` | Yes | volunteer |
+| 19 | POST | `/fires/:fireId/respond` | Yes | volunteer |
+| 20 | POST | `/sos` | Yes | volunteer |
+| 21 | GET | `/notifications` | Yes | volunteer |
+| 22 | PATCH | `/notifications/:id/read` | Yes | volunteer |
+| 23 | POST | `/notifications/read-all` | Yes | volunteer |
+| 24 | GET | `/blog/posts` | Yes | All |
+| 25 | GET | `/blog/posts/:slug` | Yes | All |
+| 26 | GET | `/admin/volunteers` | Yes | admin, ogm_officer |
+| 27 | GET | `/admin/volunteers/:id` | Yes | admin, ogm_officer |
+| 28 | PATCH | `/admin/volunteers/:id/status` | Yes | admin, ogm_officer |
+| 29 | POST | `/admin/volunteers/:id/evaluate` | Yes | admin, ogm_officer |
+| 30 | POST | `/admin/volunteers/:id/equipment` | Yes | admin, ogm_officer |
+| 31 | GET | `/admin/volunteers/:id/equipment` | Yes | admin, ogm_officer |
+| 32 | POST | `/admin/trainings` | Yes | admin, ogm_officer |
+| 33 | PUT | `/admin/trainings/:id` | Yes | admin, ogm_officer |
+| 34 | PATCH | `/admin/trainings/:id/volunteers/:volunteerId/status` | Yes | admin, ogm_officer |
+| 35 | GET | `/admin/equipment/types` | Yes | admin, ogm_officer |
+| 36 | POST | `/admin/equipment/types` | Yes | admin |
+| 37 | GET | `/admin/equipment/stock` | Yes | admin, ogm_officer |
+| 38 | PUT | `/admin/equipment/stock/:id` | Yes | admin, ogm_officer |
+| 39 | PATCH | `/admin/equipment/assignments/:id` | Yes | admin, ogm_officer |
+| 40 | GET | `/admin/equipment/expiring` | Yes | admin, ogm_officer |
+| 41 | POST | `/admin/fires` | Yes | admin |
+| 42 | GET | `/admin/fires` | Yes | admin, ogm_officer |
+| 43 | GET | `/admin/fires/:id` | Yes | admin, ogm_officer |
+| 44 | PUT | `/admin/fires/:id` | Yes | admin |
+| 45 | POST | `/admin/fires/:id/call-volunteers` | Yes | admin |
+| 46 | GET | `/admin/fires/:id/volunteers` | Yes | admin, ogm_officer |
+| 47 | GET | `/admin/fires/reports` | Yes | admin, ogm_officer |
+| 48 | PATCH | `/admin/fires/reports/:id` | Yes | admin |
+| 49 | GET | `/admin/sos` | Yes | admin, ogm_officer |
+| 50 | PATCH | `/admin/sos/:id` | Yes | admin, ogm_officer |
+| 51 | POST | `/admin/notifications` | Yes | admin |
+| 52 | GET | `/admin/notifications` | Yes | admin |
+| 53 | POST | `/admin/blog/posts` | Yes | admin |
+| 54 | PUT | `/admin/blog/posts/:id` | Yes | admin |
+| 55 | DELETE | `/admin/blog/posts/:id` | Yes | admin |
+| 56 | GET | `/admin/dashboard/summary` | Yes | admin, ogm_officer |
+| 57 | GET | `/admin/dashboard/active-fires` | Yes | admin, ogm_officer |
+| 58 | GET | `/admin/dashboard/volunteers-map` | Yes | admin |
+| 59 | POST | `/admin/users` | Yes | admin (superadmin) |
+| 60 | GET | `/admin/users` | Yes | admin (superadmin) |
+| 61 | PUT | `/admin/users/:id` | Yes | admin (superadmin) |

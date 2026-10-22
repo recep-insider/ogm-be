@@ -39,10 +39,13 @@ async function resolveEventTargets(missionId, segments) {
   const ids = new Set();
 
   if (statuses.length) {
-    const rows = await db('mission_participants')
-      .where({ mission_id: missionId })
-      .whereIn('status', statuses)
-      .pluck('user_id');
+    // Silinen (KVKK) hesap katılımcı satırında kalır; bildirim almamalı.
+    const rows = await db('mission_participants as mp')
+      .join('users as u', 'u.id', 'mp.user_id')
+      .where('mp.mission_id', missionId)
+      .whereIn('mp.status', statuses)
+      .whereNull('u.deleted_at')
+      .pluck('mp.user_id');
     for (const id of rows) ids.add(id);
   }
 
@@ -123,13 +126,15 @@ async function send(input, actor = {}) {
   let smsCount = 0;
   for (const userId of targets) {
     // eslint-disable-next-line no-await-in-loop
-    await sendPushToUser(userId, {
+    const push = await sendPushToUser(userId, {
       topic: channel.topic,
       title: input.title,
       body: input.body,
       data: { type: 'operator_notification', category: input.category, missionId: input.missionId },
     });
-    pushCount += 1;
+    // Yalnız sağlayıcının kabul ettiği teslim sayılır: cihazsız, tercihle atlanan,
+    // hatalı ve mock gönderim "gönderildi" değildir.
+    if (push?.sent > 0 && !push.mock) pushCount += 1;
 
     if (channel.sms) {
       // eslint-disable-next-line no-await-in-loop
@@ -170,7 +175,7 @@ async function send(input, actor = {}) {
     entityId: id,
     ip: actor.ip,
     userAgent: actor.userAgent,
-    payload: { category: input.category, target: targetDoc, pushCount, smsCount },
+    payload: { category: input.category, target: targetDoc, recipients: targets.length, pushCount, smsCount },
   });
 
   return {

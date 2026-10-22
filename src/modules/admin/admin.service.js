@@ -10,7 +10,8 @@ const { v4: uuidv4 } = require('uuid');
 const { hasProtectiveEquipment, PROTECTIVE_TYPE } = require('../equipment/equipment.service');
 const { sendTransactional } = require('../../shared/sms-provider');
 const readinessService = require('../users/readiness.service');
-const { regionForCity } = require('../../shared/regions');
+const { applyRegionFilter } = require('../../shared/regions');
+const { profileFields } = require('../users/users.service');
 const { foldSearch } = require('../../shared/fold-search');
 
 // applications.status enum'u ile aynı (migrations/20260427120200_create_applications.js).
@@ -150,21 +151,6 @@ async function setCommissionDecision(userId, body, actor = {}) {
   };
 }
 
-// users.service getMe ile aynı eşleme — mobil profil ve panel aynı alanları aynı biçimde görür.
-function profileFields(u) {
-  return {
-    il: u.il || null,
-    ilce: u.ilce || null,
-    region: regionForCity(u.il),
-    ogrenim: u.ogrenim,
-    meslek: u.meslek,
-    meslekDiger: u.meslek_diger,
-    giysiBedeni: u.giysi_bedeni,
-    ayakkabiNumarasi: u.ayakkabi_numarasi != null ? Number(u.ayakkabi_numarasi) : null,
-    stkText: u.stk_text || null,
-  };
-}
-
 function mapVolunteerListItem(row, readiness) {
   return {
     userId: row.id,
@@ -189,9 +175,8 @@ function mapVolunteerListItem(row, readiness) {
 }
 
 /**
- * Gönüllü listesi (admin paneli). BÖLGEYE GÖRE SÜZÜLMEZ (§11): "şu bölgenin gönüllüsü"
- * diye bir kavram yoktur, liste ve sayaçlar her zaman tüm gönüllüleri kapsar.
- * Misafir ve silinmiş kullanıcılar hariç;
+ * Gönüllü listesi (admin paneli). Bölge süzmesini panel `region` alanıyla (il'den)
+ * kendisi yapar; liste tüm gönüllüleri döner. Misafir ve silinmiş kullanıcılar hariç;
  * her kullanıcı EN GÜNCEL başvurusuyla eşlenir. PII gözetimi: tc_kimlik
  * listede DÖNMEZ (yalnızca getVolunteer detayında).
  *
@@ -419,22 +404,31 @@ function previousWindow(from, to) {
 // `tamamladi` dahil — arşiv yolda/sahada satırlarını tamamladi'ya taşır, geçmiş pencereler sıfırlanmasın.
 const ENGAGED_PARTICIPANT_STATUSES = ['yolda', 'sahada', 'tamamladi'];
 
-async function windowKpis(from, to) {
-  const [fireByStatus, newVolunteers, activeVolunteers, missions] = await Promise.all([
-    db('fire_reports')
+// Bölge seçiliyse her sayı kendi il kolonundan süzülür: olay/ihbar/SOS kaydın yerinden,
+// gönüllü users.il'den. İli boş kayıt yalnızca "Tüm Bölgeler"de sayılır.
+async function windowKpis(from, to, region) {
+  const engaged = db('mission_participants')
+    .where('joined_at', '>=', from)
+    .where('joined_at', '<', to)
+    .whereIn('status', ENGAGED_PARTICIPANT_STATUSES);
+  if (region && region !== 'all') {
+    engaged.whereIn('user_id', applyRegionFilter(db('users').select('id'), region, 'il'));
+  }
+
+  const [fireByStatus, newVolunteers, activeVolunteers, missions, sos] = await Promise.all([
+    applyRegionFilter(db('fire_reports'), region, 'il')
       .where('created_at', '>=', from)
       .where('created_at', '<', to)
       .select('status')
       .count({ c: '*' })
       .groupBy('status'),
-    db('users').where({ is_guest: false }).whereNull('deleted_at').where('created_at', '<', to).count({ c: '*' }).first(),
-    db('mission_participants')
-      .where('joined_at', '>=', from)
-      .where('joined_at', '<', to)
-      .whereIn('status', ENGAGED_PARTICIPANT_STATUSES)
-      .countDistinct({ c: 'user_id' })
-      .first(),
-    db('missions').where('created_at', '>=', from).where('created_at', '<', to).count({ c: '*' }).first(),
+    applyRegionFilter(db('users'), region, 'il')
+      .where({ is_guest: false }).whereNull('deleted_at').where('created_at', '<', to).count({ c: '*' }).first(),
+    engaged.countDistinct({ c: 'user_id' }).first(),
+    applyRegionFilter(db('missions'), region, 'il')
+      .where('created_at', '>=', from).where('created_at', '<', to).count({ c: '*' }).first(),
+    applyRegionFilter(db('sos_reports'), region, 'il')
+      .where('created_at', '>=', from).where('created_at', '<', to).count({ c: '*' }).first(),
   ]);
   const fire = statusCounts(fireByStatus);
   const confirmed = fire.confirmed || 0;
@@ -445,33 +439,40 @@ async function windowKpis(from, to) {
     activeVolunteers: Number(activeVolunteers?.c || 0), // pencere içinde göreve katılan tekil gönüllü
     reportAccuracy: computeAccuracy(confirmed, rejected),
     missions: Number(missions?.c || 0), // pencere içinde açılan olay (arşivlenenler dahil)
+    sos: Number(sos?.c || 0), // pencere içinde açılan SOS çağrısı
   };
 }
 
 /** Raporlar sayfası KPI'ları — [from,to) penceresi + bir önceki eşit pencereyle kıyas. */
-async function reportsSummary({ from, to }) {
+async function reportsSummary({ from, to, region }) {
   const prev = previousWindow(from, to);
-  const [current, previous] = await Promise.all([windowKpis(from, to), windowKpis(prev.from, prev.to)]);
+  const [current, previous] = await Promise.all([
+    windowKpis(from, to, region),
+    windowKpis(prev.from, prev.to, region),
+  ]);
   return {
     range: { from: from.toISOString(), to: to.toISOString() },
+    region: region || 'all',
     kpis: {
       fires: { current: current.fires, previous: previous.fires },
       volunteersTotal: { current: current.volunteersTotal, previous: previous.volunteersTotal },
       activeVolunteers: { current: current.activeVolunteers, previous: previous.activeVolunteers },
       reportAccuracy: { current: current.reportAccuracy, previous: previous.reportAccuracy },
       missions: { current: current.missions, previous: previous.missions },
+      sos: { current: current.sos, previous: previous.sos },
     },
   };
 }
 
 // metric/interval değerleri Joi enum'undan gelir; format string'leri içeriden seçilir (SQL injection yüzeyi yok).
+// regionColumn: bölge süzmesinin il kolonu (windowKpis ile aynı); emergency_reports il taşımaz.
 const SERIES_METRICS = {
-  fireReports: { table: 'fire_reports', column: 'created_at', filter: null },
-  confirmedFireReports: { table: 'fire_reports', column: 'created_at', filter: (q) => q.where({ status: 'confirmed' }) },
-  emergency: { table: 'emergency_reports', column: 'created_at', filter: null },
+  fireReports: { table: 'fire_reports', column: 'created_at', regionColumn: 'il', filter: null },
+  confirmedFireReports: { table: 'fire_reports', column: 'created_at', regionColumn: 'il', filter: (q) => q.where({ status: 'confirmed' }) },
+  emergency: { table: 'emergency_reports', column: 'created_at', regionColumn: null, filter: null },
   // volunteersTotal (windowKpis) ile tutarlı: misafir ve soft-delete hariç
-  newUsers: { table: 'users', column: 'created_at', filter: (q) => q.where({ is_guest: false }).whereNull('deleted_at') },
-  missions: { table: 'missions', column: 'created_at', filter: null },
+  newUsers: { table: 'users', column: 'created_at', regionColumn: 'il', filter: (q) => q.where({ is_guest: false }).whereNull('deleted_at') },
+  missions: { table: 'missions', column: 'created_at', regionColumn: 'il', filter: null },
 };
 const SERIES_INTERVALS = {
   day: '%Y-%m-%d',
@@ -485,9 +486,12 @@ const SERIES_INTERVALS = {
 const REPORT_TZ_OFFSET = env.reports.tzOffset;
 
 /** Raporlar grafiği — metriğin [from,to) içinde gün/hafta/ay kovalarındaki sayıları (TR günü). */
-async function reportsSeries({ metric, interval, from, to }) {
+async function reportsSeries({ metric, interval, from, to, region }) {
   const m = SERIES_METRICS[metric];
   const fmt = SERIES_INTERVALS[interval];
+  if (region && region !== 'all' && !m.regionColumn) {
+    throw errors.validation('Bu metrik bölgeye göre süzülemez', { metric, region }, 'region_not_supported');
+  }
   const query = db(m.table)
     .select(db.raw(`date_format(convert_tz(${m.column}, '+00:00', ?), ?) as bucket`, [REPORT_TZ_OFFSET, fmt]))
     .count({ c: '*' })
@@ -496,6 +500,7 @@ async function reportsSeries({ metric, interval, from, to }) {
     .groupBy('bucket')
     .orderBy('bucket', 'asc');
   if (m.filter) m.filter(query);
+  applyRegionFilter(query, region, m.regionColumn);
 
   const rows = await query;
   return {

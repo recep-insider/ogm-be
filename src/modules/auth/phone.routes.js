@@ -58,7 +58,20 @@ const verifyLimiter = rateLimit({
  *                 expiresIn: { type: integer, example: 300 }
  *                 cooldownSec: { type: integer, example: 30 }
  *       400: { $ref: '#/components/responses/ValidationError' }
- *       429: { $ref: '#/components/responses/RateLimited' }
+ *       429:
+ *         description: >-
+ *           `rate_limited` — telefon/IP başına saatlik limit; `sms_daily_limit` — telefona günlük
+ *           OTP SMS limiti (SMS_DAILY_LIMIT_PER_USER) doldu, `details.retryAfterSec` döner.
+ *         content:
+ *           application/json:
+ *             schema: { $ref: '#/components/schemas/ErrorResponse' }
+ *       503:
+ *         description: >-
+ *           `sms_unavailable` — üretimde SMS sağlayıcı bağlı değil (SMS_PROVIDER=mock); yalnız
+ *           OTP_DUMMY_PHONES numaraları giriş yapabilir. Oturum açılmaz, telefon/günlük SMS limitinden düşülmez.
+ *         content:
+ *           application/json:
+ *             schema: { $ref: '#/components/schemas/ErrorResponse' }
  */
 router.post(
   '/send-otp',
@@ -146,7 +159,20 @@ router.post(
  *                 cooldownSec: { type: integer }
  *                 expiresIn: { type: integer }
  *       404: { description: 'Session yok' }
- *       429: { $ref: '#/components/responses/RateLimited' }
+ *       429:
+ *         description: >-
+ *           `rate_limited` — telefon/IP başına saatlik limit; `sms_daily_limit` — telefona günlük
+ *           OTP SMS limiti (SMS_DAILY_LIMIT_PER_USER) doldu, `details.retryAfterSec` döner.
+ *         content:
+ *           application/json:
+ *             schema: { $ref: '#/components/schemas/ErrorResponse' }
+ *       503:
+ *         description: >-
+ *           `sms_unavailable` — üretimde SMS sağlayıcı bağlı değil (SMS_PROVIDER=mock); yalnız
+ *           OTP_DUMMY_PHONES numaraları giriş yapabilir. Oturum açılmaz, telefon/günlük SMS limitinden düşülmez.
+ *         content:
+ *           application/json:
+ *             schema: { $ref: '#/components/schemas/ErrorResponse' }
  */
 router.post(
   '/resend-otp',

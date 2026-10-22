@@ -1,5 +1,7 @@
 'use strict';
 
+jest.mock('../../src/config/logger', () => ({ info: jest.fn(), warn: jest.fn(), error: jest.fn(), debug: jest.fn() }));
+
 const { AppError } = require('../../src/shared/errors');
 const { __testables } = require('../../src/middlewares/upload');
 
@@ -106,5 +108,71 @@ describe('upload imageSizeGuard — fireReport per-type size limit', () => {
     expect(err.status).toBe(413);
     expect(err.code).toBe('file_too_large');
     expect(err.details).toEqual({ limitBytes: 10 * MB, field: 'big.png' });
+  });
+});
+
+describe('upload imageSizeGuard — tek dosya (req.file)', () => {
+  it('tek alanlı yüklemede de büyük görseli 413 ile reddeder, videoyu geçirir', async () => {
+    const guard = imageSizeGuard(10 * MB);
+    const run = (file) => new Promise((resolve) => guard({ file }, {}, resolve));
+
+    expect(await run({ mimetype: 'video/mp4', size: 40 * MB, path: '/tmp/v.mp4', originalname: 'v.mp4' })).toBeUndefined();
+    const err = await run({ mimetype: 'image/jpeg', size: 11 * MB, path: '/tmp/b.jpg', originalname: 'b.jpg' });
+    expect(err).toMatchObject({ status: 413, code: 'file_too_large', details: { limitBytes: 10 * MB, field: 'b.jpg' } });
+  });
+});
+
+describe('olay medyası yükleme limitleri (operatör vs gönüllü)', () => {
+  const KB = 1024;
+  const fs = require('fs');
+  const os = require('os');
+  const path = require('path');
+  const express = require('express');
+  const request = require('supertest');
+  const uploadDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mission-media-'));
+  let app;
+
+  beforeAll(() => {
+    jest.isolateModules(() => {
+      const env = require('../../src/config/env');
+      Object.assign(env.upload, { dir: uploadDir, maxDocBytes: 2 * KB, maxVideoBytes: 8 * KB });
+      const { missionMediaUpload, missionPhotoUpload } = require('../../src/middlewares/upload');
+      const { errorHandler } = require('../../src/middlewares/error-handler');
+      const ok = (req, res) => res.json({ size: req.file.size });
+      app = express();
+      app.post('/admin-media', missionMediaUpload, ok);
+      app.post('/volunteer-photo', missionPhotoUpload, ok);
+      app.use(errorHandler);
+    });
+  });
+
+  afterAll(() => fs.rmSync(uploadDir, { recursive: true, force: true }));
+
+  const send = (url, size, filename, contentType) =>
+    request(app).post(url).attach('file', Buffer.alloc(size), { filename, contentType });
+
+  it('operatör görsel limitini aşan videoyu video limitine kadar kabul eder', async () => {
+    const res = await send('/admin-media', 5 * KB, 'v.mp4', 'video/mp4');
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ size: 5 * KB });
+  });
+
+  it('operatör görseli görsel limitine tabidir', async () => {
+    const res = await send('/admin-media', 5 * KB, 'b.png', 'image/png');
+    expect(res.status).toBe(413);
+    expect(res.body.error).toMatchObject({ code: 'file_too_large', details: { limitBytes: 2 * KB } });
+  });
+
+  it('video limitini aşan operatör videosu 413', async () => {
+    const res = await send('/admin-media', 9 * KB, 'v.mp4', 'video/mp4');
+    expect(res.status).toBe(413);
+    expect(res.body.error.code).toBe('file_too_large');
+  });
+
+  it('gönüllü yüklemesi değişmedi: video da belge limitine tabidir', async () => {
+    const res = await send('/volunteer-photo', 5 * KB, 'v.mp4', 'video/mp4');
+    expect(res.status).toBe(413);
+    expect(res.body.error.code).toBe('file_too_large');
+    expect((await send('/volunteer-photo', 1 * KB, 'v.mp4', 'video/mp4')).status).toBe(200);
   });
 });
