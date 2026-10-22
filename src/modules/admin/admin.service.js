@@ -189,9 +189,8 @@ function mapVolunteerListItem(row, readiness) {
 }
 
 /**
- * Gönüllü listesi (admin paneli). BÖLGEYE GÖRE SÜZÜLMEZ (§11): "şu bölgenin gönüllüsü"
- * diye bir kavram yoktur, liste ve sayaçlar her zaman tüm gönüllüleri kapsar.
- * Misafir ve silinmiş kullanıcılar hariç;
+ * Gönüllü listesi (admin paneli). Bölge süzmesini panel `region` alanıyla (il'den)
+ * kendisi yapar; liste tüm gönüllüleri döner. Misafir ve silinmiş kullanıcılar hariç;
  * her kullanıcı EN GÜNCEL başvurusuyla eşlenir. PII gözetimi: tc_kimlik
  * listede DÖNMEZ (yalnızca getVolunteer detayında).
  *
