@@ -34,4 +34,16 @@ describe('assetUrl', () => {
     const assetUrl = load();
     expect(assetUrl('/seed/x.jpg')).toBe('https://api.recepbiyikli.com/seed/x.jpg');
   });
+
+  it('onboarding/ belgeleri 15 dk geçerli imzalı URL döner; diğer klasörler imzasız', () => {
+    process.env.UPLOAD_PUBLIC_BASE_URL = 'https://api.test/uploads';
+    const assetUrl = load();
+    jest.spyOn(Date, 'now').mockReturnValue(1_700_000_000_000);
+
+    const signed = assetUrl('onboarding/saglik.pdf');
+    expect(signed).toMatch(/^https:\/\/api\.test\/uploads\/onboarding\/saglik\.pdf\?exp=1700000900&sig=[\w-]{43}$/);
+    expect(assetUrl('avatars/u1.jpg')).toBe('https://api.test/uploads/avatars/u1.jpg');
+    expect(assetUrl('missions/p.jpg')).toBe('https://api.test/uploads/missions/p.jpg');
+    jest.restoreAllMocks();
+  });
 });

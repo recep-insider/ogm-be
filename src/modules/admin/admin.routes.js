@@ -278,7 +278,9 @@ router.get(
  *       200:
  *         description: >-
  *           user (il, ilce, region, ogrenim, meslek, meslekDiger, giysiBedeni, ayakkabiNumarasi,
- *           stkText dahil) + hazirlikZinciri + komisyon + kkd + application (yoksa null)
+ *           stkText dahil) + hazirlikZinciri + komisyon + kkd + application (yoksa null).
+ *           application.saglikRaporu / sabikaKaydi 15 dk geçerli imzalı URL'dir (`?exp=&sig=`);
+ *           imzasız, süresi dolmuş veya bozuk imzalı istek 403 `signed_url_invalid` alır.
  *       404: { description: 'user_not_found' }
  */
 router.get(
