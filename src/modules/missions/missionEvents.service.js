@@ -12,6 +12,7 @@ const AUDIT_ACTIONS = [
   'fire_reports.link',
   'fire_reports.unlink',
   'missions.call',
+  'assembly_point.create',
   'assembly_point.update',
   'missions.archive',
   'missions.create',
@@ -67,9 +68,9 @@ async function listForMission(missionId) {
     ? await db('audit_log')
         .where({ action: 'notifications.send' })
         .whereIn('entity_id', notifications.map((n) => n.id))
-        .select('entity_id', 'user_id')
+        .select('entity_id', 'user_id', 'payload')
     : [];
-  const senderOf = new Map(sendAudits.map((a) => [a.entity_id, a.user_id]));
+  const sendAuditOf = new Map(sendAudits.map((a) => [a.entity_id, a]));
   const names = await panelUserNames([...new Set([...audits, ...sendAudits].map((a) => a.user_id).filter(Boolean))]);
   // user_id'siz yönetim kaydı panel kullanıcılarından önceki API anahtarı dönemindendir.
   const panelActor = (userId) =>
@@ -118,7 +119,7 @@ async function listForMission(missionId) {
           withoutBaseLocation: Number(p.withoutBaseLocation || 0),
         },
       });
-    } else if (a.action === 'assembly_point.update') {
+    } else if (a.action === 'assembly_point.update' || a.action === 'assembly_point.create') {
       events.push({
         id,
         type: 'assembly_point_changed',
@@ -153,17 +154,21 @@ async function listForMission(missionId) {
   }
 
   for (const n of notifications) {
-    const userId = senderOf.get(n.id) || null;
+    const sendAudit = sendAuditOf.get(n.id);
+    const actor = panelActor(sendAudit?.user_id);
+    // recipients hedef kitledir; eski kayıtlarda denetim izinde yoktu, push_count o dönemde hedef kitleyi tutuyordu.
+    const recipients = payloadOf(sendAudit?.payload).recipients ?? n.push_count;
     events.push({
       id: `notification-${n.id}`,
       type: 'notification_sent',
       at: toIso(n.sent_at),
-      actor: { kind: 'panel_user', id: userId, name: names.get(userId) || n.sent_by || null },
+      actor: { ...actor, name: actor.name || n.sent_by || null },
       detail: {
         notificationId: n.id,
         category: n.category,
         title: n.title,
-        recipients: Number(n.push_count || 0),
+        recipients: Number(recipients || 0),
+        pushCount: Number(n.push_count || 0),
         smsCount: Number(n.sms_count || 0),
         segments: payloadOf(n.target).segments || [],
       },

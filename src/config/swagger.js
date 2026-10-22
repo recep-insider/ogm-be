@@ -461,7 +461,7 @@ const definition = {
             type: 'object',
             description: [
               'report_linked | report_unlinked: {reportId, reportTitle|null}.',
-              'notification_sent: {notificationId, category, title, recipients, smsCount, segments[]}.',
+              'notification_sent: {notificationId, category, title, recipients (hedef kitle), pushCount (sağlayıcının kabul ettiği push; mock\'ta 0), smsCount, segments[]}.',
               'mission_called: {recipients, outOfRange, notReady, withoutBaseLocation}.',
               'assembly_point_changed: {name|null, locationChanged, notified{yolda,sahada,sms}|null}.',
               'mission_closed: {archivedAt}.',

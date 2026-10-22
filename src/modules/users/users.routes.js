@@ -254,6 +254,10 @@ router.get('/me/data-export', asyncHandler(controller.dataExport));
  *         description: >-
  *           `rate_limited` — kullanıcı başına saatte 5 istek; `sms_daily_limit` — hedef telefona
  *           günlük OTP SMS limiti (SMS_DAILY_LIMIT_PER_USER) doldu, `details.retryAfterSec` döner.
+ *       503:
+ *         description: >-
+ *           `sms_unavailable` — üretimde SMS sağlayıcı bağlı değil (SMS_PROVIDER=mock); yalnız
+ *           OTP_DUMMY_PHONES numaralarına kod gönderilir. Oturum açılmaz.
  */
 router.post(
   '/me/phone-change/init',

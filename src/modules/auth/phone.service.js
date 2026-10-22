@@ -8,7 +8,7 @@ const logger = require('../../config/logger');
 const { AppError, errors } = require('../../shared/errors');
 const { hitFixedWindow } = require('../../shared/fixed-window');
 const { generateOtp, hashOtp, verifyOtp } = require('../../shared/otp');
-const { sendOtp, maskPhone } = require('../../shared/sms-provider');
+const { sendOtp, assertOtpDeliverable, maskPhone } = require('../../shared/sms-provider');
 const { writeAudit } = require('../../shared/audit');
 const { toDateOnly } = require('../../shared/dates');
 const { getApplicationStatus } = require('../users/users.service');
@@ -58,21 +58,13 @@ async function checkRateLimits(phone, ip) {
 }
 
 async function sendOtpFlow({ phone, ip }) {
+  assertOtpDeliverable(phone);
   await checkRateLimits(phone, ip);
 
   const code = getOtpForPhone(phone);
   const codeHash = await hashOtp(code);
-  const sessionId = uuidv4();
-  const ttl = env.sms.otpExpiresIn;
 
-  const payload = {
-    phone,
-    codeHash,
-    attempts: 0,
-    createdAt: Date.now(),
-  };
-  await redis.set(sessionKey(sessionId), JSON.stringify(payload), 'EX', ttl);
-
+  // Oturum kod gönderildikten sonra yazılır: limit/sağlayıcı hatası gönderilmemiş koda oturum bırakmaz.
   try {
     await sendOtp(phone, code);
   } catch (err) {
@@ -80,6 +72,16 @@ async function sendOtpFlow({ phone, ip }) {
     logger.error('SMS gönderim hatası', { error: err.message, phone: maskPhone(phone) });
     throw errors.internal('SMS gönderilemedi');
   }
+
+  const sessionId = uuidv4();
+  const ttl = env.sms.otpExpiresIn;
+  const payload = {
+    phone,
+    codeHash,
+    attempts: 0,
+    createdAt: Date.now(),
+  };
+  await redis.set(sessionKey(sessionId), JSON.stringify(payload), 'EX', ttl);
 
   return {
     sessionId,
@@ -99,17 +101,13 @@ async function resendOtpFlow({ sessionId, ip }) {
     throw errors.rateLimit(`Lütfen ${Math.ceil(env.sms.resendCooldown - elapsed)} saniye bekleyin`);
   }
 
+  assertOtpDeliverable(session.phone);
   await checkRateLimits(session.phone, ip);
 
   const code = getOtpForPhone(session.phone);
   const codeHash = await hashOtp(code);
-  session.codeHash = codeHash;
-  session.attempts = 0;
-  session.createdAt = Date.now();
 
-  const ttl = env.sms.otpExpiresIn;
-  await redis.set(sessionKey(sessionId), JSON.stringify(session), 'EX', ttl);
-
+  // Yeni kod gönderilemezse oturum değişmez; telefondaki önceki kod geçerli kalır.
   try {
     await sendOtp(session.phone, code);
   } catch (err) {
@@ -117,6 +115,12 @@ async function resendOtpFlow({ sessionId, ip }) {
     logger.error('SMS gönderim hatası', { error: err.message, phone: maskPhone(session.phone) });
     throw errors.internal('SMS gönderilemedi');
   }
+
+  session.codeHash = codeHash;
+  session.attempts = 0;
+  session.createdAt = Date.now();
+  const ttl = env.sms.otpExpiresIn;
+  await redis.set(sessionKey(sessionId), JSON.stringify(session), 'EX', ttl);
 
   return { cooldownSec: env.sms.resendCooldown, expiresIn: ttl };
 }

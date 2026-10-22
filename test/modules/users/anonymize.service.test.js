@@ -105,7 +105,14 @@ function seed() {
     consents: [{ id: 'k1', user_id: 'u1', document: 'kvkk', ip: '1.1.1.1', user_agent: 'iOS' }],
     audit_log: [
       { id: 1, user_id: 'u1', action: 'users.delete', ip: '1.1.1.1', user_agent: 'iOS' },
-      { id: 2, user_id: 'u2', action: 'users.patch', ip: '2.2.2.2', user_agent: 'Android' },
+      { id: 2, user_id: 'u2', action: 'users.patch', ip: '2.2.2.2', user_agent: 'Android', payload: '{"fields":["adres"]}' },
+      { id: 3, user_id: 'u1', action: 'users.phone-change.commit', ip: '1.1.1.1', payload: '{"newPhone":"+905329990000"}' },
+      {
+        id: 4, user_id: 'p1', action: 'admin.volunteer.pii.view', entity: 'user', entity_id: 'u1', ip: '9.9.9.9', payload: '{"fields":["phone"]}',
+      },
+      {
+        id: 5, user_id: 'p1', action: 'equipment.kkd_set.deliver', entity: 'user', entity_id: 'u2', payload: '{"delivered":["kask"]}',
+      },
     ],
     sos_reports: [{
       id: 'sos1',
@@ -193,11 +200,20 @@ describe('anonymizeDue — kapsam', () => {
     expect(row('mission_participants', 'mp1')).toMatchObject({ user_id: 'u1', status: 'tamamladi' });
   });
 
+  it('denetim izinde kullanıcının yazdığı ve onun hakkındaki kayıtların içeriğini siler, işlemi korur', async () => {
+    await service.anonymizeDue(NOW);
+
+    expect(row('audit_log', 3)).toMatchObject({ payload: null, ip: null, action: 'users.phone-change.commit' });
+    // Operatörün kaydı: içerik gider; operatörün kimliği ve IP'si kalır.
+    expect(row('audit_log', 4)).toMatchObject({ payload: null, user_id: 'p1', ip: '9.9.9.9', action: 'admin.volunteer.pii.view' });
+  });
+
   it('başka kullanıcının kayıtlarına dokunmaz', async () => {
     await service.anonymizeDue(NOW);
 
     expect(row('applications', 'a2')).toMatchObject({ snapshot: '{}', reviewer_note: 'not' });
-    expect(row('audit_log', 2)).toMatchObject({ ip: '2.2.2.2', user_agent: 'Android' });
+    expect(row('audit_log', 2)).toMatchObject({ ip: '2.2.2.2', user_agent: 'Android', payload: '{"fields":["adres"]}' });
+    expect(row('audit_log', 5).payload).toBe('{"delivered":["kask"]}');
   });
 
   it('yüklenen kişisel dosyaları diskten siler; zaten olmayan dosya işi durdurmaz', async () => {

@@ -68,7 +68,11 @@ beforeEach(() => {
       }),
       audit(6, 'missions.archive', '2026-10-20T15:00:00Z', null, null),
       audit(7, 'missions.update', '2026-10-20T13:00:00Z', 'p1', { fields: ['title'] }),
-      audit(8, 'notifications.send', '2026-10-20T12:00:00Z', 'p2', null, { entity: 'notification', entity_id: 'n1' }),
+      // Hedef kitle (recipients) denetim izindedir; push_count sağlayıcının kabul ettiği push sayısıdır.
+      audit(8, 'notifications.send', '2026-10-20T12:00:00Z', 'p2', { recipients: 25, pushCount: 20, smsCount: 18 }, {
+        entity: 'notification',
+        entity_id: 'n1',
+      }),
     ],
     notification_log: [
       {
@@ -171,7 +175,8 @@ describe('missionEvents.listForMission', () => {
           notificationId: 'n1',
           category: 'acil',
           title: 'Tahliye',
-          recipients: 20,
+          recipients: 25,
+          pushCount: 20,
           smsCount: 18,
           segments: ['yolda', 'sahada'],
         },
@@ -219,12 +224,52 @@ describe('missionEvents.listForMission', () => {
     expect(checkIn.detail.volunteer).toEqual({ id: null, name: 'Silinmiş gönüllü' });
   });
 
-  it('gönderim denetim kaydı yoksa bildirimin göndereni kayıttaki addır', async () => {
+  it('gönderim denetim kaydı yoksa gönderen system, adı kayıttaki addır; hedef kitle push_count\'tan gelir', async () => {
     mockState.tables.audit_log = mockState.tables.audit_log.filter((a) => a.action !== 'notifications.send');
 
     const { data } = await service.listForMission('m1');
 
-    expect(data.find((e) => e.type === 'notification_sent').actor).toEqual({ kind: 'panel_user', id: null, name: 'Mehmet' });
+    const sent = data.find((e) => e.type === 'notification_sent');
+    expect(sent.actor).toEqual({ kind: 'system', id: null, name: 'Mehmet' });
+    expect(sent.detail).toMatchObject({ recipients: 20, pushCount: 20 });
+  });
+
+  it('gönderen adı da yoksa aktör adsız system döner', async () => {
+    mockState.tables.audit_log = mockState.tables.audit_log.filter((a) => a.action !== 'notifications.send');
+    mockState.tables.notification_log[0].sent_by = null;
+
+    const { data } = await service.listForMission('m1');
+
+    expect(data.find((e) => e.type === 'notification_sent').actor).toEqual({ kind: 'system', id: null, name: null });
+  });
+
+  it('recipients taşımayan eski gönderim kaydında hedef kitle push_count\'tır', async () => {
+    mockState.tables.audit_log.find((a) => a.id === 8).payload = '{"pushCount":20,"smsCount":18}';
+
+    const { data } = await service.listForMission('m1');
+
+    const sent = data.find((e) => e.type === 'notification_sent');
+    expect(sent.actor).toEqual(mehmet);
+    expect(sent.detail).toMatchObject({ recipients: 20, pushCount: 20 });
+  });
+
+  it('ilk toplanma noktası (assembly_point.create) da toplanma noktası değişikliği olarak döner', async () => {
+    mockState.tables.audit_log.push(
+      audit(9, 'assembly_point.create', '2026-10-20T08:30:00Z', 'p2', { name: 'Okul', locationChanged: false, notified: null }),
+    );
+
+    const { data } = await service.listForMission('m1');
+
+    expect(data.filter((e) => e.type === 'assembly_point_changed')).toEqual([
+      {
+        id: 'audit-9',
+        type: 'assembly_point_changed',
+        at: '2026-10-20T08:30:00.000Z',
+        actor: mehmet,
+        detail: { name: 'Okul', locationChanged: false, notified: null },
+      },
+      expect.objectContaining({ id: 'audit-5' }),
+    ]);
   });
 
   it('check-in, bildirim ve ihbar yoksa yalnız denetim olayları döner', async () => {

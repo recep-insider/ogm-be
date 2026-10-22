@@ -116,6 +116,7 @@ WGS84 datum. Frontend `react-native-maps` ile uyumlu.
   - `400 invalid_phone` — E.164 değil
   - `429 rate_limited` — çok sık deneme
   - `429 sms_daily_limit` — numaraya günlük OTP SMS limiti (`SMS_DAILY_LIMIT_PER_USER`, varsayılan 10) doldu; `details.retryAfterSec` döner
+  - `503 sms_unavailable` — üretimde SMS sağlayıcı bağlı değil (`SMS_PROVIDER=mock`); yalnız `OTP_DUMMY_PHONES` numaraları giriş yapabilir. Oturum açılmaz, telefon/günlük SMS limitinden düşülmez. Mesaj: "SMS servisi henüz bağlı değil; şu an yalnız test numaralarıyla giriş yapılabilir."
 - **TS tipleri:** `SendOtpRequest`, `SendOtpResponse` (`src/services/api/types.ts:87-94`)
 - **Mock:** `src/services/api/mocks.ts:172` (`mockApi.sendOtp`)
 - **Notlar:** `cooldownSec` saniye geçmeden resendOtp çağrılmamalı.
@@ -182,7 +183,7 @@ WGS84 datum. Frontend `react-native-maps` ile uyumlu.
 ```json
 { "cooldownSec": 60, "expiresIn": 300 }
 ```
-- **Error cases:** `429 rate_limited`, `429 sms_daily_limit` (bkz. 1.1), `404 session_not_found`
+- **Error cases:** `429 rate_limited`, `429 sms_daily_limit`, `503 sms_unavailable` (bkz. 1.1; oturumdaki kod değişmez), `404 session_not_found`
 - **TS tipleri:** `ResendOtpRequest`, `ResendOtpResponse` (`src/services/api/types.ts:118-124`)
 - **Mock:** `mocks.ts:mockApi.resendOtp`
 

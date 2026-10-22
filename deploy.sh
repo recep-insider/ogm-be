@@ -682,7 +682,7 @@ SCAN_HMAC_SECRET=$SCAN_HMAC_SECRET
 
 | Entegrasyon | Durum | Aktifleştirmek için |
 |---|---|---|
-| SMS | mock (OTP log'a yazılır) | \`SMS_PROVIDER=netgsm\` + \`SMS_API_KEY\`, \`SMS_API_SECRET\` |
+| SMS | mock (OTP gönderilmez ve loglanmaz; yalnız \`OTP_DUMMY_PHONES\` giriş yapabilir, diğer numaralar 503 \`sms_unavailable\`) | \`SMS_PROVIDER=netgsm\` + \`SMS_API_KEY\`, \`SMS_API_SECRET\` |
 | e-Devlet | mock | \`EDEVLET_MOCK_MODE=false\` + \`EDEVLET_CLIENT_ID/SECRET\` |
 | FCM | boş | \`FIREBASE_PROJECT_ID\` + service account JSON |
 | SSL | yok (HTTP) | Domain + Let's Encrypt (certbot) |

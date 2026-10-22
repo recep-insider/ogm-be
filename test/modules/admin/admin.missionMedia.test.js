@@ -13,7 +13,7 @@ jest.mock('../../../src/middlewares/auth', () => ({
 jest.mock('../../../src/config/redis', () => ({ redis: {} }));
 jest.mock('../../../src/middlewares/upload', () => ({
   contentUpload: (_req, _res, next) => next(),
-  missionPhotoUpload: jest.fn((req, _res, next) => {
+  missionMediaUpload: jest.fn((req, _res, next) => {
     req.file = { path: '/uploads/missions/a.jpg', mimetype: 'image/jpeg' };
     next();
   }),
@@ -29,7 +29,7 @@ jest.mock('../../../src/modules/missions/missionEvents.service', () => ({
 const express = require('express');
 const request = require('supertest');
 const { errors } = require('../../../src/shared/errors');
-const { missionPhotoUpload } = require('../../../src/middlewares/upload');
+const { missionMediaUpload } = require('../../../src/middlewares/upload');
 const missionsService = require('../../../src/modules/missions/missions.service');
 const missionEventsService = require('../../../src/modules/missions/missionEvents.service');
 const adminRouter = require('../../../src/modules/admin/admin.routes');
@@ -43,12 +43,12 @@ app.use(errorHandler);
 beforeEach(() => jest.clearAllMocks());
 
 describe('POST /admin/missions/:id/media', () => {
-  it('olay fotoğrafı yükleme katmanından geçer, 201 ve oluşan öğe döner', async () => {
+  it('operatör medya yükleme katmanından (video limitli) geçer, 201 ve oluşan öğe döner', async () => {
     const res = await request(app).post('/admin/missions/m1/media');
 
     expect(res.status).toBe(201);
     expect(res.body).toEqual({ id: 'ph1', kind: 'image', status: 'approved' });
-    expect(missionPhotoUpload).toHaveBeenCalledTimes(1);
+    expect(missionMediaUpload).toHaveBeenCalledTimes(1);
     expect(missionsService.adminAddMedia).toHaveBeenCalledWith(
       'm1',
       { path: '/uploads/missions/a.jpg', mimetype: 'image/jpeg' },
@@ -57,7 +57,7 @@ describe('POST /admin/missions/:id/media', () => {
   });
 
   it('yükleme katmanının reddi servise inmez', async () => {
-    missionPhotoUpload.mockImplementationOnce((_req, _res, next) =>
+    missionMediaUpload.mockImplementationOnce((_req, _res, next) =>
       next(errors.make(415, 'unsupported_media_type', 'Dosya formatı desteklenmiyor')),
     );
 

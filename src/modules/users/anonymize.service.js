@@ -112,7 +112,10 @@ async function anonymizeUser(userId, now = new Date()) {
     }
     await byUser('commission_decisions').update({ sms_phone: null, note: null, updated_at: now });
     await byUser('consents').update({ ip: null, user_agent: null, updated_at: now });
-    await byUser('audit_log').update({ ip: null, user_agent: null });
+    // Denetim izi içeriği kişisel veri taşıyabilir (ör. telefon değişiminde newPhone): kullanıcının yazdığı
+    // ve onun hakkındaki (entity_id) kayıtların payload'ı silinir; işlem/aktör/zaman kalır.
+    await byUser('audit_log').update({ ip: null, user_agent: null, payload: null });
+    await trx('audit_log').where({ entity_id: userId }).update({ payload: null });
     await byUser('sos_reports').update({ ...SOS_PII, user_id: null, updated_at: now });
     await byUser('fire_reports').update({ user_id: null, ip: null, updated_at: now });
     await byUser('emergency_reports').update({ user_id: null, ip: null, updated_at: now });

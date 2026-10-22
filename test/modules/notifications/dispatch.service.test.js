@@ -55,6 +55,7 @@ jest.mock('../../../src/modules/users/readiness.service', () => ({
   getReadinessMany: jest.fn(async (ids) => new Map(ids.map((id) => [id, mockState.readiness[id]]))),
 }));
 
+const { writeAudit } = require('../../../src/shared/audit');
 const { sendPushToUser } = require('../../../src/shared/push-provider');
 const { sendSms } = require('../../../src/shared/sms-provider');
 const service = require('../../../src/modules/notifications/dispatch.service');
@@ -191,5 +192,10 @@ describe('pushCount yalnız sağlayıcının kabul ettiği teslimi sayar', () =>
     expect(result.recipients).toBe(2);
     expect(result.pushCount).toBe(1);
     expect(mockState.inserts.notification_log[0]).toMatchObject({ push_count: 1 });
+    // Zaman çizelgesi hedef kitleyi denetim izinden okur.
+    expect(writeAudit).toHaveBeenCalledWith(expect.objectContaining({
+      action: 'notifications.send',
+      payload: expect.objectContaining({ recipients: 2, pushCount: 1 }),
+    }));
   });
 });

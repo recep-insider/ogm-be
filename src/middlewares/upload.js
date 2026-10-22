@@ -84,7 +84,7 @@ const fireReportUpload = multer({
  */
 function imageSizeGuard(maxBytes) {
   return (req, _res, next) => {
-    const files = req.files || [];
+    const files = req.files || (req.file ? [req.file] : []);
     const oversized = files.find((f) => f.mimetype.startsWith('image/') && f.size > maxBytes);
     if (!oversized) return next();
     for (const f of files) fs.unlink(f.path, () => {});
@@ -101,6 +101,14 @@ function imageSizeGuard(maxBytes) {
 const missionPhotoUpload = multer({
   storage: diskStorage('missions'),
   limits: { fileSize: env.upload.maxDocBytes },
+  fileFilter: mimeFilter(ALLOWED_MEDIA_MIME),
+}).single('file');
+
+// Operatör olay medyası (panel) — tek `file`; gönüllü fotoğrafıyla aynı biçimler, video için
+// video limiti. Görsel sınırı (maxDocBytes) upload sonrası imageSizeGuard'da uygulanır.
+const missionMediaUpload = multer({
+  storage: diskStorage('missions'),
+  limits: { fileSize: env.upload.maxVideoBytes },
   fileFilter: mimeFilter(ALLOWED_MEDIA_MIME),
 }).single('file');
 
@@ -137,6 +145,7 @@ module.exports = {
   avatarUpload: wrapMulter(avatarUpload),
   fireReportUpload: [wrapMulter(fireReportUpload), imageSizeGuard(env.upload.maxDocBytes)],
   missionPhotoUpload: wrapMulter(missionPhotoUpload),
+  missionMediaUpload: [wrapMulter(missionMediaUpload), imageSizeGuard(env.upload.maxDocBytes)],
   contentUpload: wrapMulter(contentUpload),
   // Test-only: exposes mimeFilter and the allowlist constants for unit tests.
   __testables: { mimeFilter, imageSizeGuard, MIME_TO_EXT, ALLOWED_DOC_MIME, ALLOWED_AVATAR_MIME, ALLOWED_MEDIA_MIME },

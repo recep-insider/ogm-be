@@ -3267,7 +3267,7 @@
                 }
               ]
             },
-            "description": "multipart/form-data, alan adı `file`; gönüllü saha fotoğrafıyla aynı biçim ve boyut sınırları (jpeg/png/mp4/mov). Moderasyon YOKTUR: medya `approved` yazılır ve hemen mobil olay detayında `gallery` (yalnız görsel) ve `photos[]` içinde görünür. Arşivlenmiş olaya medya eklenemez.",
+            "description": "multipart/form-data, alan adı `file`; gönüllü saha fotoğrafıyla aynı biçimler (jpeg/png/mp4/mov). Görsel en çok UPLOAD_MAX_DOC_BYTES (varsayılan 10 MB), video en çok UPLOAD_MAX_VIDEO_BYTES (varsayılan 100 MB). Moderasyon YOKTUR: medya `approved` yazılır ve hemen mobil olay detayında `gallery` (yalnız görsel) ve `photos[]` içinde görünür. Arşivlenmiş olaya medya eklenemez.",
             "auth": {
               "type": "bearer",
               "bearer": [

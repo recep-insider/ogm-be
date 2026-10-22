@@ -8,7 +8,7 @@ const { requireAdmin } = require('../../middlewares/auth');
 const { idempotent } = require('../../middlewares/idempotency');
 const path = require('path');
 const env = require('../../config/env');
-const { contentUpload, missionPhotoUpload } = require('../../middlewares/upload');
+const { contentUpload, missionMediaUpload } = require('../../middlewares/upload');
 const { assetUrl } = require('../../shared/asset-url');
 const { errors } = require('../../shared/errors');
 const fireReportsController = require('../fireReports/fireReports.controller');
@@ -1566,8 +1566,9 @@ router.get(
  *     tags: [Admin]
  *     summary: Olaya operatör fotoğrafı/videosu ekle (panel)
  *     description: >-
- *       multipart/form-data, alan adı `file`; gönüllü saha fotoğrafıyla aynı biçim ve boyut
- *       sınırları (jpeg/png/mp4/mov). Moderasyon YOKTUR: medya `approved` yazılır ve hemen
+ *       multipart/form-data, alan adı `file`; gönüllü saha fotoğrafıyla aynı biçimler
+ *       (jpeg/png/mp4/mov). Görsel en çok UPLOAD_MAX_DOC_BYTES (varsayılan 10 MB), video en çok
+ *       UPLOAD_MAX_VIDEO_BYTES (varsayılan 100 MB). Moderasyon YOKTUR: medya `approved` yazılır ve hemen
  *       mobil olay detayında `gallery` (yalnız görsel) ve `photos[]` içinde görünür.
  *       Arşivlenmiş olaya medya eklenemez.
  *     security: [ { panelBearer: [] } ]
@@ -1595,7 +1596,7 @@ router.get(
  */
 router.post(
   '/missions/:id/media',
-  missionPhotoUpload,
+  missionMediaUpload,
   asyncHandler(async (req, res) => {
     res.status(201).json(await missionsService.adminAddMedia(req.params.id, req.file, actorFrom(req)));
   }),

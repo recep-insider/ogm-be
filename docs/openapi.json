@@ -1082,7 +1082,7 @@
           },
           "detail": {
             "type": "object",
-            "description": "report_linked | report_unlinked: {reportId, reportTitle|null}. notification_sent: {notificationId, category, title, recipients, smsCount, segments[]}. mission_called: {recipients, outOfRange, notReady, withoutBaseLocation}. assembly_point_changed: {name|null, locationChanged, notified{yolda,sahada,sms}|null}. mission_closed: {archivedAt}. first_checkin: {volunteer{id|null, name}, method: qr|tc_manual, recordedBy|null}; silinmiş gönüllü 'Silinmiş gönüllü' olarak döner."
+            "description": "report_linked | report_unlinked: {reportId, reportTitle|null}. notification_sent: {notificationId, category, title, recipients (hedef kitle), pushCount (sağlayıcının kabul ettiği push; mock'ta 0), smsCount, segments[]}. mission_called: {recipients, outOfRange, notReady, withoutBaseLocation}. assembly_point_changed: {name|null, locationChanged, notified{yolda,sahada,sms}|null}. mission_closed: {archivedAt}. first_checkin: {volunteer{id|null, name}, method: qr|tc_manual, recordedBy|null}; silinmiş gönüllü 'Silinmiş gönüllü' olarak döner."
           }
         }
       },
@@ -3912,7 +3912,7 @@
           "Admin"
         ],
         "summary": "Olaya operatör fotoğrafı/videosu ekle (panel)",
-        "description": "multipart/form-data, alan adı `file`; gönüllü saha fotoğrafıyla aynı biçim ve boyut sınırları (jpeg/png/mp4/mov). Moderasyon YOKTUR: medya `approved` yazılır ve hemen mobil olay detayında `gallery` (yalnız görsel) ve `photos[]` içinde görünür. Arşivlenmiş olaya medya eklenemez.",
+        "description": "multipart/form-data, alan adı `file`; gönüllü saha fotoğrafıyla aynı biçimler (jpeg/png/mp4/mov). Görsel en çok UPLOAD_MAX_DOC_BYTES (varsayılan 10 MB), video en çok UPLOAD_MAX_VIDEO_BYTES (varsayılan 100 MB). Moderasyon YOKTUR: medya `approved` yazılır ve hemen mobil olay detayında `gallery` (yalnız görsel) ve `photos[]` içinde görünür. Arşivlenmiş olaya medya eklenemez.",
         "security": [
           {
             "panelBearer": []
@@ -5149,6 +5149,16 @@
                 }
               }
             }
+          },
+          "503": {
+            "description": "`sms_unavailable` — üretimde SMS sağlayıcı bağlı değil (SMS_PROVIDER=mock); yalnız OTP_DUMMY_PHONES numaraları giriş yapabilir. Oturum açılmaz, telefon/günlük SMS limitinden düşülmez.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
           }
         }
       }
@@ -5300,6 +5310,16 @@
           },
           "429": {
             "description": "`rate_limited` — telefon/IP başına saatlik limit; `sms_daily_limit` — telefona günlük OTP SMS limiti (SMS_DAILY_LIMIT_PER_USER) doldu, `details.retryAfterSec` döner.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "`sms_unavailable` — üretimde SMS sağlayıcı bağlı değil (SMS_PROVIDER=mock); yalnız OTP_DUMMY_PHONES numaraları giriş yapabilir. Oturum açılmaz, telefon/günlük SMS limitinden düşülmez.",
             "content": {
               "application/json": {
                 "schema": {
@@ -7365,6 +7385,9 @@
           },
           "429": {
             "description": "`rate_limited` — kullanıcı başına saatte 5 istek; `sms_daily_limit` — hedef telefona günlük OTP SMS limiti (SMS_DAILY_LIMIT_PER_USER) doldu, `details.retryAfterSec` döner."
+          },
+          "503": {
+            "description": "`sms_unavailable` — üretimde SMS sağlayıcı bağlı değil (SMS_PROVIDER=mock); yalnız OTP_DUMMY_PHONES numaralarına kod gönderilir. Oturum açılmaz."
           }
         }
       }

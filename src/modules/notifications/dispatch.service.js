@@ -175,7 +175,7 @@ async function send(input, actor = {}) {
     entityId: id,
     ip: actor.ip,
     userAgent: actor.userAgent,
-    payload: { category: input.category, target: targetDoc, pushCount, smsCount },
+    payload: { category: input.category, target: targetDoc, recipients: targets.length, pushCount, smsCount },
   });
 
   return {

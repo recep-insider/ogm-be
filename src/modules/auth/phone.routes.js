@@ -65,6 +65,13 @@ const verifyLimiter = rateLimit({
  *         content:
  *           application/json:
  *             schema: { $ref: '#/components/schemas/ErrorResponse' }
+ *       503:
+ *         description: >-
+ *           `sms_unavailable` — üretimde SMS sağlayıcı bağlı değil (SMS_PROVIDER=mock); yalnız
+ *           OTP_DUMMY_PHONES numaraları giriş yapabilir. Oturum açılmaz, telefon/günlük SMS limitinden düşülmez.
+ *         content:
+ *           application/json:
+ *             schema: { $ref: '#/components/schemas/ErrorResponse' }
  */
 router.post(
   '/send-otp',
@@ -156,6 +163,13 @@ router.post(
  *         description: >-
  *           `rate_limited` — telefon/IP başına saatlik limit; `sms_daily_limit` — telefona günlük
  *           OTP SMS limiti (SMS_DAILY_LIMIT_PER_USER) doldu, `details.retryAfterSec` döner.
+ *         content:
+ *           application/json:
+ *             schema: { $ref: '#/components/schemas/ErrorResponse' }
+ *       503:
+ *         description: >-
+ *           `sms_unavailable` — üretimde SMS sağlayıcı bağlı değil (SMS_PROVIDER=mock); yalnız
+ *           OTP_DUMMY_PHONES numaraları giriş yapabilir. Oturum açılmaz, telefon/günlük SMS limitinden düşülmez.
  *         content:
  *           application/json:
  *             schema: { $ref: '#/components/schemas/ErrorResponse' }
