@@ -9,7 +9,6 @@ const mockHistory = [];
 const mockUpdates = [];
 const mockState = {
   user: null,
-  redisCount: 0,
   participation: undefined,
   whereCalls: [],
   whereInCalls: [],
@@ -69,15 +68,11 @@ jest.mock('../../../src/config/db', () => {
   const db = Object.assign(jest.fn((table) => makeChain(table)), { raw: jest.fn() });
   return { db };
 });
-jest.mock('../../../src/config/redis', () => ({
-  redis: {
-    incr: jest.fn(async () => {
-      mockState.redisCount += 1;
-      return mockState.redisCount;
-    }),
-    expire: jest.fn(async () => 1),
-  },
-}));
+jest.mock('../../../src/config/redis', () => {
+  const redis = require('../admin/panel-fakes').createFakeRedis();
+  jest.spyOn(redis, 'incr');
+  return { redis };
+});
 jest.mock('../../../src/shared/audit', () => ({ writeAudit: jest.fn() }));
 jest.mock('../../../src/shared/reverse-geocode', () => ({ reverseGeocode: jest.fn() }));
 jest.mock('../../../src/config/logger', () => ({ warn: jest.fn(), info: jest.fn(), error: jest.fn() }));
@@ -108,7 +103,7 @@ describe('sos.service.create', () => {
     mockUpdates.length = 0;
     mockState.updateError = null;
     mockState.user = { ...USER_ROW };
-    mockState.redisCount = 0;
+    redis.store.clear();
     mockState.participation = undefined;
     mockState.whereCalls = [];
     mockState.whereInCalls = [];
@@ -171,8 +166,9 @@ describe('sos.service.create', () => {
     }
     await expect(
       service.create({ userId: 'u1', body: {}, ip: '1.2.3.4', userAgent: 'jest' }),
-    ).rejects.toMatchObject({ status: 429 });
+    ).rejects.toMatchObject({ status: 429, code: 'rate_limited' });
     expect(redis.incr).toHaveBeenCalledWith('rl:sos:u1');
+    expect(await redis.ttl('rl:sos:u1')).toBe(60);
   });
 
   test('kullanıcı bulunamazsa 404 fırlatır ve kayıt yazmaz', async () => {

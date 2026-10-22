@@ -28,8 +28,14 @@ jest.mock('../../../src/config/db', () => {
   const db = Object.assign(jest.fn(() => chain), { raw: jest.fn() });
   return { db };
 });
+// Sayaç burada konu değil: her MULTI ilk istek gibi (count=1) döner, limit hiç devreye girmez.
 jest.mock('../../../src/config/redis', () => ({
-  redis: { incr: jest.fn(async () => 1), expire: jest.fn(async () => 1) },
+  redis: {
+    multi() {
+      const chain = { incr: () => chain, expire: () => chain, ttl: () => chain, exec: async () => [[null, 1], [null, 1], [null, 3600]] };
+      return chain;
+    },
+  },
 }));
 jest.mock('../../../src/config/env', () => ({
   geo: { nominatimUrl: 'http://nominatim:8080' },

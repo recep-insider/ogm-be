@@ -4,6 +4,7 @@ const { v4: uuidv4 } = require('uuid');
 const { db } = require('../../config/db');
 const { redis } = require('../../config/redis');
 const { errors } = require('../../shared/errors');
+const { hitFixedWindow } = require('../../shared/fixed-window');
 const { toIso } = require('../../shared/dates');
 const { writeAudit } = require('../../shared/audit');
 const { reverseGeocode } = require('../../shared/reverse-geocode');
@@ -52,10 +53,7 @@ async function fillLocation(sosId, lat, lng) {
 
 async function create({ userId, body, ip, userAgent }) {
   // Kötüye kullanımı sınırla — kullanıcı başına dakikada 5 (emergency ile aynı politika, ayrı anahtar).
-  const key = `rl:sos:${userId}`;
-  const count = await redis.incr(key);
-  if (count === 1) await redis.expire(key, 60);
-  if (count > 5) throw errors.rateLimit('Çok sık SOS çağrısı gönderiyorsunuz');
+  await hitFixedWindow(redis, `rl:sos:${userId}`, { max: 5, windowSec: 60, message: 'Çok sık SOS çağrısı gönderiyorsunuz' });
 
   const user = await db('users').where({ id: userId, is_active: true }).first();
   if (!user) throw errors.notFound('Kullanıcı bulunamadı');
