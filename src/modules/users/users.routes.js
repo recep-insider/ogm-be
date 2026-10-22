@@ -102,7 +102,7 @@ const phoneChangeCommitLimiter = rateLimit({
  *     summary: Hesabı sil (KVKK silme talebi)
  *     description: |
  *       Hesap soft-delete yapılır, refresh token'lar iptal edilir, cihaz kayıtları silinir.
- *       Kişisel veriler 30 gün içinde anonimleştirilir/silinir.
+ *       Kişisel veriler 30 gün sonra anonimleştirilir/silinir.
  *     security: [ { bearerAuth: [] } ]
  *     responses:
  *       200:

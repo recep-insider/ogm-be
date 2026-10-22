@@ -172,6 +172,17 @@ describe('mobile read paths', () => {
     ]);
   });
 
+  it('a relative video block source becomes a full URL for mobile; absolute ones pass through', async () => {
+    mockDb.rows.online_trainings = [{
+      id: 'o1', title: 'T', delivery: 'online',
+      content: JSON.stringify([{ type: 'video', source: 'content/ders.mp4' }, BLOCKS[2]]),
+    }];
+
+    const [t] = await service.listOnline('u1');
+
+    expect(t.content).toEqual([{ type: 'video', source: 'https://cdn.test/content/ders.mp4' }, BLOCKS[2]]);
+  });
+
   it('GET /trainings/saha carries description and content', async () => {
     mockDb.rows.saha_trainings = [{ id: 's1', title: 'S', total_seats: 10, description: 'Açıklama', content: STORED }];
 

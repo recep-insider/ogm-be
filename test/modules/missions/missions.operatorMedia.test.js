@@ -3,7 +3,7 @@
 // Operatör medyası: panelden eklenen fotoğraf/video moderasyonsuz onaylı yazılır; yalnız
 // operatör yüklemesi silinir, gönüllü yüklemesi moderasyonla reddedilir.
 
-const mockState = { mission: null, photo: null, rows: [], inserts: [], deletes: [], chains: [] };
+const mockState = { mission: null, photo: null, rows: [], inserts: [], deletes: [], chains: [], insertError: null };
 
 jest.mock('../../../src/config/db', () => {
   const makeChain = (table) => {
@@ -18,6 +18,7 @@ jest.mock('../../../src/config/db', () => {
     }
     c.first = jest.fn(async () => (table === 'missions' ? mockState.mission : mockState.photo));
     c.insert = jest.fn(async (row) => {
+      if (mockState.insertError) throw mockState.insertError;
       mockState.inserts.push({ table, row });
       return [1];
     });
@@ -51,6 +52,7 @@ beforeEach(() => {
   mockState.inserts = [];
   mockState.deletes = [];
   mockState.chains = [];
+  mockState.insertError = null;
   env.upload.publicBaseUrl = 'https://api.test';
   jest.clearAllMocks();
   jest.spyOn(fs, 'unlink').mockImplementation((_p, cb) => cb && cb(null));
@@ -106,6 +108,15 @@ describe('adminAddMedia', () => {
     await expect(service.adminAddMedia('mx', file, actor)).rejects.toMatchObject({ status: 404, code: 'mission_not_found' });
     expect(fs.unlink).toHaveBeenCalledWith(file.path, expect.any(Function));
     expect(mockState.inserts).toEqual([]);
+  });
+
+  it('kayıt yazılamazsa yüklenen dosya silinir ve hata yükselir', async () => {
+    mockState.insertError = new Error('ER_LOCK_WAIT_TIMEOUT');
+    const file = fileOf('e.mp4', 'video/mp4');
+
+    await expect(service.adminAddMedia('m1', file, actor)).rejects.toThrow('ER_LOCK_WAIT_TIMEOUT');
+    expect(fs.unlink).toHaveBeenCalledWith(file.path, expect.any(Function));
+    expect(writeAudit).not.toHaveBeenCalled();
   });
 
   it('arşivlenmiş olaya eklenemez — 409, yüklenen dosya silinir', async () => {

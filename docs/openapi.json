@@ -7098,7 +7098,7 @@
           "Users"
         ],
         "summary": "Hesabı sil (KVKK silme talebi)",
-        "description": "Hesap soft-delete yapılır, refresh token'lar iptal edilir, cihaz kayıtları silinir.\nKişisel veriler 30 gün içinde anonimleştirilir/silinir.\n",
+        "description": "Hesap soft-delete yapılır, refresh token'lar iptal edilir, cihaz kayıtları silinir.\nKişisel veriler 30 gün sonra anonimleştirilir/silinir.\n",
         "security": [
           {
             "bearerAuth": []

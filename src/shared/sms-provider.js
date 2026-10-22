@@ -111,9 +111,6 @@ async function sendOtp(phone, code) {
       code: 'sms_daily_limit',
     });
   }
-  if (env.nodeEnv !== 'production' && isMockProvider()) {
-    logger.info('OTP [MOCK] — yerel geliştirme', { phone: maskPhone(phone), code });
-  }
   try {
     return await sendSms(phone, OTP_TEMPLATE(code));
   } catch (err) {

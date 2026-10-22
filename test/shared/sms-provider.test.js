@@ -97,11 +97,11 @@ describe('sendOtp — günlük SMS limiti ve log maskeleme', () => {
     expect(redis.store.size).toBe(0);
   });
 
-  test('üretim dışı mock OTP kodunu maskeli telefonla loglar; SMS logu metni yazmaz', async () => {
+  test('üretim dışı mock da OTP kodunu loglamaz; telefon maskeli', async () => {
     await sms.sendOtp('+905321112233', '987654');
 
-    expect(logger.info).toHaveBeenCalledWith('OTP [MOCK] — yerel geliştirme', { phone: '***2233', code: '987654' });
     expect(logger.info).toHaveBeenCalledWith('SMS [MOCK] gönderildi', { phone: '***2233' });
+    expect(JSON.stringify(logger.info.mock.calls)).not.toContain('987654');
     expect(JSON.stringify(logger.info.mock.calls)).not.toContain('+905321112233');
   });
 

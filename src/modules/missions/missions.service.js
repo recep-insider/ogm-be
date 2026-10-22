@@ -637,20 +637,26 @@ async function adminAddMedia(missionId, file, actor = {}) {
   const now = new Date();
   const kind = (file.mimetype || '').startsWith('video/') ? 'video' : 'image';
   const filePath = path.relative(env.upload.dir, file.path);
-  await db('mission_photos').insert({
-    id,
-    mission_id: missionId,
-    user_id: null,
-    panel_user_id: actor.userId || null,
-    file_path: filePath,
-    kind,
-    status: 'approved',
-    submitted_at: now,
-    reviewed_at: now,
-    reviewed_by: actor.userId || null,
-    created_at: now,
-    updated_at: now,
-  });
+  try {
+    await db('mission_photos').insert({
+      id,
+      mission_id: missionId,
+      user_id: null,
+      panel_user_id: actor.userId || null,
+      file_path: filePath,
+      kind,
+      status: 'approved',
+      submitted_at: now,
+      reviewed_at: now,
+      reviewed_by: actor.userId || null,
+      created_at: now,
+      updated_at: now,
+    });
+  } catch (err) {
+    // Kayıt düşerse yüklenen dosya diskte sahipsiz kalmasın (yedeğe de girer).
+    fs.unlink(file.path, () => {});
+    throw err;
+  }
 
   await writeAudit({
     userId: actor.userId || null,

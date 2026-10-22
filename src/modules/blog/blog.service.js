@@ -18,7 +18,7 @@ function safeJson(value, fallback) {
 }
 
 function mapContentBlock(block) {
-  if (block && block.type === 'image') {
+  if (block && (block.type === 'image' || block.type === 'video')) {
     return { ...block, source: assetUrl(block.source) };
   }
   return block;

@@ -55,8 +55,8 @@ function profileFields(u) {
   return {
     il: u.il || null,
     ilce: u.ilce || null,
-    // §11: gönüllünün bölgesi bir YETKİ/KAPSAM alanı değildir — yalnızca il'den türeyen
-    // bilgi (gönüllüler hiçbir zaman bölgeye göre süzülmez).
+    // §11: gönüllünün bölgesi bir yetki alanı değildir; il'den türer ve panelde süzme ile
+    // raporların bölge kırılımında kullanılır.
     region: regionForCity(u.il),
     ogrenim: u.ogrenim,
     meslek: u.meslek,
@@ -351,7 +351,7 @@ async function softDelete(userId, audit = {}) {
     deletedAt: now.toISOString(),
     purgeAfterDays: 30,
     note:
-      'Hesabınız devre dışı bırakıldı. KVKK gereği kişisel verileriniz 30 gün içinde anonimleştirilecek/silinecektir.',
+      'Hesabınız devre dışı bırakıldı. KVKK gereği kişisel verileriniz 30 gün sonra anonimleştirilecek/silinecektir.',
   };
 }
 
