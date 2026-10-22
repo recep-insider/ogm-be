@@ -180,6 +180,52 @@ describe('idempotent()', () => {
     }
   });
 
+  it.each([
+    ['sendStatus', (res) => res.sendStatus(500)],
+    ['send', (res) => res.status(503).send('servis yok')],
+    ['end', (res) => res.status(502).end()],
+  ])('5xx json dışında (%s) gönderilse de anahtar pending kalır', async (_label, reply) => {
+    handler.mockImplementationOnce((_req, res) => reply(res));
+    const failed = await post({ a: 1 });
+    await flush();
+
+    expect(failed.status).toBeGreaterThanOrEqual(500);
+    expect(redis.del).not.toHaveBeenCalled();
+    expect(JSON.parse(redis.store.get(KEY).value).state).toBe('pending');
+
+    const retry = await post({ a: 1 });
+    expect(retry.status).toBe(409);
+    expect(handler).toHaveBeenCalledTimes(1);
+  });
+
+  it('4xx json dışında gönderilirse anahtar silinir', async () => {
+    handler.mockImplementationOnce((_req, res) => res.status(404).send('yok'));
+    await post({ a: 1 });
+    await flush();
+
+    expect(redis.store.has(KEY)).toBe(false);
+  });
+
+  it('15 dakikayı aşan işlemde de yanıt gelene kadar anahtar uzatılmaya devam eder', async () => {
+    jest.useFakeTimers({ doNotFake: ['setImmediate', 'nextTick'] });
+    try {
+      let finish;
+      handler.mockImplementationOnce((_req, res) => { finish = () => res.json({ ok: true }); });
+      const pending = post({ a: 1 }).then((r) => r);
+      while (!finish) await flush();
+
+      jest.advanceTimersByTime(20 * 60 * 1000);
+      expect(redis.expire).toHaveBeenCalledTimes(60);
+
+      finish();
+      await pending;
+      jest.advanceTimersByTime(60000);
+      expect(redis.expire).toHaveBeenCalledTimes(60);
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
   it('done kaydı ilk denemede yazılamazsa bir kez daha denenir', async () => {
     redis.set
       .mockImplementationOnce(async (key, value, ...args) => {

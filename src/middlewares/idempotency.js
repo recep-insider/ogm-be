@@ -8,48 +8,52 @@ const { errors } = require('../shared/errors');
 const MAX_KEY_LENGTH = 200;
 const PENDING_TTL_SEC = 60;
 const HEARTBEAT_MS = 20000;
-const MAX_HOLD_MS = 15 * 60 * 1000;
 const DONE_TTL_SEC = 86400;
 
 function logRedisError(err) {
   logger.warn('Idempotency: Redis hatası, anahtarsız devam ediliyor', { error: err.message });
 }
 
-// İşleyici sürdükçe pending anahtar uzatılır; süreç çökerse PENDING_TTL_SEC içinde düşer.
+// İşleyici yanıt verene kadar pending anahtar uzatılır, süre sınırı yoktur: uzun işlem kilidini
+// kaybedip ikinci kez çalışmasın. Süreç çökerse anahtar PENDING_TTL_SEC içinde düşer.
+// ponytail: hiç yanıt vermeyen işleyici anahtarı süreç yeniden başlayana kadar tutar (tekrar
+// deneme 409 alır); asılı işlem sorun olursa işleyiciye zaman aşımı eklenmeli, buraya değil.
 // İstemci bağlantıyı kopardığında anahtar silinmez: işleyici sürerken aynı anahtarla ikinci kayıt açılmasın.
-// 5xx'te de silinmez: yan etki (push/SMS) kısmen gitmiş olabilir; tekrar deneme hemen yeniden çalıştırmasın.
+// 5xx'te de silinmez (hangi yöntemle gönderilirse gönderilsin): yan etki (push/SMS) kısmen gitmiş
+// olabilir; anahtar son uzatmadan kalan 40–60 sn içinde düşer.
+// res.json gövdeyi saklar; json dışı yanıtlar (send/sendStatus/end) res.end'de sonuçlanır.
 function track(res, redisKey, hash) {
   let settled = false;
-  const startedAt = Date.now();
   const heartbeat = setInterval(() => {
-    if (Date.now() - startedAt > MAX_HOLD_MS) return clearInterval(heartbeat);
     redis.expire(redisKey, PENDING_TTL_SEC).catch(logRedisError);
   }, HEARTBEAT_MS);
   heartbeat.unref();
-  const settle = () => {
+  const settle = (json) => {
+    if (settled) return;
     settled = true;
     clearInterval(heartbeat);
-  };
-  const json = res.json.bind(res);
-  res.json = (body) => {
-    settle();
     const status = res.statusCode;
-    if (status >= 200 && status < 300) {
-      const done = JSON.stringify({ state: 'done', hash, status, body });
+    if (status >= 500) return;
+    // Yalnız JSON gövdesi tekrar oynatılabilir; diğer 2xx ve 4xx anahtarı serbest bırakır.
+    if (json && status >= 200 && status < 300) {
+      const done = JSON.stringify({ state: 'done', hash, status, body: json.body });
       redis.set(redisKey, done, 'EX', DONE_TTL_SEC)
         .catch(() => redis.set(redisKey, done, 'EX', DONE_TTL_SEC))
         .catch(logRedisError);
-    } else if (status < 500) {
+    } else {
       redis.del(redisKey).catch(logRedisError);
     }
+  };
+  const json = res.json.bind(res);
+  res.json = (body) => {
+    settle({ body });
     return json(body);
   };
-  res.on('finish', () => {
-    if (!settled) {
-      settle();
-      redis.del(redisKey).catch(logRedisError);
-    }
-  });
+  const end = res.end.bind(res);
+  res.end = (...args) => {
+    settle(null);
+    return end(...args);
+  };
 }
 
 async function resolve(req, res, key) {
