@@ -59,10 +59,10 @@ describe('20261024100000_backfill_seed_mission_il', () => {
     ]);
   });
 
-  it('il zaten doluysa (elle girilmiş) ezmez', async () => {
+  it('il ya da ilçe dolu (elle girilmiş) satırı ezmez', async () => {
     const rows = [
       { id: 'am_marmaris', il: 'Muğla', ilce: 'Datça' },
-      { id: 'am_fethiye', il: 'Antalya', ilce: null },
+      { id: 'am_fethiye', il: null, ilce: 'Seydikemer' },
       { id: 'fm_marmaris_2025', il: null, ilce: null },
     ];
 
@@ -70,32 +70,24 @@ describe('20261024100000_backfill_seed_mission_il', () => {
 
     expect(regionOf(rows)).toEqual([
       ['am_marmaris', 'Muğla', 'Datça'],
-      ['am_fethiye', 'Antalya', null],
+      ['am_fethiye', null, 'Seydikemer'],
       ['fm_marmaris_2025', 'Muğla', 'Marmaris'],
     ]);
   });
 
-  it('down yalnız hâlâ yazılan değerleri taşıyan satırları boşaltır', async () => {
+  it('down hiçbir satıra dokunmaz (seed ya da elle girilmiş değeri silmez)', async () => {
     const rows = [
       { id: 'am_marmaris', il: null, ilce: null },
-      { id: 'am_fethiye', il: null, ilce: null },
-      { id: 'fm_marmaris_2025', il: null, ilce: null },
-      { id: 'm_other', il: 'Muğla', ilce: 'Marmaris' }, // listede değil: dokunulmaz
+      { id: 'am_fethiye', il: 'Muğla', ilce: 'Fethiye' },
     ];
     const knex = makeKnex(rows);
 
     await migration.up(knex);
-    // up'tan sonra panelden düzeltilen kayıtlar korunur.
-    rows[1].ilce = 'Seydikemer';
-    rows[2].il = 'Aydın';
-
     await migration.down(knex);
 
     expect(regionOf(rows)).toEqual([
-      ['am_marmaris', null, null],
-      ['am_fethiye', 'Muğla', 'Seydikemer'],
-      ['fm_marmaris_2025', 'Aydın', 'Marmaris'],
-      ['m_other', 'Muğla', 'Marmaris'],
+      ['am_marmaris', 'Muğla', 'Marmaris'],
+      ['am_fethiye', 'Muğla', 'Fethiye'],
     ]);
   });
 
@@ -105,6 +97,6 @@ describe('20261024100000_backfill_seed_mission_il', () => {
     await migration.up(knex);
     await migration.down(knex);
 
-    expect(knex.mock.calls).toEqual(Array(6).fill(['missions']));
+    expect(knex.mock.calls).toEqual(Array(3).fill(['missions']));
   });
 });
