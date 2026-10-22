@@ -431,6 +431,16 @@ const definition = {
           },
         ],
       },
+      ContentBlock: {
+        type: 'object',
+        description: 'Eğitim içerik bloğu (blog içeriğiyle aynı biçim). Video kaynağı yalnız .mp4.',
+        properties: {
+          type: { type: 'string', enum: ['paragraph', 'heading', 'image', 'video'] },
+          text: { type: 'string', description: 'paragraph | heading' },
+          source: { type: 'string', description: 'image: tam URL; video: kaydedilen değer' },
+          caption: { type: 'string' },
+        },
+      },
       OnlineTraining: {
         type: 'object',
         properties: {
@@ -442,6 +452,8 @@ const definition = {
           required: { type: 'boolean' },
           delivery: { type: 'string', enum: ['yuzyuze', 'online'] },
           videoUrl: { type: 'string', format: 'uri', nullable: true },
+          cover: { type: 'string', format: 'uri', nullable: true },
+          content: { type: 'array', items: { $ref: '#/components/schemas/ContentBlock' } },
           startsAt: {
             type: 'string',
             format: 'date-time',
@@ -459,6 +471,8 @@ const definition = {
         properties: {
           id: { type: 'string' },
           title: { type: 'string' },
+          description: { type: 'string' },
+          content: { type: 'array', items: { $ref: '#/components/schemas/ContentBlock' } },
           location: { type: 'string' },
           startDate: { type: 'string', format: 'date' },
           startTime: { type: 'string', example: '09:00' },

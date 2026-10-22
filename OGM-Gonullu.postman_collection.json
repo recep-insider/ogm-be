@@ -2024,7 +2024,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"title\": \"\",\n  \"description\": \"\",\n  \"durationMin\": 0,\n  \"iconTone\": \"primary\",\n  \"sortOrder\": 0,\n  \"videoPath\": \"\",\n  \"required\": true,\n  \"delivery\": \"yuzyuze\",\n  \"startsAt\": \"2026-01-01T00:00:00Z\",\n  \"location\": \"\",\n  \"instructor\": \"\",\n  \"isActive\": true\n}",
+              "raw": "{\n  \"title\": \"\",\n  \"description\": \"\",\n  \"durationMin\": 0,\n  \"iconTone\": \"primary\",\n  \"sortOrder\": 0,\n  \"videoPath\": \"\",\n  \"coverPath\": \"\",\n  \"content\": [\n    {\n      \"type\": \"paragraph\",\n      \"text\": \"\",\n      \"source\": \"\",\n      \"caption\": \"\"\n    }\n  ],\n  \"required\": true,\n  \"delivery\": \"yuzyuze\",\n  \"startsAt\": \"2026-01-01T00:00:00Z\",\n  \"location\": \"\",\n  \"instructor\": \"\",\n  \"isActive\": true\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -2098,7 +2098,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"title\": \"\",\n  \"location\": \"\",\n  \"startDate\": \"2026-01-01\",\n  \"startTime\": \"09:00\",\n  \"endTime\": \"17:00\",\n  \"instructorName\": \"\",\n  \"instructorAvatarPath\": \"\",\n  \"coverPath\": \"\",\n  \"totalSeats\": 0,\n  \"isActive\": true\n}",
+              "raw": "{\n  \"title\": \"\",\n  \"description\": \"\",\n  \"content\": [\n    {\n      \"type\": \"paragraph\",\n      \"text\": \"\",\n      \"source\": \"\",\n      \"caption\": \"\"\n    }\n  ],\n  \"location\": \"\",\n  \"startDate\": \"2026-01-01\",\n  \"startTime\": \"09:00\",\n  \"endTime\": \"17:00\",\n  \"instructorName\": \"\",\n  \"instructorAvatarPath\": \"\",\n  \"coverPath\": \"\",\n  \"totalSeats\": 0,\n  \"isActive\": true\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -2624,6 +2624,37 @@
                 }
               ]
             },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{panelAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Tüm saha eğitimlerinin başvuruları (panel, sayfalı) (GET /v1/admin/trainings/saha/applications)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/v1/admin/trainings/saha/applications",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "admin",
+                "trainings",
+                "saha",
+                "applications"
+              ]
+            },
+            "description": "Eğitim başına /admin/trainings/saha/{id}/applications isteğinin toplu karşılığı. Kayıt biçimi o uçla aynıdır; her kayıt trainingId taşır. Panel oturumu.",
             "auth": {
               "type": "bearer",
               "bearer": [

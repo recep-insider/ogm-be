@@ -538,7 +538,10 @@ WGS84 datum. Frontend `react-native-maps` ile uyumlu.
 ```
 - **TS tipleri:** `OnlineTraining`, `OnlineTrainingStatus`, `OnlineTrainingTone` (`types.ts:193-204`)
 - **Mock:** `mocks.ts:562-581` (`MOCK_ONLINE_TRAININGS`)
-- **Notlar:** Kullanıcı bazlı progress; backend per-user filter yapmalı.
+- **Notlar:**
+  - Kullanıcı bazlı progress; backend per-user filter yapmalı.
+  - `cover`: kapak görseli **URL string** veya `null`.
+  - `content`: panelde girilen içerik blokları (blog `content` ile aynı biçim), boşsa `[]`. Blok: `{ type: 'paragraph' | 'heading', text }`, `{ type: 'image', source /* tam URL */, caption? }`, `{ type: 'video', source /* yalnız .mp4 */, caption? }`.
 
 ---
 
@@ -573,6 +576,7 @@ WGS84 datum. Frontend `react-native-maps` ile uyumlu.
   - **Doluluk `availableSeats === 0` ile anlaşılır.** Dolu eğitimde `seatStatus` `available` döner; ayrı bir `full` değeri bilerek yoktur (yayındaki sürümler `seatStatus`'u doğrudan rozet varyantına eşler, bilinmeyen değer onları bozar). İstemci `availableSeats > 0 || applied` olmayan kaydı göstermemelidir; gösterirse başvuru 410 `training_full` alır.
   - Kontenjan kesin sınırdır; `rejected` başvurular koltuk tutmaz (`enrolled`/`availableSeats` sayımına girmez).
   - `applied: true` → kullanıcının önceden başvurduğu kayıt.
+  - `description`: eğitim açıklaması, girilmemişse `''`. `content`: 5.1'deki içerik blokları, boşsa `[]`.
 
 ---
 

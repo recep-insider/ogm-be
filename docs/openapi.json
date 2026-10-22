@@ -1015,6 +1015,32 @@
           }
         ]
       },
+      "ContentBlock": {
+        "type": "object",
+        "description": "Eğitim içerik bloğu (blog içeriğiyle aynı biçim). Video kaynağı yalnız .mp4.",
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "paragraph",
+              "heading",
+              "image",
+              "video"
+            ]
+          },
+          "text": {
+            "type": "string",
+            "description": "paragraph | heading"
+          },
+          "source": {
+            "type": "string",
+            "description": "image: tam URL; video: kaydedilen değer"
+          },
+          "caption": {
+            "type": "string"
+          }
+        }
+      },
       "OnlineTraining": {
         "type": "object",
         "properties": {
@@ -1051,6 +1077,17 @@
             "type": "string",
             "format": "uri",
             "nullable": true
+          },
+          "cover": {
+            "type": "string",
+            "format": "uri",
+            "nullable": true
+          },
+          "content": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ContentBlock"
+            }
           },
           "startsAt": {
             "type": "string",
@@ -1091,6 +1128,15 @@
           },
           "title": {
             "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "content": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ContentBlock"
+            }
           },
           "location": {
             "type": "string"
@@ -2246,7 +2292,7 @@
         ],
         "responses": {
           "200": {
-            "description": "items[{id,title,description,durationMin,videoUrl,isActive,enrolled,completed}] + total"
+            "description": "items[{id,title,description,durationMin,videoUrl,videoPath,cover,coverPath,content[],isActive,enrolled,completed}] + total"
           }
         }
       },
@@ -2292,7 +2338,20 @@
                   },
                   "videoPath": {
                     "type": "string",
-                    "description": "POST /admin/content/media yanıtındaki path"
+                    "nullable": true,
+                    "description": "POST /admin/content/media yanıtındaki path veya URL; yalnız .mp4 (sorgu dizesi serbest)"
+                  },
+                  "coverPath": {
+                    "type": "string",
+                    "nullable": true,
+                    "description": "Kapak — POST /admin/content/media yanıtındaki path"
+                  },
+                  "content": {
+                    "type": "array",
+                    "maxItems": 100,
+                    "items": {
+                      "$ref": "#/components/schemas/ContentBlock"
+                    }
                   },
                   "required": {
                     "type": "boolean"
@@ -2358,7 +2417,7 @@
         ],
         "responses": {
           "200": {
-            "description": "items[{id,title,location,startDate,instructorName,totalSeats,availableSeats,applications{},isActive}] + total"
+            "description": "items[{id,title,description,content[],location,startDate,instructorName,cover,coverPath,totalSeats,availableSeats,enrolled,attended,isActive}] + total"
           }
         }
       },
@@ -2390,6 +2449,17 @@
                 "properties": {
                   "title": {
                     "type": "string"
+                  },
+                  "description": {
+                    "type": "string",
+                    "maxLength": 2000
+                  },
+                  "content": {
+                    "type": "array",
+                    "maxItems": 100,
+                    "items": {
+                      "$ref": "#/components/schemas/ContentBlock"
+                    }
                   },
                   "location": {
                     "type": "string"
@@ -3046,6 +3116,56 @@
         }
       }
     },
+    "/admin/trainings/saha/applications": {
+      "get": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "Tüm saha eğitimlerinin başvuruları (panel, sayfalı)",
+        "description": "Eğitim başına /admin/trainings/saha/{id}/applications isteğinin toplu karşılığı. Kayıt biçimi o uçla aynıdır; her kayıt trainingId taşır. Panel oturumu.",
+        "security": [
+          {
+            "panelBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "query",
+            "name": "status",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "pending",
+                "approved",
+                "rejected"
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "page",
+            "schema": {
+              "type": "integer",
+              "default": 1
+            }
+          },
+          {
+            "in": "query",
+            "name": "pageSize",
+            "schema": {
+              "type": "integer",
+              "default": 20,
+              "maximum": 100
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "items[{trainingId,applicationId,status,attendance,attendanceAt,kkdDelivered,createdAt,user}] + total/page/pageSize"
+          }
+        }
+      }
+    },
     "/admin/trainings/saha/{id}/applications": {
       "get": {
         "tags": [
@@ -3081,7 +3201,7 @@
         ],
         "responses": {
           "200": {
-            "description": "training {id,title} + items[{applicationId,status,user}] + total"
+            "description": "training {id,title} + items[{trainingId,applicationId,status,user}] + total"
           },
           "404": {
             "description": "training_not_found"

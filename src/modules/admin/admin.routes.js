@@ -418,7 +418,7 @@ const trainingsQuerySchema = Joi.object({
  *     parameters:
  *       - { in: query, name: isActive, schema: { type: boolean } }
  *     responses:
- *       200: { description: 'items[{id,title,description,durationMin,videoUrl,isActive,enrolled,completed}] + total' }
+ *       200: { description: 'items[{id,title,description,durationMin,videoUrl,videoPath,cover,coverPath,content[],isActive,enrolled,completed}] + total' }
  */
 router.get(
   '/trainings/online',
@@ -441,7 +441,7 @@ router.get(
  *     parameters:
  *       - { in: query, name: isActive, schema: { type: boolean } }
  *     responses:
- *       200: { description: 'items[{id,title,location,startDate,instructorName,totalSeats,availableSeats,applications{},isActive}] + total' }
+ *       200: { description: 'items[{id,title,description,content[],location,startDate,instructorName,cover,coverPath,totalSeats,availableSeats,enrolled,attended,isActive}] + total' }
  */
 router.get(
   '/trainings/saha',
@@ -803,6 +803,27 @@ router.post(
 
 // ── Eğitim yazma uçları ──
 
+// 20.10 kararı: eğitim videosu yalnız .mp4. Uzantı sorgu dizesi/fragman atılarak okunur
+// (MES-25708): "a.mp4?v=1" geçer, "a.php?f=.mp4" geçmez.
+const mp4Path = Joi.string()
+  .pattern(/^[^\s?#]*\.mp4(?:[?#]\S*)?$/i)
+  .messages({ 'string.pattern.base': 'Yalnızca .mp4 video eklenebilir' });
+
+// Eğitim içeriği blog blok biçimidir; görsel/video bloğu kaynaksız kaydedilmez.
+const trainingContentSchema = Joi.array()
+  .items(
+    contentBlockSchema.keys({
+      source: Joi.when('type', {
+        switch: [
+          { is: 'video', then: mp4Path.max(512).required() },
+          { is: 'image', then: Joi.string().max(512).required() },
+        ],
+        otherwise: Joi.forbidden(),
+      }),
+    }),
+  )
+  .max(100);
+
 const onlineBaseKeys = {
   title: Joi.string().max(200),
   description: Joi.string().allow('').max(2000),
@@ -812,7 +833,9 @@ const onlineBaseKeys = {
   required: Joi.boolean(),
   delivery: Joi.string().valid('yuzyuze', 'online'),
   sortOrder: Joi.number().integer().min(0),
-  videoPath: Joi.string().allow('', null).max(512),
+  videoPath: mp4Path.allow('', null).max(500),
+  coverPath: Joi.string().allow('', null).max(512),
+  content: trainingContentSchema,
   // Yüz yüze teorik eğitimin oturum bilgisi (opsiyonel) — mobil GET /trainings/online'da
   // yalnızca delivery=yuzyuze iken döner.
   startsAt: Joi.date().iso().allow(null),
@@ -830,6 +853,8 @@ const onlineUpdateSchema = Joi.object(onlineBaseKeys).min(1);
 const HHMM = /^([01]\d|2[0-3]):[0-5]\d$/;
 const sahaBaseKeys = {
   title: Joi.string().max(200),
+  description: Joi.string().allow('').max(2000),
+  content: trainingContentSchema,
   location: Joi.string().max(200),
   startDate: Joi.date().iso(),
   startTime: Joi.string().pattern(HHMM),
@@ -876,7 +901,9 @@ const sahaUpdateSchema = Joi.object(sahaBaseKeys).min(1);
  *               durationMin: { type: integer }
  *               iconTone: { type: string, enum: [primary, tertiary] }
  *               sortOrder: { type: integer }
- *               videoPath: { type: string, description: 'POST /admin/content/media yanıtındaki path' }
+ *               videoPath: { type: string, nullable: true, description: 'POST /admin/content/media yanıtındaki path veya URL; yalnız .mp4 (sorgu dizesi serbest)' }
+ *               coverPath: { type: string, nullable: true, description: 'Kapak — POST /admin/content/media yanıtındaki path' }
+ *               content: { type: array, maxItems: 100, items: { $ref: '#/components/schemas/ContentBlock' } }
  *               required: { type: boolean }
  *               delivery: { type: string, enum: [yuzyuze, online] }
  *               startsAt: { type: string, format: date-time, nullable: true, description: 'Yüz yüze oturum başlangıcı' }
@@ -941,6 +968,8 @@ router.delete(
  *             required: [title, location, startDate, startTime, endTime, instructorName, totalSeats]
  *             properties:
  *               title: { type: string }
+ *               description: { type: string, maxLength: 2000 }
+ *               content: { type: array, maxItems: 100, items: { $ref: '#/components/schemas/ContentBlock' } }
  *               location: { type: string }
  *               startDate: { type: string, format: date }
  *               startTime: { type: string, example: '09:00' }
@@ -994,6 +1023,33 @@ router.delete(
 
 /**
  * @openapi
+ * /admin/trainings/saha/applications:
+ *   get:
+ *     tags: [Admin]
+ *     summary: Tüm saha eğitimlerinin başvuruları (panel, sayfalı)
+ *     description: >-
+ *       Eğitim başına /admin/trainings/saha/{id}/applications isteğinin toplu karşılığı.
+ *       Kayıt biçimi o uçla aynıdır; her kayıt trainingId taşır. Panel oturumu.
+ *     security: [ { panelBearer: [] } ]
+ *     parameters:
+ *       - { in: query, name: status, schema: { type: string, enum: [pending, approved, rejected] } }
+ *       - { in: query, name: page, schema: { type: integer, default: 1 } }
+ *       - { in: query, name: pageSize, schema: { type: integer, default: 20, maximum: 100 } }
+ *     responses:
+ *       200: { description: 'items[{trainingId,applicationId,status,attendance,attendanceAt,kkdDelivered,createdAt,user}] + total/page/pageSize' }
+ */
+router.get(
+  '/trainings/saha/applications',
+  validate({
+    query: Joi.object({ status: Joi.string().valid('pending', 'approved', 'rejected').optional(), ...pageQueryKeys }),
+  }),
+  asyncHandler(async (req, res) => {
+    res.json(await trainingsService.adminListAllSahaApplications(req.query));
+  }),
+);
+
+/**
+ * @openapi
  * /admin/trainings/saha/{id}/applications:
  *   get:
  *     tags: [Admin]
@@ -1003,7 +1059,7 @@ router.delete(
  *       - { in: path, name: id, required: true, schema: { type: string } }
  *       - { in: query, name: status, schema: { type: string, enum: [pending, approved, rejected] } }
  *     responses:
- *       200: { description: 'training {id,title} + items[{applicationId,status,user}] + total' }
+ *       200: { description: 'training {id,title} + items[{trainingId,applicationId,status,user}] + total' }
  *       404: { description: training_not_found }
  */
 router.get(

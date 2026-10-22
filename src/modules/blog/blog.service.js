@@ -19,7 +19,7 @@ function safeJson(value, fallback) {
 
 function mapContentBlock(block) {
   if (block && block.type === 'image') {
-    return { type: 'image', source: assetUrl(block.source) };
+    return { ...block, source: assetUrl(block.source) };
   }
   return block;
 }
@@ -174,4 +174,16 @@ async function adminRemove(id, actor = {}) {
   });
 }
 
-module.exports = { list, getById, adminList, adminCreate, adminUpdate, adminRemove, mapAdminPost };
+module.exports = {
+  list,
+  getById,
+  adminList,
+  adminCreate,
+  adminUpdate,
+  adminRemove,
+  mapAdminPost,
+  // Eğitim içeriği aynı blok biçimini kullanır (trainings.service).
+  safeJson,
+  mapContentBlock,
+  mapAdminContentBlock,
+};
