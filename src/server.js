@@ -6,6 +6,7 @@ const logger = require('./config/logger');
 const { pingDb, closeDb } = require('./config/db');
 const { connectRedis, pingRedis, closeRedis } = require('./config/redis');
 const { verifyPushProvider } = require('./shared/push-provider');
+const { startSchedule: startAnonymization } = require('./modules/users/anonymize.service');
 
 async function bootstrap() {
   try {
@@ -37,6 +38,9 @@ async function bootstrap() {
   // istek aralıklı 502'ye düşer. Bu yüzden Node tarafı nginx'ten uzun tutulur.
   server.keepAliveTimeout = 75000;
   server.headersTimeout = 80000;
+
+  // KVKK 30 gün anonimleştirme işi API sürecinde koşar; testte başlatılmaz.
+  if (env.nodeEnv !== 'test') startAnonymization();
 
   const shutdown = async (signal) => {
     logger.info(`${signal} alındı, kapanıyor...`);

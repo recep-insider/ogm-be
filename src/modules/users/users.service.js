@@ -306,8 +306,8 @@ async function dataExport(userId, audit = {}) {
 }
 
 /**
- * KVKK silme talebi — soft delete + 30 gün içinde anonimleştirme cron job'u
- * (faz 4'te yapılacak).
+ * KVKK silme talebi — soft delete; 30 gün sonra kişisel veriler anonimleştirilir
+ * (anonymize.service.js, API sürecinde saatte bir).
  */
 async function softDelete(userId, audit = {}) {
   const now = new Date();

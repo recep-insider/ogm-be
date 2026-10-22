@@ -2,7 +2,7 @@
 
 // Panel auth testleri için bellek içi knex/ioredis taklitleri; yalnız servisin kullandığı
 // sorgu biçimlerini (where/whereNot/whereNull/whereIn + orderBy/limit/select/forUpdate +
-// first/update/insert, await ile liste, hata olunca geri alınan transaction) destekler.
+// first/pluck/update/insert/delete, await ile liste, hata olunca geri alınan transaction) destekler.
 
 function createFakeDb() {
   let tables = {};
@@ -29,9 +29,21 @@ function createFakeDb() {
       return out.slice(0, max);
     };
     const eq = (obj) => (row) => Object.entries(obj).every(([k, v]) => row[k] === v);
+    const OPS = {
+      '=': (a, b) => a === b,
+      '<': (a, b) => a < b,
+      '<=': (a, b) => a <= b,
+      '>': (a, b) => a > b,
+      '>=': (a, b) => a >= b,
+    };
     const q = {
-      where(obj) {
-        preds.push(eq(obj));
+      where(obj, ...rest) {
+        if (typeof obj !== 'string') {
+          preds.push(eq(obj));
+        } else {
+          const [op, value] = rest.length === 1 ? ['=', rest[0]] : rest;
+          preds.push((row) => row[obj] != null && OPS[op](row[obj], value));
+        }
         return q;
       },
       whereNot(obj) {
@@ -68,6 +80,9 @@ function createFakeDb() {
         const row = rows.find(matches);
         return row ? { ...row } : undefined;
       },
+      async pluck(col) {
+        return list().map((r) => r[col]);
+      },
       async update(values) {
         const hit = rows.filter(matches);
         hit.forEach((row) => Object.assign(row, values));
@@ -76,6 +91,12 @@ function createFakeDb() {
       async insert(row) {
         [].concat(row).forEach((r) => rows.push({ ...r }));
         return [rows.length];
+      },
+      async delete() {
+        const kept = rows.filter((r) => !matches(r));
+        const removed = rows.length - kept.length;
+        rows.splice(0, rows.length, ...kept);
+        return removed;
       },
     };
     return q;

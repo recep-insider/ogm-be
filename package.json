@@ -22,7 +22,8 @@
     "postman:export": "node scripts/generate-postman.js",
     "backfill:locations": "node scripts/backfill-fire-report-locations.js",
     "backfill:sos-locations": "node scripts/backfill-sos-locations.js",
-    "super-admin:create": "node scripts/create-super-admin.js"
+    "super-admin:create": "node scripts/create-super-admin.js",
+    "kvkk:anonymize": "node scripts/anonymize-deleted-users.js"
   },
   "dependencies": {
     "axios": "^1.7.7",

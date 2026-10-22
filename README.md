@@ -305,7 +305,7 @@ Deploy için ek adım gerekmez: `deploy.sh` güncelleme modunda migration'ları 
 - [ ] PostgreSQL + PostGIS migrasyonu (yangın & görev konum sorguları için — opsiyonel)
 - [ ] Sertifika pinning + gelişmiş rate limit (faz 4)
 - [ ] Eğitimler / Blog / Aktif görevler API'leri (faz 2-3)
-- [ ] `DELETE /users/me` (KVKK silme talebi) + 30 gün anonim/sil cron job
+- [x] `DELETE /users/me` (KVKK silme talebi) + 30 gün anonimleştirme işi (API sürecinde saatte bir; elle: `npm run kvkk:anonymize`)
 
 ## Sonraki Adımlar
 
