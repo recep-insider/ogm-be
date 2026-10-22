@@ -225,7 +225,7 @@ describe('sos.service.create — basıldığı yerin il/ilçesi', () => {
     mockUpdates.length = 0;
     mockState.updateError = null;
     mockState.user = { ...USER_ROW };
-    mockState.redisCount = 0;
+    redis.store.clear();
     mockState.whereCalls = [];
     jest.clearAllMocks();
   });
