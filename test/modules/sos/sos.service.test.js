@@ -6,6 +6,7 @@
 
 const mockInserted = [];
 const mockHistory = [];
+const mockUpdates = [];
 const mockState = {
   user: null,
   redisCount: 0,
@@ -56,6 +57,11 @@ jest.mock('../../../src/config/db', () => {
         else mockInserted.push(row);
         return [1];
       }),
+      update: jest.fn(async (values) => {
+        if (mockState.updateError) throw mockState.updateError;
+        mockUpdates.push({ table, where: mockState.whereCalls.at(-1), values });
+        return 1;
+      }),
     };
     if (table === 'sos_history') c.then = (resolve) => resolve([]);
     return c;
@@ -73,8 +79,12 @@ jest.mock('../../../src/config/redis', () => ({
   },
 }));
 jest.mock('../../../src/shared/audit', () => ({ writeAudit: jest.fn() }));
+jest.mock('../../../src/shared/reverse-geocode', () => ({ reverseGeocode: jest.fn() }));
+jest.mock('../../../src/config/logger', () => ({ warn: jest.fn(), info: jest.fn(), error: jest.fn() }));
 
 const { redis } = require('../../../src/config/redis');
+const { reverseGeocode } = require('../../../src/shared/reverse-geocode');
+const logger = require('../../../src/config/logger');
 const { writeAudit } = require('../../../src/shared/audit');
 const service = require('../../../src/modules/sos/sos.service');
 
@@ -95,6 +105,8 @@ describe('sos.service.create', () => {
   beforeEach(() => {
     mockInserted.length = 0;
     mockHistory.length = 0;
+    mockUpdates.length = 0;
+    mockState.updateError = null;
     mockState.user = { ...USER_ROW };
     mockState.redisCount = 0;
     mockState.participation = undefined;
@@ -102,6 +114,7 @@ describe('sos.service.create', () => {
     mockState.whereInCalls = [];
     mockState.orderByCalls = [];
     jest.clearAllMocks();
+    reverseGeocode.mockResolvedValue({ il: null, ilce: null });
   });
 
   test('konumsuz (boş body) çağrı kabul edilir ve kontrat alanlarıyla döner', async () => {
@@ -204,6 +217,94 @@ describe('sos.service.create', () => {
 
     expect(result.ok).toBe(true);
     expect(mockInserted[0].mission_id).toBeNull();
+  });
+});
+
+describe('sos.service.create — basıldığı yerin il/ilçesi', () => {
+  const flush = () => new Promise((resolve) => setImmediate(resolve));
+  const body = { coordinates: { lat: 36.8529, lng: 28.2661 } };
+
+  beforeEach(() => {
+    mockInserted.length = 0;
+    mockUpdates.length = 0;
+    mockState.updateError = null;
+    mockState.user = { ...USER_ROW };
+    mockState.redisCount = 0;
+    mockState.whereCalls = [];
+    jest.clearAllMocks();
+  });
+
+  test('geocode hiç dönmese de SOS yanıtı bekletilmez', async () => {
+    reverseGeocode.mockReturnValue(new Promise(() => {}));
+
+    const result = await service.create({ userId: 'u1', body, ip: '1.2.3.4', userAgent: 'jest' });
+
+    expect(result.ok).toBe(true);
+    expect(mockInserted).toHaveLength(1);
+    expect(mockUpdates).toEqual([]);
+  });
+
+  test('kayıttan sonra koordinattan çözülen il/ilçe aynı satıra yazılır (süre sınırıyla)', async () => {
+    reverseGeocode.mockResolvedValue({ il: 'Muğla', ilce: 'Marmaris' });
+
+    const result = await service.create({ userId: 'u1', body, ip: '1.2.3.4', userAgent: 'jest' });
+    await flush();
+
+    expect(reverseGeocode).toHaveBeenCalledWith(36.8529, 28.2661, expect.objectContaining({
+      maxWaitMs: expect.any(Number),
+      timeoutMs: expect.any(Number),
+    }));
+    expect(Number.isFinite(reverseGeocode.mock.calls[0][2].maxWaitMs)).toBe(true);
+    expect(mockUpdates).toEqual([
+      expect.objectContaining({
+        table: 'sos_reports',
+        where: ['sos_reports', { id: result.sosId }],
+        values: expect.objectContaining({ il: 'Muğla', ilce: 'Marmaris' }),
+      }),
+    ]);
+  });
+
+  test('il çözülemezse satır güncellenmez (backfill toparlar)', async () => {
+    reverseGeocode.mockResolvedValue({ il: null, ilce: null });
+
+    await service.create({ userId: 'u1', body, ip: '1.2.3.4', userAgent: 'jest' });
+    await flush();
+
+    expect(mockUpdates).toEqual([]);
+  });
+
+  test('arka plan yazımı patlarsa SOS etkilenmez, uyarı loglanır', async () => {
+    reverseGeocode.mockResolvedValue({ il: 'Muğla', ilce: 'Marmaris' });
+    mockState.updateError = new Error('ER_LOCK_WAIT_TIMEOUT');
+
+    const result = await service.create({ userId: 'u1', body, ip: '1.2.3.4', userAgent: 'jest' });
+    await flush();
+
+    expect(result.ok).toBe(true);
+    expect(logger.warn).toHaveBeenCalledWith('SOS konumu çözülemedi', expect.objectContaining({ sosId: result.sosId }));
+  });
+
+  test('konumsuz çağrıda geocode isteği atılmaz', async () => {
+    await service.create({ userId: 'u1', body: {}, ip: '1.2.3.4', userAgent: 'jest' });
+    await flush();
+
+    expect(reverseGeocode).not.toHaveBeenCalled();
+  });
+});
+
+describe('sos.service.mapAdminSos — bölge', () => {
+  const row = { id: 's1', status: 'active', created_at: new Date('2026-10-20T10:00:00Z') };
+
+  test('il/ilçe ve il\'den türeyen region/regionName döner', () => {
+    const item = service.mapAdminSos({ ...row, il: 'Muğla', ilce: 'Marmaris' }, []);
+
+    expect(item).toMatchObject({ il: 'Muğla', ilce: 'Marmaris', region: 'ege', regionName: 'Ege' });
+  });
+
+  test('il\'i çözülmemiş SOS için hepsi null', () => {
+    const item = service.mapAdminSos({ ...row, il: null }, []);
+
+    expect(item).toMatchObject({ il: null, ilce: null, region: null, regionName: null });
   });
 });
 

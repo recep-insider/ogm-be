@@ -21,6 +21,7 @@
     "swagger:watch": "node scripts/watch-swagger.js",
     "postman:export": "node scripts/generate-postman.js",
     "backfill:locations": "node scripts/backfill-fire-report-locations.js",
+    "backfill:sos-locations": "node scripts/backfill-sos-locations.js",
     "super-admin:create": "node scripts/create-super-admin.js"
   },
   "dependencies": {
