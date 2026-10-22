@@ -586,6 +586,21 @@ else
   ok "forest_units seed tamam"
 fi
 
+# ─── nginx config ──────────────────────────────────────────────
+# nginx.conf tek dosya olarak bind-mount: rsync dosyayı yeni inode'la değiştirir,
+# çalışan container eskisini görmeye devam eder ve compose up nginx'i yeniden
+# yaratmaz. İçerik farklıysa yeni config tek seferlik container'da doğrulanır,
+# sonra nginx yeniden yaratılır. Geri alma: nginx.conf'u geri alıp tekrar deploy.
+if run_ssh "cd $DEPLOY_DIR && docker exec ogm-nginx cat /etc/nginx/nginx.conf 2>/dev/null | cmp -s - docker/nginx/nginx.conf"; then
+  ok "nginx config değişmemiş"
+else
+  log "nginx config değişmiş — doğrulanıyor (nginx -t)"
+  run_ssh "cd $DEPLOY_DIR && docker compose run --rm --no-deps -T nginx nginx -t" \
+    || die "Yeni nginx.conf geçersiz — çalışan nginx'e dokunulmadı"
+  run_ssh "cd $DEPLOY_DIR && docker compose up -d --no-deps --force-recreate nginx"
+  ok "nginx yeni config ile yeniden yaratıldı"
+fi
+
 # ─── Smoke test ──────────────────────────────────────────────
 # Backend'e nginx'i atlayarak 127.0.0.1:3000'den bakılır: domain kurulduktan
 # sonra :80 301 döner ve curl -f 3xx'i hata saymaz. Container "healthy" yalnızca

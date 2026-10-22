@@ -116,7 +116,7 @@ http {
     default_type  application/octet-stream;
     sendfile      on;
     server_tokens off;
-    client_max_body_size 25m;
+    client_max_body_size 110m;
     gzip on;
     gzip_types application/json text/plain application/javascript text/css;
 

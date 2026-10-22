@@ -126,6 +126,7 @@ docker compose up -d --build
 - Nginx 80/443 portlarında trafiği karşılar, backend'e proxy yapar.
 - MySQL/Redis portları yalnızca `127.0.0.1` üzerinden açılır.
 - Backend `node src/server.js` ile çalışır; container healthcheck `curl /health` üzerinden yapılır.
+- nginx `client_max_body_size` (110m) en büyük upload limitinin (`UPLOAD_MAX_VIDEO_BYTES`, 100 MB) üstünde tutulur; `setup-domain.sh`'deki Stage 1 config de aynı değeri taşır.
 
 ## Dış Servis Entegrasyonları
 
