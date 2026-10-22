@@ -18,6 +18,7 @@ const {
   kkdKalemDurumu,
 } = require('../../shared/kkd');
 const { komisyonKarari } = require('../../shared/derive');
+const { latestCommissionDecisions } = require('../users/readiness.service');
 
 const PROTECTIVE_TYPE = KKD_TYPE;
 
@@ -67,11 +68,7 @@ async function hasProtectiveEquipment(userId) {
  */
 async function assertCommissionApproved(userIds, trx = db) {
   if (!userIds.length) return;
-  const decisions = await trx('commission_decisions')
-    .whereIn('user_id', userIds)
-    .orderBy('decided_at', 'desc');
-  const latest = new Map();
-  for (const row of decisions) if (!latest.has(row.user_id)) latest.set(row.user_id, row);
+  const latest = await latestCommissionDecisions(userIds, trx);
   const notApproved = userIds.filter((id) => komisyonKarari(latest.get(id)) !== 'approved');
   if (notApproved.length) {
     throw errors.conflict(

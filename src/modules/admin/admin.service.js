@@ -10,7 +10,8 @@ const { v4: uuidv4 } = require('uuid');
 const { hasProtectiveEquipment, PROTECTIVE_TYPE } = require('../equipment/equipment.service');
 const { sendTransactional } = require('../../shared/sms-provider');
 const readinessService = require('../users/readiness.service');
-const { regionForCity, applyRegionFilter } = require('../../shared/regions');
+const { applyRegionFilter } = require('../../shared/regions');
+const { profileFields } = require('../users/users.service');
 const { foldSearch } = require('../../shared/fold-search');
 
 // applications.status enum'u ile aynı (migrations/20260427120200_create_applications.js).
@@ -147,21 +148,6 @@ async function setCommissionDecision(userId, body, actor = {}) {
     smsSent: sms.sent,
     kisiDurumu: readiness.kisiDurumu,
     eksikAdimlar: readiness.zincir.eksikAdimlar,
-  };
-}
-
-// users.service getMe ile aynı eşleme — mobil profil ve panel aynı alanları aynı biçimde görür.
-function profileFields(u) {
-  return {
-    il: u.il || null,
-    ilce: u.ilce || null,
-    region: regionForCity(u.il),
-    ogrenim: u.ogrenim,
-    meslek: u.meslek,
-    meslekDiger: u.meslek_diger,
-    giysiBedeni: u.giysi_bedeni,
-    ayakkabiNumarasi: u.ayakkabi_numarasi != null ? Number(u.ayakkabi_numarasi) : null,
-    stkText: u.stk_text || null,
   };
 }
 

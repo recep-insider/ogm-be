@@ -50,6 +50,23 @@ async function getApplicationStatus(userId) {
   return application ? application.status : null;
 }
 
+// Mobil profil (getMe) ve panel künyesi (admin.service) aynı alanları aynı biçimde görür.
+function profileFields(u) {
+  return {
+    il: u.il || null,
+    ilce: u.ilce || null,
+    // §11: gönüllünün bölgesi bir YETKİ/KAPSAM alanı değildir — yalnızca il'den türeyen
+    // bilgi (gönüllüler hiçbir zaman bölgeye göre süzülmez).
+    region: regionForCity(u.il),
+    ogrenim: u.ogrenim,
+    meslek: u.meslek,
+    meslekDiger: u.meslek_diger,
+    giysiBedeni: u.giysi_bedeni,
+    ayakkabiNumarasi: u.ayakkabi_numarasi != null ? Number(u.ayakkabi_numarasi) : null,
+    stkText: u.stk_text || null,
+  };
+}
+
 async function getMe(userId) {
   const user = await db('users').where({ id: userId, is_active: true }).first();
   if (!user) throw errors.notFound('Kullanıcı bulunamadı');
@@ -72,19 +89,9 @@ async function getMe(userId) {
     phone: user.phone,
     eposta: user.eposta,
     adres: user.adres,
-    il: user.il || null,
-    ilce: user.ilce || null,
-    // §11: gönüllünün bölgesi bir YETKİ/KAPSAM alanı değildir — yalnızca il'den türeyen
-    // bilgi (gönüllüler hiçbir zaman bölgeye göre süzülmez).
-    region: regionForCity(user.il),
+    ...profileFields(user),
     kanGrubu: user.kan_grubu,
-    ogrenim: user.ogrenim,
-    meslek: user.meslek,
-    meslekDiger: user.meslek_diger,
     hobiler: safeJson(user.hobiler, []),
-    giysiBedeni: user.giysi_bedeni,
-    stkText: user.stk_text || null,
-    ayakkabiNumarasi: user.ayakkabi_numarasi != null ? Number(user.ayakkabi_numarasi) : null,
     acil: {
       ad: user.acil_ad,
       soyad: user.acil_soyad,
@@ -349,6 +356,7 @@ async function softDelete(userId, audit = {}) {
 }
 
 module.exports = {
+  profileFields,
   getMe,
   getApplicationStatus,
   patchMe,

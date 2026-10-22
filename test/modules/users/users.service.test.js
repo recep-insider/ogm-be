@@ -14,7 +14,8 @@ jest.mock('../../../src/config/db', () => ({
   })),
 }));
 
-const { getApplicationStatus } = require('../../../src/modules/users/users.service');
+const { getApplicationStatus, profileFields } = require('../../../src/modules/users/users.service');
+const { regionForCity } = require('../../../src/shared/regions');
 
 describe('users.service — getApplicationStatus', () => {
   beforeEach(() => {
@@ -44,5 +45,26 @@ describe('users.service — getApplicationStatus', () => {
     expect(db).toHaveBeenCalledWith('applications');
     expect(where).toHaveBeenCalledWith({ user_id: 'user-42' });
     expect(orderBy).toHaveBeenCalledWith('submitted_at', 'desc');
+  });
+});
+
+// Mobil profil (getMe) ve panel künyesi (admin.getVolunteer / liste) bu tek eşlemeyi kullanır.
+describe('users.service — profileFields', () => {
+  test('profil alanlarını API biçimine çevirir, bölgeyi il\'den türetir', () => {
+    const out = profileFields({
+      il: 'Muğla', ilce: 'Marmaris', ogrenim: 'lisans', meslek: 'diger', meslek_diger: 'Ormancı',
+      giysi_bedeni: 'M', ayakkabi_numarasi: '42', stk_text: 'AKUT',
+    });
+
+    expect(out).toEqual({
+      il: 'Muğla', ilce: 'Marmaris', region: regionForCity('Muğla'), ogrenim: 'lisans', meslek: 'diger',
+      meslekDiger: 'Ormancı', giysiBedeni: 'M', ayakkabiNumarasi: 42, stkText: 'AKUT',
+    });
+  });
+
+  test('boş alanlar null döner', () => {
+    expect(profileFields({ il: '', ilce: undefined, ayakkabi_numarasi: null, stk_text: '' })).toMatchObject({
+      il: null, ilce: null, ayakkabiNumarasi: null, stkText: null,
+    });
   });
 });
