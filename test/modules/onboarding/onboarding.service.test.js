@@ -46,6 +46,8 @@ jest.mock('../../../src/config/env', () => ({
   jwt: { accessSecret: 's', refreshSecret: 's', accessTtl: '15m', refreshTtl: '7d' },
 }));
 jest.mock('../../../src/config/logger', () => ({ warn: jest.fn(), info: jest.fn(), error: jest.fn() }));
+// sms-provider günlük OTP sayacı için redis'i yükler; bu akış OTP göndermez.
+jest.mock('../../../src/config/redis', () => ({ redis: {} }));
 
 const service = require('../../../src/modules/onboarding/onboarding.service');
 

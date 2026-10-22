@@ -3,6 +3,10 @@
 const axios = require('axios');
 const env = require('../config/env');
 const logger = require('../config/logger');
+const { redis } = require('../config/redis');
+const { hitFixedWindow } = require('./fixed-window');
+
+const DAILY_OTP_PREFIX = 'rl:sms:otp:daily:';
 
 const OTP_TEMPLATE = (code) =>
   `OGM Gönüllü doğrulama kodunuz: ${code}. Bu kodu kimseyle paylaşmayın.`;
@@ -18,8 +22,13 @@ const SMS_TEMPLATES = {
     'OGM Orman Yangını Gönüllüsü başvurunuz Bölge Müdürlüğü Komisyonunca değerlendirilmiştir; bu aşamada onaylanmamıştır. Detaylar için mobil uygulamayı kontrol edin.',
 };
 
-async function sendMock(phone, message) {
-  logger.info('SMS [MOCK] gönderildi', { phone, message });
+// Loglarda telefonun yalnız son 4 hanesi kalır; SMS metni (OTP kodu) hiç loglanmaz.
+function maskPhone(phone) {
+  return phone ? `***${String(phone).slice(-4)}` : phone;
+}
+
+async function sendMock(phone) {
+  logger.info('SMS [MOCK] gönderildi', { phone: maskPhone(phone) });
   return { providerMessageId: `mock-${Date.now()}` };
 }
 
@@ -49,7 +58,7 @@ async function sendNetgsm(phone, message) {
 async function sendSms(phone, message) {
   if (!phone) throw new Error('SMS için telefon numarası gerekli');
   if (env.sms.dummyPhones.includes(phone)) {
-    logger.info('SMS atlandı (dummy phone)', { phone });
+    logger.info('SMS atlandı (dummy phone)', { phone: maskPhone(phone) });
     return { providerMessageId: `dummy-${Date.now()}`, dummy: true };
   }
 
@@ -65,7 +74,17 @@ async function sendSms(phone, message) {
   }
 }
 
+// Günlük OTP SMS limiti (SMS_DAILY_LIMIT_PER_USER) burada uygulanır: tüm OTP akışları buradan geçer.
+// Kullanıcı kimliği olmayan giriş akışlarında da geçerli olsun diye hedef telefon başınadır.
 async function sendOtp(phone, code) {
+  if (phone && !env.sms.dummyPhones.includes(phone)) {
+    await hitFixedWindow(redis, `${DAILY_OTP_PREFIX}${phone}`, {
+      max: env.sms.dailyLimitPerUser,
+      windowSec: 86400,
+      message: 'Günlük SMS limitine ulaşıldı, lütfen daha sonra tekrar deneyin',
+      code: 'sms_daily_limit',
+    });
+  }
   return sendSms(phone, OTP_TEMPLATE(code));
 }
 
@@ -86,9 +105,9 @@ async function sendTransactional(phone, templateKey) {
     const result = await sendSms(phone, message);
     return { sent: true, sentAt: new Date(), ...result };
   } catch (err) {
-    logger.error('İşlemsel SMS gönderilemedi', { templateKey, phone, error: err.message });
+    logger.error('İşlemsel SMS gönderilemedi', { templateKey, phone: maskPhone(phone), error: err.message });
     return { sent: false, reason: 'provider_error' };
   }
 }
 
-module.exports = { sendOtp, sendSms, sendTransactional, OTP_TEMPLATE, SMS_TEMPLATES };
+module.exports = { sendOtp, sendSms, sendTransactional, maskPhone, OTP_TEMPLATE, SMS_TEMPLATES };

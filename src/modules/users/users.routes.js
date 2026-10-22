@@ -1,6 +1,7 @@
 'use strict';
 
 const { Router } = require('express');
+const rateLimit = require('express-rate-limit');
 const asyncHandler = require('../../shared/async-handler');
 const validate = require('../../middlewares/validate');
 const { requireAuth } = require('../../middlewares/auth');
@@ -18,6 +19,25 @@ const {
 const router = Router();
 
 router.use(requireAuth);
+
+// /auth/phone OTP uçlarındaki limitlerin karşılığı; oturumlu uç olduğu için kullanıcı başına.
+const phoneChangeInitLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  limit: 5,
+  keyGenerator: (req) => req.user.id,
+  standardHeaders: 'draft-7',
+  legacyHeaders: false,
+  message: { error: { code: 'rate_limited', message: 'Telefon değiştirme OTP isteği limiti aşıldı' } },
+});
+
+const phoneChangeCommitLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  limit: 60,
+  keyGenerator: (req) => req.user.id,
+  standardHeaders: 'draft-7',
+  legacyHeaders: false,
+  message: { error: { code: 'rate_limited', message: 'OTP doğrulama limiti aşıldı' } },
+});
 
 /**
  * @openapi
@@ -230,9 +250,14 @@ router.get('/me/data-export', asyncHandler(controller.dataExport));
  *                 expiresIn: { type: integer }
  *                 cooldownSec: { type: integer }
  *       409: { description: 'Telefon zaten başka kullanıcıda kayıtlı' }
+ *       429:
+ *         description: >-
+ *           `rate_limited` — kullanıcı başına saatte 5 istek; `sms_daily_limit` — hedef telefona
+ *           günlük OTP SMS limiti (SMS_DAILY_LIMIT_PER_USER) doldu, `details.retryAfterSec` döner.
  */
 router.post(
   '/me/phone-change/init',
+  phoneChangeInitLimiter,
   validate({ body: phoneChangeInitSchema }),
   asyncHandler(controller.phoneChangeInit),
 );
@@ -265,9 +290,11 @@ router.post(
  *                 ok: { type: boolean }
  *                 phone: { type: string }
  *       401: { $ref: '#/components/responses/Unauthorized' }
+ *       429: { $ref: '#/components/responses/RateLimited' }
  */
 router.post(
   '/me/phone-change/commit',
+  phoneChangeCommitLimiter,
   validate({ body: phoneChangeCommitSchema }),
   asyncHandler(controller.phoneChangeCommit),
 );

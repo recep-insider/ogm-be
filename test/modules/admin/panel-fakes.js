@@ -112,7 +112,7 @@ function createFakeRedis() {
     }
     return entry;
   };
-  return {
+  const fake = {
     store,
     async get(key) {
       const entry = alive(key);
@@ -124,11 +124,29 @@ function createFakeRedis() {
       store.set(key, entry);
       return entry.value;
     },
-    async expire(key, sec) {
+    async expire(key, sec, mode) {
       const entry = alive(key);
-      if (!entry) return 0;
+      if (!entry || (mode === 'NX' && entry.expiresAt)) return 0;
       entry.expiresAt = Date.now() + sec * 1000;
       return 1;
+    },
+    // ioredis MULTI: komutlar sırayla çalışır, exec [[err, sonuç], ...] döner.
+    multi() {
+      const queued = [];
+      const chain = {
+        async exec() {
+          const out = [];
+          for (const run of queued) out.push([null, await run()]);
+          return out;
+        },
+      };
+      for (const cmd of ['incr', 'expire', 'ttl']) {
+        chain[cmd] = (...args) => {
+          queued.push(() => fake[cmd](...args));
+          return chain;
+        };
+      }
+      return chain;
     },
     async ttl(key) {
       const entry = alive(key);
@@ -140,6 +158,7 @@ function createFakeRedis() {
       return store.delete(key) ? 1 : 0;
     },
   };
+  return fake;
 }
 
 // bcrypt native binding'i bazı makinelerde yüklenemiyor; deterministik sahte özet.
