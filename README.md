@@ -154,6 +154,12 @@ docker compose start backend
 
 Cron'u kapatmak: `rm /etc/cron.d/ogm-backup` ve `deploy.sh`'deki "Yedek cron'u" adımını çıkarın (yoksa sonraki deploy geri kurar).
 
+### SSH sertleştirme
+
+`scripts/harden-ssh.sh` deploy'a bağlı değildir; sunucuda elle çalıştırılır: `sudo bash /opt/ogm-gonullu/scripts/harden-ssh.sh`. fail2ban'ı (sshd jail) kurar, `/etc/ssh/sshd_config.d/00-ogm-hardening.conf` ile parola ve klavye-etkileşimli girişi kapatır. Çalıştıran kullanıcının `~/.ssh/authorized_keys`'i boşsa durur; `sshd -t` ve etkin değer kontrolü geçmeden sshd'yi yeniden yüklemez.
+
+Sonrasında `deploy.sh` ve `setup-domain.sh` yalnızca yerel makinedeki anahtar (ssh-agent) sunucuda yetkiliyse bağlanır. Geri alma: `rm /etc/ssh/sshd_config.d/00-ogm-hardening.conf && sshd -t && systemctl reload ssh`; fail2ban için `systemctl disable --now fail2ban`.
+
 ## Dış Servis Entegrasyonları
 
 | Servis | Yapılandırma | Default | Notlar |
