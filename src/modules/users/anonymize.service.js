@@ -88,17 +88,26 @@ async function removeUpload(rel) {
   }
 }
 
-/** Tek hesabın kişisel verilerini siler/anonimleştirir. */
+/**
+ * Tek hesabın kişisel verilerini siler/anonimleştirir. Silme talebi arada iptal edildiyse (K28)
+ * hesaba dokunmaz ve false döner.
+ */
 async function anonymizeUser(userId, now = new Date()) {
+  const stillDeleted = (q) => q.where({ id: userId }).whereNotNull('deleted_at').whereNull('anonymized_at');
+  if (!(await stillDeleted(db('users')).first())) return false;
+
   // Önce dosyalar: silinemeyen dosya varsa DB'deki yolu kalır, sonraki koşu yeniden dener.
   for (const rel of await personalFiles(userId)) {
     // eslint-disable-next-line no-await-in-loop
     await removeUpload(rel);
   }
 
+  let anonymized = false;
   await db.transaction(async (trx) => {
     const byUser = (table) => trx(table).where({ user_id: userId });
-    await trx('users').where({ id: userId }).update({ ...USER_PII, anonymized_at: now, updated_at: now });
+    const updated = await stillDeleted(trx('users')).update({ ...USER_PII, anonymized_at: now, updated_at: now });
+    if (!updated) return;
+    anonymized = true;
     await byUser('applications').update({
       saglik_raporu_path: null,
       sabika_kaydi_path: null,
@@ -124,6 +133,7 @@ async function anonymizeUser(userId, now = new Date()) {
     await byUser('notification_preferences').delete();
     await byUser('notification_opens').delete();
   });
+  return anonymized;
 }
 
 /** Silinme tarihinden 30 gün geçmiş, henüz anonimleşmemiş tüm hesaplar. */
@@ -136,8 +146,7 @@ async function anonymizeDue(now = new Date()) {
   for (const id of ids) {
     try {
       // eslint-disable-next-line no-await-in-loop
-      await anonymizeUser(id, now);
-      anonymized += 1;
+      if (await anonymizeUser(id, now)) anonymized += 1;
     } catch (err) {
       failed.push(id);
       logger.error('KVKK anonimleştirme başarısız', { userId: id, error: err.message });

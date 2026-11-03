@@ -12,6 +12,7 @@ const { sendOtp, assertOtpDeliverable, maskPhone } = require('../../shared/sms-p
 const { writeAudit } = require('../../shared/audit');
 const { toDateOnly } = require('../../shared/dates');
 const { getApplicationStatus } = require('../users/users.service');
+const { ANONYMIZE_AFTER_DAYS } = require('../users/anonymize.service');
 const {
   signAccessToken,
   signRefreshToken,
@@ -28,6 +29,11 @@ const PREFIX = 'otp:phone:';
 const RATE_PHONE_PREFIX = 'rl:otp:phone:';
 const RATE_IP_PREFIX = 'rl:otp:ip:';
 const BAN_PREFIX = 'ban:phone:';
+
+// Silmeden 30 gün geçen hesap anonimleştirme sırasındadır: artık geri açılmaz.
+function restorableSince() {
+  return new Date(Date.now() - ANONYMIZE_AFTER_DAYS * 86400 * 1000);
+}
 
 function sessionKey(sessionId) {
   return `${PREFIX}${sessionId}`;
@@ -167,6 +173,7 @@ async function verifyOtpFlow({ sessionId, code, ip, userAgent }) {
   const pending = await db('users')
     .where({ phone: session.phone })
     .whereNotNull('deleted_at')
+    .where('deleted_at', '>', restorableSince())
     .whereNull('anonymized_at')
     .first();
   if (pending) {
@@ -205,7 +212,8 @@ async function restoreFlow({ restoreToken, ip, userAgent }) {
     .where({ id: payload.sub })
     .whereNotNull('deleted_at')
     .whereNull('anonymized_at')
-    .where('deleted_at', '<=', issuedAt);
+    .where('deleted_at', '<=', issuedAt)
+    .where('deleted_at', '>', restorableSince());
 
   if (!(await pending().first())) {
     throw errors.unauthorized('Silme talebi iptal edilemedi; lütfen tekrar giriş yapın.', 'restore_invalid');

@@ -239,6 +239,18 @@ describe('anonymizeDue — kapsam', () => {
     fs.rmSync(outside, { recursive: true, force: true });
   });
 
+  it('silme talebi koşu sırasında iptal edildiyse (K28) hesaba ve dosyalarına dokunmaz', async () => {
+    const u1 = db.rows('users').find((u) => u.id === 'u1');
+    Object.assign(u1, { is_active: true, deleted_at: null });
+
+    await expect(service.anonymizeUser('u1', NOW)).resolves.toBe(false);
+
+    expect(row('users', 'u1')).toMatchObject({ ad: 'Ayşe', anonymized_at: null, avatar_path: 'avatars/u1.jpg' });
+    expect(exists('avatars/u1.jpg')).toBe(true);
+    expect(db.rows('devices').some((d) => d.user_id === 'u1')).toBe(true);
+    expect(row('applications', 'a1').snapshot).not.toBeNull();
+  });
+
   it('ikinci koşu aynı hesabı yeniden işlemez', async () => {
     await service.anonymizeDue(NOW);
     const again = await service.anonymizeDue(NOW);
@@ -283,6 +295,8 @@ describe('runExclusive — tek koşu kilidi', () => {
 
 describe('startSchedule', () => {
   it('açılışta ve saatte bir çalışır, süreci açık tutmaz', async () => {
+    // Zamanlanan koşular test bitince de sürer; sonraki testin hesaplarına dokunmasınlar.
+    db.reset({ users: [] });
     jest.useFakeTimers({ doNotFake: ['setImmediate', 'nextTick'] });
     try {
       const timer = service.startSchedule();

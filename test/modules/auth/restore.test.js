@@ -57,6 +57,25 @@ describe('verify-otp — silinme sürecindeki hesap', () => {
     expect(result.pendingDeletion).toBeUndefined();
     expect(result.registrationToken).toEqual(expect.any(String));
   });
+
+  it('silmeden 30 gün geçmiş (anonimleştirme sırasındaki) hesap geri alma teklifi almaz', async () => {
+    db.reset({ users: [pendingUser({ deleted_at: new Date(Date.now() - 31 * 86400 * 1000) })], refresh_tokens: [] });
+    const result = await verify();
+    expect(result.pendingDeletion).toBeUndefined();
+    expect(result.restoreToken).toBeUndefined();
+  });
+});
+
+describe('POST /auth/restore — 30 günlük sınır', () => {
+  it('silmeden 30 gün geçmiş hesabı açmaz; erişim engeli kalır', async () => {
+    const restoreToken = signRestoreToken({ sub: 'u1' });
+    db.reset({ users: [pendingUser({ deleted_at: new Date(Date.now() - 31 * 86400 * 1000) })], refresh_tokens: [] });
+    await redis.set(userBlockKey('u1'), '1', 'EX', 900);
+
+    await expect(restoreFlow({ restoreToken })).rejects.toMatchObject({ status: 401, code: 'restore_invalid' });
+    expect(db.rows('users')[0].is_active).toBe(false);
+    expect(await redis.get(userBlockKey('u1'))).toBe('1');
+  });
 });
 
 describe('POST /auth/restore — restoreFlow', () => {
