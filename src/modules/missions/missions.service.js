@@ -762,7 +762,9 @@ async function adminDeleteMedia(missionId, mediaId, actor = {}) {
 async function adminCreate(body, actor = {}) {
   const id = uuidv4();
   const now = new Date();
+  const fireReports = require('../fireReports/fireReports.service');
   let refNo;
+  let linked = null;
 
   await db.transaction(async (trx) => {
     refNo = await nextRefNo(trx, now);
@@ -803,26 +805,12 @@ async function adminCreate(body, actor = {}) {
     });
 
     // İhbardan olay oluşturulduysa bağ kalıcıdır ve ihbar "Doğrulandı" olur
-    // (§5, mobil §7); bağın tek sahibi fire_reports.mission_id'dir.
+    // (§5, mobil §7); bağın tek sahibi fire_reports.mission_id'dir. Olmayan ihbar olayı da açtırmaz.
     if (body.linkedReportIds?.length) {
-      await trx('fire_reports')
-        .whereIn('id', body.linkedReportIds)
-        .update({ mission_id: id, status: 'confirmed', updated_at: now });
-      // Zaman çizelgesi bağı bu kayıttan okur.
-      await writeAudit(
-        {
-          userId: actor.userId || null,
-          action: 'fire_reports.link',
-          entity: 'mission',
-          entityId: id,
-          ip: actor.ip,
-          userAgent: actor.userAgent,
-          payload: { reportIds: body.linkedReportIds },
-        },
-        trx,
-      );
+      linked = await fireReports.linkReports(trx, id, body.linkedReportIds, actor);
     }
   });
+  if (linked) await fireReports.notifyLinked(linked, id);
 
   let called = null;
   if (body.callVolunteers) called = await callReadyVolunteers(id, actor);

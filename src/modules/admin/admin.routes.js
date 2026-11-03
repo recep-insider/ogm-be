@@ -125,6 +125,7 @@ router.put(
  *               note: { type: string }
  *     responses:
  *       200: { description: Güncellendi }
+ *       409: { description: 'report_linked — olaya bağlı ihbar reddedilemez; önce olaydan ayrılmalı (BUG-059)' }
  */
 router.put(
   '/fire-reports/:id',
@@ -1390,8 +1391,9 @@ const assemblyPointUpsertSchema = Joi.object({
  *           Aynı anahtar ve aynı gövdeyle tekrar gelen istek yeniden işlenmez; 24 saat içinde ilk
  *           başarılı yanıt `Idempotent-Replayed: true` başlığıyla döner. İlk istek sürerken (süre sınırı yok) aynı anahtar 409 idempotency_in_flight alır. 4xx yanıt anahtarı serbest bırakır; 5xx'te anahtar işlem bittikten 40–60 sn sonra düşer, bu sürede tekrar deneme 409 alır.
  *     responses:
- *       200: { description: '{ok, missionId, refNo, status: active, called}' }
+ *       200: { description: '{ok, missionId, refNo, status: active, called}. linkedReportIds ihbarları "Doğrulandı" olur, sahiplerine bildirim gider; başka olaya bağlı ihbar taşınır ve eski olayda ayrılma kaydı kalır.' }
  *       400: { description: idempotency_key_invalid }
+ *       404: { description: 'not_found — linkedReportIds içinde olmayan ihbar (details.missing); olay oluşmaz (BUG-056)' }
  *       409: { description: idempotency_in_flight }
  *       422: { description: idempotency_key_reused }
  *       503: { description: 'idempotency_unavailable — Redis yok; istek işlenmedi, tekrar denenebilir' }

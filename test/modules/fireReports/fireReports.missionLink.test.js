@@ -148,3 +148,26 @@ describe('linkToMission — arşivlenmiş olay (BUG-020)', () => {
     expect(sendPushToUser).not.toHaveBeenCalled();
   });
 });
+
+describe('linkToMission — taşıma ve ret (BUG-057, BUG-059)', () => {
+  const { writeAudit } = require('../../../src/shared/audit');
+
+  it('başka olaya bağlı ihbar taşınınca eski olayın çizelgesine ayrılma kaydı düşer', async () => {
+    mockState.reports = [report({ mission_id: 'm0', status: 'confirmed' })];
+    await service.linkToMission('m1', ['fr1'], {});
+    expect(writeAudit).toHaveBeenCalledWith(
+      expect.objectContaining({ action: 'fire_reports.unlink', entityId: 'm0', payload: { reportId: 'fr1', movedTo: 'm1' } }),
+      expect.anything(),
+    );
+  });
+
+  it('olaya bağlı ihbar reddedilemez: 409 report_linked, durum ve bildirim değişmez', async () => {
+    mockState.reports = [report({ mission_id: 'm1', status: 'confirmed' })];
+    await expect(service.adminSetStatus('fr1', { status: 'rejected' }, {})).rejects.toMatchObject({
+      status: 409,
+      code: 'report_linked',
+    });
+    expect(mockState.updates).toHaveLength(0);
+    expect(sendPushToUser).not.toHaveBeenCalled();
+  });
+});

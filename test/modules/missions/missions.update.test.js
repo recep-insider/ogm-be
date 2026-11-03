@@ -3,7 +3,7 @@
 // PATCH /admin/missions/:id — kısmi güncelleme: gövdede olmayan alan değişmez, arşiv
 // düzenlenemez. adminCreate toplanma noktası görevlisini de yazar.
 
-const mockState = { mission: null, inserts: {}, updates: {}, updateAffects: 1, lastNo: 1, ops: [] };
+const mockState = { mission: null, inserts: {}, updates: {}, updateAffects: 1, lastNo: 1, ops: [], reports: [] };
 
 jest.mock('../../../src/config/db', () => {
   const makeChain = (conn, table) => {
@@ -35,6 +35,7 @@ jest.mock('../../../src/config/db', () => {
         mockState.updates[table] = [...(mockState.updates[table] || []), row];
         return mockState.updateAffects;
       }),
+      then: (resolve, reject) => Promise.resolve(table === 'fire_reports' ? mockState.reports : []).then(resolve, reject),
     };
     return c;
   };
@@ -58,6 +59,7 @@ const reset = () => {
   mockState.updateAffects = 1;
   mockState.lastNo = 1;
   mockState.ops = [];
+  mockState.reports = [{ id: 'r1', user_id: 'u1', status: 'reviewing', mission_id: null }, { id: 'r2', user_id: null, status: 'new', mission_id: null }];
   jest.clearAllMocks();
 };
 
@@ -215,6 +217,37 @@ describe('adminCreate — olay numarası', () => {
     expect(linkCall[0]).toMatchObject({ userId: 'p1', entity: 'mission', payload: { reportIds: ['r1', 'r2'] } });
     expect(linkCall[0].entityId).toBe(mockState.inserts.missions[0].id);
     expect(linkCall[1]).toBe(db.trx);
+  });
+
+  it('olmayan ihbar id\'si 404; işlem geri alınır, bildirim gitmez (BUG-056)', async () => {
+    const { sendPushToUser } = require('../../../src/shared/push-provider');
+
+    await expect(service.adminCreate({ ...body, linkedReportIds: ['r1', 'yok'] }, {})).rejects.toMatchObject({
+      status: 404,
+      details: { missing: ['yok'] },
+    });
+    expect(writeAudit.mock.calls.some(([a]) => a.action === 'missions.create')).toBe(false);
+    expect(sendPushToUser).not.toHaveBeenCalled();
+  });
+
+  it('bağlanan ihbarın sahibine işlemden sonra "Doğrulandı" bildirimi gider (SG-14)', async () => {
+    const { sendPushToUser } = require('../../../src/shared/push-provider');
+
+    const { missionId } = await service.adminCreate({ ...body, linkedReportIds: ['r1', 'r2'] }, {});
+
+    expect(sendPushToUser).toHaveBeenCalledTimes(1);
+    expect(sendPushToUser).toHaveBeenCalledWith('u1', expect.objectContaining({
+      data: { type: 'fire_report_status', reportId: 'r1', status: 'confirmed', missionId },
+    }));
+  });
+
+  it('başka olaya bağlı ihbar taşınınca eski olaya "ayrıldı" kaydı yazılır (BUG-057)', async () => {
+    mockState.reports[0].mission_id = 'eski';
+
+    const { missionId } = await service.adminCreate({ ...body, linkedReportIds: ['r1'] }, {});
+
+    const unlink = writeAudit.mock.calls.find(([a]) => a.action === 'fire_reports.unlink');
+    expect(unlink[0]).toMatchObject({ entity: 'mission', entityId: 'eski', payload: { reportId: 'r1', movedTo: missionId } });
   });
 
   it('ihbar bağlanmadan oluşturulan olayda bağ kaydı yazılmaz', async () => {
