@@ -299,7 +299,8 @@ async function listVolunteers({ status, q, page = 1, pageSize = 20, pendingDelet
 
 /** Gönüllü detayı (admin paneli) — PII burada döner: tcKimlik, adres, acil kişi, belgeler. */
 async function getVolunteer(userId, actor = {}) {
-  const user = await db('users').where({ id: userId }).whereNull('deleted_at').first();
+  // Silinme sürecindeki hesap (K3 listesi) da açılır; anonimleşmiş hesap artık kişi değildir.
+  const user = await db('users').where({ id: userId }).whereNull('anonymized_at').first();
   if (!user) throw errors.notFound('Kullanıcı bulunamadı', 'user_not_found');
 
   // §9: acil durum kişisi ve TC gibi PII bu yanıtta doğrudan döner ("Göster" kapısı
@@ -351,6 +352,7 @@ async function getVolunteer(userId, actor = {}) {
       kisiDurumu: readiness.kisiDurumu,
       kkdDurumu: readiness.zincir.kkdDurumu,
       mudahaleYetkisi: readiness.mudahaleYetkisi,
+      ...deletionFields(user),
     },
     hazirlikZinciri: readiness.zincir,
     komisyon: readiness.komisyon,

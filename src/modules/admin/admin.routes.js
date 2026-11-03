@@ -278,7 +278,7 @@ router.get(
  *   get:
  *     tags: [Admin]
  *     summary: Gönüllü detayı (panel)
- *     description: 'PII (tcKimlik, adres, acil kişi, belgeler) yalnızca bu uçta döner. Panel oturumu.'
+ *     description: 'PII (tcKimlik, adres, acil kişi, belgeler) yalnızca bu uçta döner. Silinme sürecindeki (anonimleşmemiş) hesap da açılır; user alanında pendingDeletion, deletedAt, deletionDueAt, deletionDaysLeft döner (K3). Panel oturumu.'
  *     security: [ { panelBearer: [] } ]
  *     parameters:
  *       - { in: path, name: userId, required: true, schema: { type: string } }

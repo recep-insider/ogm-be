@@ -188,6 +188,18 @@ describe('admin.service — getVolunteer', () => {
     expect(prev.to.toISOString()).toBe('2026-06-01T00:00:00.000Z');
   });
 
+  test('silinme sürecindeki gönüllünün detayı açılır, silme tarihleriyle döner (K3)', async () => {
+    const deletedAt = new Date(Date.now() - 2 * 86400 * 1000);
+    mockQueue.push({ id: 'u3', profile_complete: 1, is_active: 0, deleted_at: deletedAt }); // users.first()
+    mockQueue.push(undefined); // applications.first()
+    mockQueue.push({ c: 0 });
+    mockHasEquipment.mockResolvedValue(false);
+
+    const result = await getVolunteer('u3');
+
+    expect(result.user).toMatchObject({ userId: 'u3', pendingDeletion: true, deletedAt: deletedAt.toISOString(), deletionDaysLeft: 28 });
+  });
+
   test('başvurusu olmayan kullanıcıda application null döner', async () => {
     mockQueue.push({ id: 'u2', profile_complete: 0, is_active: 1 }); // users.first()
     mockQueue.push(undefined); // applications.first()
