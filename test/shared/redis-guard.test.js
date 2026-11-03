@@ -3,7 +3,7 @@
 jest.mock('../../src/config/logger', () => ({ info: jest.fn(), warn: jest.fn(), error: jest.fn(), debug: jest.fn() }));
 
 const { AppError } = require('../../src/shared/errors');
-const { guardRedis, guardedClient } = require('../../src/shared/redis-guard');
+const { guardRedis, guardedClient, delVerifiedSession } = require('../../src/shared/redis-guard');
 const { createFakeRedis } = require('../modules/admin/panel-fakes');
 
 describe('guardRedis (BUG-024)', () => {
@@ -32,5 +32,30 @@ describe('guardRedis (BUG-024)', () => {
     const redis = createFakeRedis();
     const own = new AppError('çok sık', { status: 429, code: 'rate_limited' });
     await expect(guardRedis(redis, async () => { throw own; })).rejects.toBe(own);
+  });
+
+  it('yanıt gecikirse 503 komutun uygulanmış olabileceğini işaretler', async () => {
+    const redis = createFakeRedis();
+    const err = await guardRedis(redis, () => new Promise(() => {}), 10).catch((e) => e);
+    expect(err).toMatchObject({ status: 503, code: 'service_unavailable', maybeApplied: true });
+  });
+
+  it('hemen dönen Redis hatası uygulanmamış sayılır', async () => {
+    const redis = createFakeRedis();
+    const err = await guardRedis(redis, async () => { throw new Error('Connection is closed.'); }).catch((e) => e);
+    expect(err.maybeApplied).toBeUndefined();
+  });
+});
+
+describe('delVerifiedSession', () => {
+  it('uygulanmış olabilecek silmede akış sürer', async () => {
+    const client = { del: jest.fn(async () => { throw Object.assign(new Error('x'), { maybeApplied: true }); }) };
+    await expect(delVerifiedSession(client, 'k')).resolves.toBeUndefined();
+  });
+
+  it('uygulanmadığı belli silmede hata geçer', async () => {
+    const own = new AppError('yok', { status: 503, code: 'service_unavailable' });
+    const client = { del: jest.fn(async () => { throw own; }) };
+    await expect(delVerifiedSession(client, 'k')).rejects.toBe(own);
   });
 });

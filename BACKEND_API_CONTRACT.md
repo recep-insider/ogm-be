@@ -55,7 +55,7 @@ Tüm 4xx/5xx response'ları aşağıdaki şema ile dönecek:
 - `message`: Türkçe, user-facing. Frontend toast/alert'lerde olduğu gibi gösterir (`getApiErrorMessage` — `src/services/api/client.ts:136-150`).
 - `details` (opsiyonel): validation hata listesi, ek metadata.
 - Tüm `429` yanıtları (`rate_limited`, `sms_daily_limit`) `details.retryAfterSec` taşır: tekrar denemeden önce beklenecek saniye (BUG-028).
-- `503 service_unavailable`: Redis (oturum, kod ve hız sınırı deposu) yanıt vermiyor; giriş, SMS kodu, telefon değiştirme ve panel girişi en geç ~1 sn içinde bu kodla döner, istek işlenmez, kısa süre sonra tekrar denenebilir (BUG-024).
+- `503 service_unavailable`: Redis (oturum, kod ve hız sınırı deposu) yanıt vermiyor; SMS koduyla giriş, SMS kodu isteme, telefon değiştirme ve panel girişi en geç ~1 sn içinde bu kodla döner, kısa süre sonra tekrar denenebilir (BUG-024). Bağlantı yoksa istek işlenmez; yanıt gecikmesinde gönderilen komut Redis'te sonradan uygulanabilir (ör. sayaç artar). Kod doğrulandıktan sonraki gecikme isteği bozmaz, giriş ya da telefon değişimi tamamlanır. e-Devlet girişi ve oturum yenileme bu kapsamda değildir.
 
 ### 0.5 Pagination
 **Yok.** Frontend tüm list endpoint'lerini flat `T[]` olarak tüketiyor (`useBlogPosts`, `useFireMissions`, `useCompletedTrainings`, `useMyFireReports` vs.). Pagination'a geçiş ileride backend tarafından tetiklenirse `FRONTEND_CHANGES.md`'ye geçiş notu eklenir.

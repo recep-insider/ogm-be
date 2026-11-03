@@ -103,4 +103,25 @@ describe('phone-change.commit — hata kodları (BUG-038)', () => {
     expect(redis.store.has('otp:phone-change:s1')).toBe(false);
     expect(db.rows('users')[0].phone).toBe('+905320000000');
   });
+
+  it('oturum silmenin yanıtı gecikse de (komut Redis\'e gitti) telefon değişir, 503 dönmez', async () => {
+    putSession();
+    jest.useFakeTimers();
+    try {
+      jest.spyOn(redis, 'del').mockImplementationOnce(() => new Promise(() => {}));
+      const pending = commit('123456');
+      await jest.advanceTimersByTimeAsync(1000);
+      await expect(pending).resolves.toBeTruthy();
+      expect(db.rows('users')[0].phone).toBe(NEW_PHONE);
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it('oturum silme hemen hata verirse (uygulanmadı) 503, telefon değişmez', async () => {
+    putSession();
+    jest.spyOn(redis, 'del').mockRejectedValueOnce(new Error('Connection is closed.'));
+    await expect(commit('123456')).rejects.toMatchObject({ status: 503, code: 'service_unavailable' });
+    expect(db.rows('users')[0].phone).toBe('+905320000000');
+  });
 });

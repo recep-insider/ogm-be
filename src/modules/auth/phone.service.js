@@ -3,7 +3,7 @@
 const { v4: uuidv4 } = require('uuid');
 const { db } = require('../../config/db');
 const { redis: rawRedis } = require('../../config/redis');
-const { guardedClient } = require('../../shared/redis-guard');
+const { guardedClient, delVerifiedSession } = require('../../shared/redis-guard');
 
 const redis = guardedClient(rawRedis);
 const env = require('../../config/env');
@@ -160,7 +160,7 @@ async function verifyOtpFlow({ sessionId, code, ip, userAgent }) {
     throw errors.make(400, 'invalid_otp', 'Geçersiz doğrulama kodu. Lütfen tekrar deneyin.');
   }
 
-  await redis.del(sessionKey(sessionId));
+  await delVerifiedSession(redis, sessionKey(sessionId));
 
   const existing = await db('users').where({ phone: session.phone, is_active: true }).first();
 
