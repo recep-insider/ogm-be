@@ -119,6 +119,13 @@ describe('POST /v1/admin/auth/request', () => {
     expect(res.body.error.code).toBe(code);
   });
 
+  it('telefon biçimi doğrulanır: "abc" 400 phone, boşluklu yerel biçim kabul (BUG-113)', async () => {
+    const bad = await submit(body({ phone: 'abc' }));
+    expect(bad.status).toBe(400);
+    expect(bad.body.error.details.errors.map((e) => e.field)).toEqual(['phone']);
+    expect((await submit(body({ phone: '0532 111 22 33' }))).status).toBe(202);
+  });
+
   it('pasif hesap da 409 email_taken', async () => {
     seed([SUPER, { ...ADMIN, status: 'disabled' }]);
     expect((await submit(body({ email: ADMIN.email }))).body.error.code).toBe('email_taken');
