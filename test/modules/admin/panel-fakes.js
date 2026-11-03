@@ -6,6 +6,8 @@
 
 function createFakeDb() {
   let tables = {};
+  let uniques = {};
+  const dupEntry = () => Object.assign(new Error('Duplicate entry'), { code: 'ER_DUP_ENTRY' });
 
   function builder(name) {
     if (!tables[name]) tables[name] = [];
@@ -14,6 +16,8 @@ function createFakeDb() {
     let sort = null;
     let max = Infinity;
     const matches = (row) => preds.every((p) => p(row));
+    const clashes = (self, values) => (uniques[name] || [])
+      .some((col) => values[col] !== undefined && rows.some((r) => r !== self && r[col] === values[col]));
     const list = () => {
       const out = rows.filter(matches).map((r) => ({ ...r }));
       if (sort) {
@@ -89,6 +93,7 @@ function createFakeDb() {
       },
       async update(values) {
         const hit = rows.filter(matches);
+        if (hit.some((row) => clashes(row, values))) throw dupEntry();
         hit.forEach((row) => Object.assign(row, values));
         return hit.length;
       },
@@ -100,6 +105,7 @@ function createFakeDb() {
         return hit.length;
       },
       async insert(row) {
+        if ([].concat(row).some((r) => clashes(null, r))) throw dupEntry();
         [].concat(row).forEach((r) => rows.push({ ...r }));
         return [rows.length];
       },
@@ -117,6 +123,11 @@ function createFakeDb() {
   db.rows = (name) => tables[name] || [];
   db.reset = (seed = {}) => {
     tables = Object.fromEntries(Object.entries(seed).map(([k, v]) => [k, v.map((r) => ({ ...r }))]));
+    uniques = {};
+  };
+  // Benzersiz index taklidi: çakışan update/insert MySQL gibi ER_DUP_ENTRY atar.
+  db.unique = (table, ...cols) => {
+    uniques[table] = cols;
   };
   db.destroy = async () => {};
   db.transaction = async (fn) => {

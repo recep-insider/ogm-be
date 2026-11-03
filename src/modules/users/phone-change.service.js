@@ -8,11 +8,14 @@ const redis = guardedClient(rawRedis);
 const { db } = require('../../config/db');
 const env = require('../../config/env');
 const { errors } = require('../../shared/errors');
-const { generateOtp, hashOtp, verifyOtp } = require('../../shared/otp');
+const { hashOtp, verifyOtp } = require('../../shared/otp');
 const { sendOtp } = require('../../shared/sms-provider');
 const { writeAudit } = require('../../shared/audit');
+const { getOtpForPhone } = require('../auth/phone.service');
 
 const PREFIX = 'otp:phone-change:';
+
+const phoneTaken = () => errors.conflict('Bu telefon başka bir kullanıcıda kayıtlı');
 
 async function init({ userId, newPhone, ip, userAgent }) {
   // Aynı telefon başka birinde mi kayıtlı?
@@ -20,11 +23,10 @@ async function init({ userId, newPhone, ip, userAgent }) {
     .where({ phone: newPhone, is_active: true })
     .whereNot({ id: userId })
     .first();
-  if (conflict) {
-    throw errors.conflict('Bu telefon başka bir kullanıcıda kayıtlı');
-  }
+  if (conflict) throw phoneTaken();
 
-  const code = generateOtp();
+  // Test numarasına girişteki gibi sabit test kodu gider.
+  const code = getOtpForPhone(newPhone);
   const codeHash = await hashOtp(code);
   // Oturum kod gönderildikten sonra yazılır: limit/sağlayıcı hatası gönderilmemiş koda oturum bırakmaz.
   await sendOtp(newPhone, code, { ip });
@@ -72,10 +74,16 @@ async function commit({ userId, sessionId, code, ip, userAgent }) {
 
   await redis.del(`${PREFIX}${sessionId}`);
 
-  await db('users').where({ id: userId }).update({
-    phone: session.newPhone,
-    updated_at: new Date(),
-  });
+  // Kod gönderildikten sonra numara başka hesaba geçmiş olabilir; benzersiz index yakalar.
+  try {
+    await db('users').where({ id: userId }).update({
+      phone: session.newPhone,
+      updated_at: new Date(),
+    });
+  } catch (err) {
+    if (err.code === 'ER_DUP_ENTRY') throw phoneTaken();
+    throw err;
+  }
 
   await writeAudit({
     userId,
