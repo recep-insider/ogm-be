@@ -33,7 +33,7 @@ const router = Router();
  *       404: { $ref: '#/components/responses/NotFound' }
  */
 router.get('/:document', (req, res) => {
-  const doc = DOCUMENTS[req.params.document];
+  const doc = Object.hasOwn(DOCUMENTS, req.params.document) ? DOCUMENTS[req.params.document] : null;
   if (!doc) {
     return res.status(404).json({
       error: { code: 'not_found', message: 'Belge bulunamadı' },
