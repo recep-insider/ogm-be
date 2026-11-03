@@ -506,8 +506,22 @@ function assertNotPastDay(startDate) {
   }
 }
 
+// BUG-033: bitiş saati başlangıçtan sonra olmalı. Saat sütunu 'HH:MM:SS' dönebilir; dakikaya indirilir.
+function assertTimeOrder(startTime, endTime) {
+  const start = String(startTime || '').slice(0, 5);
+  const end = String(endTime || '').slice(0, 5);
+  if (start && end && end <= start) {
+    throw errors.validation(
+      'Form alanlarında hata var',
+      { errors: [{ field: 'endTime', message: 'Bitiş saati başlangıç saatinden sonra olmalı' }] },
+      'end_time_before_start',
+    );
+  }
+}
+
 async function adminCreateSaha(body, actor = {}) {
   assertNotPastDay(body.startDate);
+  assertTimeOrder(body.startTime, body.endTime);
   const id = uuidv4();
   const now = new Date();
   await db('saha_trainings').insert({ id, ...sahaToRow(body), created_at: now, updated_at: now });
@@ -529,6 +543,10 @@ async function adminUpdateSaha(id, body, actor = {}) {
   // Tarihi zaten geçmiş eğitim düzenlenebilir; yalnızca tarih geçmiş bir güne taşınamaz.
   if (body.startDate !== undefined && toLocalDateOnly(body.startDate) !== toDateOnly(existing.start_date)) {
     assertNotPastDay(body.startDate);
+  }
+  // Saat değişmiyorsa kontrol yok: eski kayıt yeni kural yüzünden düzenlenemez hâle gelmesin (PA-42999).
+  if (body.startTime !== undefined || body.endTime !== undefined) {
+    assertTimeOrder(body.startTime ?? existing.start_time, body.endTime ?? existing.end_time);
   }
   await db('saha_trainings').where({ id }).update({ ...sahaToRow(body), updated_at: new Date() });
   await writeAudit({
