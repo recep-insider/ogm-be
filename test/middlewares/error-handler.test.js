@@ -42,6 +42,17 @@ describe('errorHandler — yüklenen dosyalar', () => {
     }
   });
 
+  it('multer\'ın yolsuz bıraktığı dosya kaydı yanıtı bozmaz; diğer dosya silinir (415)', async () => {
+    const written = tempFile();
+    const res = run(errors.make(415, 'unsupported_media_type', 'Dosya formatı desteklenmiyor'), {
+      files: { saglikRaporu: [written], sabikaKaydi: [{ fieldname: 'sabikaKaydi', originalname: 'x.heic' }] },
+    });
+    await flush();
+
+    expect(res.status).toHaveBeenCalledWith(415);
+    expect(fs.existsSync(written.path)).toBe(false);
+  });
+
   it('5xx yanıtında dosya silinmez (kayıt yazıldıktan sonra da oluşabilir)', async () => {
     const f = tempFile();
     run(new Error('beklenmeyen'), { file: f });
