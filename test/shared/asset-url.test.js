@@ -47,3 +47,21 @@ describe('assetUrl', () => {
     jest.restoreAllMocks();
   });
 });
+
+describe('isPublicAssetPath', () => {
+  const { isPublicAssetPath } = require('../../src/shared/asset-url');
+
+  it.each([
+    ['content/a.jpg', true],
+    ['seed/blog/x.jpg', true],
+    ['https://cdn.example/onboarding/x.pdf', true],
+    ['onboarding/x.pdf', false],
+    ['ONBOARDING/x.pdf', false],
+    ['content/../onboarding/x.pdf', false],
+    ['content/%2e%2e/onboarding/x.pdf', false],
+    ['../x', false],
+    ['%E0%A4%A', false],
+  ])('%s → %s', (value, expected) => {
+    expect(isPublicAssetPath(value)).toBe(expected);
+  });
+});
