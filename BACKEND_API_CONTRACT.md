@@ -725,7 +725,8 @@ edilsin mi?" diye sorar. "Devam" → `POST /auth/restore`; "Vazgeç" → hiçbir
 - **TS tipleri:** `ActiveMissionSummary`, `ActiveMissionStatus`, `MissionUserStatus`, `ActiveMissionIcon` (`types.ts:366-391`)
 - **Mock:** `mocks.ts:mockApi.listActiveMissions` (line 361-372)
 - **Notlar:**
-  - Backend `lat`/`lng`'i ignore edebilir ve last-known location'ı kullanabilir.
+  - Backend `lat`/`lng`'i kullanmaz. Liste K29 ile süzülür: yalnız gönüllünün çağrıldığı ya da katıldığı olaylar ve bildirim ayarlarındaki baz konumdan mesafe tercihinin kapsadığı olaylar döner (baz konum ya da tercih yoksa tümü). Liste boşsa "Yakınında aktif olay yok" doğru metindir.
+  - Çağrılmadığı ve mesafe dışındaki bir olaya `respond` → `403 mission_out_of_range`.
   - `userStatus` per-user filter (her kullanıcı için ayrı state).
   - `status: 'staffed'` → tamamen dolmuş misyon (frontend "yeterli gönüllü" overlay gösterir).
 
