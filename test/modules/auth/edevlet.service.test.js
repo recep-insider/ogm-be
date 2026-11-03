@@ -73,6 +73,8 @@ describe('edevlet.service — callback state (mock mod)', () => {
     const res = await service.callback({ sessionId: SESSION_ID, code: 'c', state: 'dogru-state' });
 
     expect(res.isExisting).toBe(false);
+    // BUG-112: yeni kullanıcıda id alanı hiç yok (null değil).
+    expect(res.user).not.toHaveProperty('id');
     expect(logger.warn).not.toHaveBeenCalled();
     expect(redis.store.has(SESSION_KEY)).toBe(false);
   });

@@ -147,8 +147,8 @@ async function callback({ sessionId, code, state, ip, userAgent }) {
     refreshToken: null,
     expiresIn: registrationTokenSeconds(),
     isExisting: false,
+    // Yeni kullanıcının henüz id'si yok; alan gönderilmez (mobil tipi `id?: string`).
     user: {
-      id: null,
       tcKimlik: kimlik.tcKimlik,
       ad: kimlik.ad,
       soyad: kimlik.soyad,
