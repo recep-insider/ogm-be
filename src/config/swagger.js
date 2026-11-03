@@ -255,13 +255,14 @@ const definition = {
       },
       News: {
         type: 'object',
+        description: 'K31: panelde yayımlanan "Haber" kategorisindeki son 5 blog yazısı; detay için GET /blog/posts/{id}',
         properties: {
-          id: { type: 'string', format: 'uuid' },
-          type: { type: 'string', enum: ['haber', 'duyuru'] },
+          id: { type: 'string', description: 'Blog yazısının id’si' },
+          type: { type: 'string', enum: ['haber'] },
           title: { type: 'string' },
           imageUrl: { type: 'string', format: 'uri', nullable: true },
-          publishedAt: { type: 'string', format: 'date-time' },
-          url: { type: 'string', format: 'uri', nullable: true },
+          publishedAt: { type: 'string', format: 'date' },
+          url: { type: 'string', format: 'uri', nullable: true, description: 'Her zaman null; yazı uygulama içinde açılır' },
         },
       },
       OnboardingData: {
