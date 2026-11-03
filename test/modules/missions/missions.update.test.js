@@ -222,6 +222,14 @@ describe('adminCreate — olay numarası', () => {
     expect(patch).toEqual({ last_no: { sql: 'last_no + 1' } });
   });
 
+  it('oluşturma zamanı saniyeye kırpılır; aynı istekteki çağrı kaydı oluşturmadan önce görünmez (BUG-068)', async () => {
+    jest.useFakeTimers({ now: new Date('2026-10-22T09:00:00.700Z') });
+
+    await service.adminCreate(body, {});
+
+    expect(mockState.inserts.missions[0].created_at.toISOString()).toBe('2026-10-22T09:00:00.000Z');
+  });
+
   it('yıl Türkiye saatine göre alınır — 31 Aralık 22:30 UTC yeni yılın ilk numarasıdır', async () => {
     jest.useFakeTimers({ now: new Date('2026-12-31T22:30:00Z') });
 

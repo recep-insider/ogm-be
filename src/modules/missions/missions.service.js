@@ -761,7 +761,9 @@ async function adminDeleteMedia(missionId, mediaId, actor = {}) {
  */
 async function adminCreate(body, actor = {}) {
   const id = uuidv4();
-  const now = new Date();
+  // Saniyeye kırpılır: DATETIME(0) milisaniyeyi yukarı yuvarlıyor, aynı istekte yazılan çağrı kaydı
+  // (audit, aşağı yuvarlanır) zaman çizelgesinde oluşturmadan önce görünüyordu.
+  const now = new Date(Math.floor(Date.now() / 1000) * 1000);
   const fireReports = require('../fireReports/fireReports.service');
   let refNo;
   let linked = null;
