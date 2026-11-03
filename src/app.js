@@ -11,6 +11,7 @@ const logger = require('./config/logger');
 const { buildSpec } = require('./config/swagger');
 const { notFoundHandler, errorHandler } = require('./middlewares/error-handler');
 const { generalLimiter } = require('./middlewares/rate-limit');
+const { capUserAgent } = require('./middlewares/user-agent');
 const { signedUploadGuard } = require('./shared/asset-url');
 
 const healthRoutes = require('./modules/health/health.routes');
@@ -56,6 +57,7 @@ app.use(cors({ origin: true, credentials: true }));
 app.use(compression());
 app.use(express.json({ limit: '1mb' }));
 app.use(express.urlencoded({ extended: true, limit: '1mb' }));
+app.use(capUserAgent);
 
 app.use((req, _res, next) => {
   logger.debug('İstek alındı', {
