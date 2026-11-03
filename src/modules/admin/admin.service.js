@@ -90,17 +90,25 @@ async function setCommissionDecision(userId, body, actor = {}) {
     throw errors.validation('Geçersiz komisyon kararı', { decision: body.decision });
   }
 
-  const user = await db('users').where({ id: userId }).whereNull('deleted_at').first();
+  const user = await db('users').where({ id: userId }).whereNull('anonymized_at').first();
   if (!user) throw errors.notFound('Kullanıcı bulunamadı', 'user_not_found');
+  if (user.deleted_at) {
+    throw errors.conflict('Hesap silinme sürecinde; işlem yapılamaz.', undefined, 'account_pending_deletion');
+  }
 
   const id = uuidv4();
-  let decidedAt = new Date();
+  // decided_at saniye hassasiyetinde saklanır (TIMESTAMP(0)); karşılaştırma da saniyede yapılır.
+  let decidedAt = new Date(Math.floor(Date.now() / 1000) * 1000);
   let unchanged = null;
 
   await db.transaction(async (trx) => {
     await trx('users').where({ id: userId }).forUpdate().first();
     const latest = await trx('commission_decisions').where({ user_id: userId }).orderBy('decided_at', 'desc').first();
     const current = latest ? latest.decision : null;
+    if (current === body.decision) {
+      unchanged = latest;
+      return;
+    }
     const expected = body.expectedDecision === 'pending' ? null : body.expectedDecision;
     if (expected !== undefined && expected !== current) {
       throw errors.conflict(
@@ -108,10 +116,6 @@ async function setCommissionDecision(userId, body, actor = {}) {
         { currentDecision: current || 'pending' },
         'decision_conflict',
       );
-    }
-    if (current === body.decision) {
-      unchanged = latest;
-      return;
     }
     if (latest && new Date(latest.decided_at) >= decidedAt) {
       decidedAt = new Date(new Date(latest.decided_at).getTime() + 1000);

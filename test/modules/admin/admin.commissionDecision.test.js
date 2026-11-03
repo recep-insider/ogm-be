@@ -61,6 +61,52 @@ describe('admin.service — setCommissionDecision', () => {
     expect(db.rows('commission_decisions').map((r) => r.decision)).toEqual(['approved', 'rejected']);
   });
 
+  it('saniye hassasiyetinde saklanan kararla aynı saniyedeki yeni karar bir saniye sonrasına yazılır', async () => {
+    // decided_at TIMESTAMP(0): milisaniyeler saklanmaz, iki karar aynı saniyede eşitlenmemeli.
+    jest.useFakeTimers({ now: new Date('2026-11-03T10:00:00.400Z'), doNotFake: ['nextTick', 'setImmediate'] });
+    try {
+      const stored = new Date('2026-11-03T10:00:00.000Z');
+      db.reset({
+        users: [USER],
+        commission_decisions: [{ id: 'd0', user_id: 'u1', decision: 'approved', decided_at: stored }],
+        applications: [],
+      });
+
+      await setCommissionDecision('u1', { decision: 'rejected' });
+
+      const [, second] = db.rows('commission_decisions');
+      expect(second.decided_at.toISOString()).toBe('2026-11-03T10:00:01.000Z');
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it('aynı kararın tekrarı (çift tıklama) eski expectedDecision ile gelse de çakışma değil, unchanged döner', async () => {
+    await setCommissionDecision('u1', { decision: 'approved', expectedDecision: 'pending' });
+    sendTransactional.mockClear();
+
+    const retry = await setCommissionDecision('u1', { decision: 'approved', expectedDecision: 'pending' });
+
+    expect(retry).toMatchObject({ decision: 'approved', unchanged: true, smsSent: false });
+    expect(sendTransactional).not.toHaveBeenCalled();
+  });
+
+  it('silinme sürecindeki gönüllüye karar verilemez: 409 account_pending_deletion', async () => {
+    db.reset({ users: [{ ...USER, deleted_at: new Date(), anonymized_at: null }], commission_decisions: [], applications: [] });
+
+    await expect(setCommissionDecision('u1', { decision: 'approved' }))
+      .rejects.toMatchObject({ status: 409, code: 'account_pending_deletion' });
+    expect(db.rows('commission_decisions')).toHaveLength(0);
+    expect(sendTransactional).not.toHaveBeenCalled();
+  });
+
+  it('anonimleşmiş hesap bulunamadı sayılır', async () => {
+    db.reset({ users: [{ ...USER, deleted_at: new Date(), anonymized_at: new Date() }], commission_decisions: [], applications: [] });
+
+    await expect(setCommissionDecision('u1', { decision: 'approved' }))
+      .rejects.toMatchObject({ status: 404, code: 'user_not_found' });
+  });
+
   it('aynı saniyede verilen ikinci karar en güncel karar olarak sıralanır', async () => {
     const sameSecond = new Date(Date.now() + 5000);
     db.reset({

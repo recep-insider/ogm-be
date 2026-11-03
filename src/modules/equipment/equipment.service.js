@@ -90,8 +90,11 @@ async function assertCommissionApproved(userIds, trx = db) {
  * @param {{userId?:string|null, ip?:string, userAgent?:string}} actor
  */
 async function deliverKkdSet(userId, body = {}, actor = {}, trx = db) {
-  const user = await trx('users').where({ id: userId }).whereNull('deleted_at').first();
+  const user = await trx('users').where({ id: userId }).whereNull('anonymized_at').first();
   if (!user) throw errors.notFound('Kullanıcı bulunamadı', 'user_not_found');
+  if (user.deleted_at) {
+    throw errors.conflict('Hesap silinme sürecinde; işlem yapılamaz.', undefined, 'account_pending_deletion');
+  }
   await assertCommissionApproved([userId], trx);
 
   const requested = body.itemKeys?.length ? body.itemKeys : KKD_ITEM_KEYS;

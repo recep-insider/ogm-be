@@ -27,6 +27,17 @@ const application = (userId) => ({
 });
 
 describe('deliverKkdSet — komisyon onayı', () => {
+  test('silinme sürecindeki gönüllüye set teslim edilmez: 409 account_pending_deletion', async () => {
+    db.reset({
+      users: [{ id: 'u1', deleted_at: new Date(), anonymized_at: null }],
+      commission_decisions: [decision('u1', 'approved', '2026-02-01')],
+      equipment: [],
+    });
+
+    await expect(deliverKkdSet('u1')).rejects.toMatchObject({ status: 409, code: 'account_pending_deletion' });
+    expect(db.rows('equipment')).toHaveLength(0);
+  });
+
   test('en güncel karar onay → set teslim edilir', async () => {
     db.reset({
       users: [user('u1')],
@@ -113,7 +124,7 @@ describe('adminSaveAttendance — KKD teslimi komisyon onayı', () => {
           { userId: 'u2', attended: true, kkdDelivered: true },
         ],
       }),
-    ).rejects.toMatchObject({ status: 404, code: 'user_not_found' });
+    ).rejects.toMatchObject({ status: 409, code: 'account_pending_deletion' });
 
     expect(db.rows('saha_training_applications').every((a) => a.attendance === 'kayitli')).toBe(true);
     expect(db.rows('equipment')).toHaveLength(0);
