@@ -178,6 +178,20 @@ async function patchMe(userId, body, audit = {}) {
 
   if (body.acil) await assertAcilNames(userId, body.acil, 'acil.');
 
+  // Meslek "Diğer" ise açıklama zorunlu (onboarding'deki gibi); ikisine dokunmayan eski kayıt reddedilmez.
+  if (body.meslek !== undefined || body.meslekDiger !== undefined) {
+    const stored = (await db('users').where({ id: userId }).first('meslek', 'meslek_diger')) || {};
+    const meslek = body.meslek ?? stored.meslek;
+    const diger = body.meslekDiger !== undefined ? body.meslekDiger : stored.meslek_diger;
+    const changing = (body.meslek !== undefined && body.meslek !== stored.meslek)
+      || (body.meslekDiger !== undefined && (body.meslekDiger || '') !== (stored.meslek_diger || ''));
+    if (changing && meslek === 'Diğer' && !diger) {
+      throw errors.validation('Form alanlarında hata var', {
+        errors: [{ field: 'meslekDiger', message: 'Meslek "Diğer" ise açıklama zorunlu' }],
+      });
+    }
+  }
+
   const update = {};
   for (const [k, col] of Object.entries(PATCH_KEYS)) {
     if (Object.prototype.hasOwnProperty.call(body, k)) {

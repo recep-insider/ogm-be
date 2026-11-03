@@ -185,3 +185,35 @@ describe('users.service — acil kişi adı deseni (BUG-055)', () => {
     expect(mockUpdates[0]).toMatchObject({ acil_ad: 'Ayşe 2', acil_telefon: '+905320000000' });
   });
 });
+
+describe('users.service — meslek "Diğer" açıklaması (SG-32)', () => {
+  beforeEach(() => {
+    mockUpdates.length = 0;
+    mockState.userRow = { id: 'u1', tc_kimlik: '10000000146', ad: 'Ali', soyad: 'Yılmaz', meslek: 'Memur', meslek_diger: null };
+  });
+
+  test('"Diğer"e geçerken açıklama yoksa 400 meslekDiger', async () => {
+    await expect(patchMe('u1', { meslek: 'Diğer' })).rejects.toMatchObject({
+      status: 400,
+      details: { errors: [{ field: 'meslekDiger' }] },
+    });
+    await expect(patchMe('u1', { meslek: 'Diğer', meslekDiger: '' })).rejects.toMatchObject({ status: 400 });
+    expect(mockUpdates).toHaveLength(0);
+  });
+
+  test('açıklamayla "Diğer" kaydedilir', async () => {
+    await patchMe('u1', { meslek: 'Diğer', meslekDiger: 'Orman mühendisi' });
+    expect(mockUpdates[0]).toMatchObject({ meslek: 'Diğer', meslek_diger: 'Orman mühendisi' });
+  });
+
+  test('"Diğer" iken açıklama silinemez', async () => {
+    Object.assign(mockState.userRow, { meslek: 'Diğer', meslek_diger: 'Pilot' });
+    await expect(patchMe('u1', { meslekDiger: '' })).rejects.toMatchObject({ status: 400 });
+  });
+
+  test('açıklamasız eski "Diğer" kaydı aynen yeniden gönderilince reddedilmez (PA-42999)', async () => {
+    Object.assign(mockState.userRow, { meslek: 'Diğer', meslek_diger: null });
+    await patchMe('u1', { meslek: 'Diğer', meslekDiger: '', giysiBedeni: 'L' });
+    expect(mockUpdates[0].giysi_bedeni).toBe('L');
+  });
+});
