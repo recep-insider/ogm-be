@@ -1,12 +1,14 @@
 'use strict';
 
 // Panel auth testleri için bellek içi knex/ioredis taklitleri; yalnız servisin kullandığı
-// sorgu biçimlerini (where/whereNot/whereNull/whereNotNull/whereIn + orderBy/limit/select/forUpdate +
+// sorgu biçimlerini (where/whereNot/whereNull/whereNotNull/whereIn + orderBy/limit/offset/select/forUpdate +
 // first/pluck/update/insert/delete, await ile liste, hata olunca geri alınan transaction) destekler.
 // first() de orderBy'a uyar (knex'teki gibi).
 
 function createFakeDb() {
   let tables = {};
+  let uniques = {};
+  const dupEntry = () => Object.assign(new Error('Duplicate entry'), { code: 'ER_DUP_ENTRY' });
 
   function builder(name) {
     if (!tables[name]) tables[name] = [];
@@ -14,7 +16,10 @@ function createFakeDb() {
     const preds = [];
     let sort = null;
     let max = Infinity;
+    let skip = 0;
     const matches = (row) => preds.every((p) => p(row));
+    const clashes = (self, values) => (uniques[name] || [])
+      .some((col) => values[col] !== undefined && rows.some((r) => r !== self && r[col] === values[col]));
     const list = () => {
       const out = rows.filter(matches).map((r) => ({ ...r }));
       if (sort) {
@@ -27,7 +32,7 @@ function createFakeDb() {
           return 0;
         });
       }
-      return out.slice(0, max);
+      return out.slice(skip, skip + max);
     };
     const eq = (obj) => (row) => Object.entries(obj).every(([k, v]) => row[k] === v);
     const OPS = {
@@ -72,6 +77,10 @@ function createFakeDb() {
         max = n;
         return q;
       },
+      offset(n) {
+        skip = n;
+        return q;
+      },
       select() {
         return q;
       },
@@ -91,6 +100,7 @@ function createFakeDb() {
       },
       async update(values) {
         const hit = rows.filter(matches);
+        if (hit.some((row) => clashes(row, values))) throw dupEntry();
         hit.forEach((row) => Object.assign(row, values));
         return hit.length;
       },
@@ -102,6 +112,7 @@ function createFakeDb() {
         return hit.length;
       },
       async insert(row) {
+        if ([].concat(row).some((r) => clashes(null, r))) throw dupEntry();
         [].concat(row).forEach((r) => rows.push({ ...r }));
         return [rows.length];
       },
@@ -119,6 +130,11 @@ function createFakeDb() {
   db.rows = (name) => tables[name] || [];
   db.reset = (seed = {}) => {
     tables = Object.fromEntries(Object.entries(seed).map(([k, v]) => [k, v.map((r) => ({ ...r }))]));
+    uniques = {};
+  };
+  // Benzersiz index taklidi: çakışan update/insert MySQL gibi ER_DUP_ENTRY atar.
+  db.unique = (table, ...cols) => {
+    uniques[table] = cols;
   };
   db.destroy = async () => {};
   // Transaction'lar sırayla çalışır (FOR UPDATE ile aynı satırı kilitleyen işlemler gibi).

@@ -5,7 +5,7 @@ const { validateTcKimlik } = require('../../shared/validate-tc-kimlik');
 const { cityJoiValidator } = require('../../shared/regions');
 
 const phonePattern = /^\+\d{10,15}$/;
-const namePattern = /^[A-Za-zÇĞİÖŞÜçğıöşüâîû\s']+$/;
+const namePattern = /^[A-Za-zÇĞİÖŞÜçğıöşüÂÎÛâîû\s']+$/;
 
 const tcKimlikJoi = Joi.string()
   .length(11)
@@ -31,8 +31,8 @@ function over18(date, helpers) {
 
 const kimlik = Joi.object({
   tcKimlik: tcKimlikJoi.required(),
-  ad: Joi.string().min(1).max(100).pattern(namePattern).required(),
-  soyad: Joi.string().min(1).max(100).pattern(namePattern).required(),
+  ad: Joi.string().trim().min(1).max(100).pattern(namePattern).required(),
+  soyad: Joi.string().trim().min(1).max(100).pattern(namePattern).required(),
   dogumTarihi: Joi.alternatives()
     .try(Joi.date().iso(), Joi.string().pattern(/^\d{4}-\d{2}-\d{2}$/))
     .custom(over18)
@@ -79,8 +79,8 @@ const kisisel = Joi.object({
 });
 
 const acil = Joi.object({
-  ad: Joi.string().min(1).max(100).pattern(namePattern).required(),
-  soyad: Joi.string().min(1).max(100).pattern(namePattern).required(),
+  ad: Joi.string().trim().min(1).max(100).pattern(namePattern).required(),
+  soyad: Joi.string().trim().min(1).max(100).pattern(namePattern).required(),
   telefon: Joi.string().pattern(phonePattern).required(),
   yakinlik: Joi.string().valid(...YAKINLIK).required(),
 });
@@ -107,4 +107,4 @@ const onboardingSchema = Joi.object({
   egitim: egitim.optional(),
 });
 
-module.exports = { onboardingSchema, GIYSI_BEDENI };
+module.exports = { onboardingSchema, GIYSI_BEDENI, namePattern };

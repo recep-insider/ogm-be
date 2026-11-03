@@ -5,7 +5,7 @@ const env = require('../../config/env');
 const { errors } = require('../../shared/errors');
 const { writeAudit } = require('../../shared/audit');
 const { assetUrl } = require('../../shared/asset-url');
-const { toIso, toDateOnly } = require('../../shared/dates');
+const { toIso, toDateOnly, startOfLocalDay } = require('../../shared/dates');
 const { v4: uuidv4 } = require('uuid');
 const { hasProtectiveEquipment, PROTECTIVE_TYPE } = require('../equipment/equipment.service');
 const { sendTransactional } = require('../../shared/sms-provider');
@@ -340,6 +340,17 @@ async function listVolunteers({ status, q, page = 1, pageSize = 20, pendingDelet
   };
 }
 
+// Türetilmiş görünümler (hazırlık, KKD, toplanma noktası) olmayan kayıtta da boş değer üretir; önce varlık denetlenir.
+async function assertVolunteer(userId) {
+  const user = await db('users').where({ id: userId }).whereNull('anonymized_at').first('id');
+  if (!user) throw errors.notFound('Kullanıcı bulunamadı', 'user_not_found');
+}
+
+async function assertMission(missionId) {
+  const mission = await db('missions').where({ id: missionId }).first('id');
+  if (!mission) throw errors.notFound('Görev bulunamadı', 'mission_not_found');
+}
+
 /** Gönüllü detayı (admin paneli) — PII burada döner: tcKimlik, adres, acil kişi, belgeler. */
 async function getVolunteer(userId, actor = {}) {
   // Silinme sürecindeki hesap (K3 listesi) da açılır; anonimleşmiş hesap artık kişi değildir.
@@ -425,7 +436,8 @@ function statusCounts(rows) {
 
 /** Operasyon Merkezi / sidebar sayaçları — tek istekte tüm özet. */
 async function dashboardSummary() {
-  const startOfToday = db.raw('curdate()');
+  // "Bugün" Türkiye gününe göre; created_at UTC tutulur.
+  const startOfToday = startOfLocalDay();
   const [
     volunteerTotal, appStatuses, fireStatuses, fireToday, missionStatuses,
     pendingPhotos, sahaPending, emergencyTotal, emergencyToday, blogActive,
@@ -612,6 +624,8 @@ async function reportsSeries({ metric, interval, from, to, region }) {
 }
 
 module.exports = {
+  assertVolunteer,
+  assertMission,
   setApplicationStatus,
   setCommissionDecision,
   listVolunteers,

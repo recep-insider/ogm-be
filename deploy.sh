@@ -215,27 +215,32 @@ else
   log "Güncelleme modu: secret üretimi atlandı (sunucudaki .env korunuyor)"
 fi
 
-# ─── Yerel npm install (linux/amd64 platformu için) ──────────────────────────────
-# Sunucudaki npm 10.x bug'ı yüzünden node_modules'u yerel makinada hazırlıyoruz.
-# Docker ile linux/amd64 platform'da npm ci çalıştırılır (qemu emulation).
-log "node_modules yerel olarak hazırlanıyor (linux/amd64 container)"
-command -v docker >/dev/null || die "Docker yerelde bulunamadı."
-docker info >/dev/null 2>&1 || die "Docker Desktop çalışmıyor."
-docker run --rm \
-  -v "$LOCAL_REPO:/app" \
-  -w /app \
-  --platform linux/amd64 \
-  node:20-bookworm-slim \
-  bash -c "rm -rf node_modules && npm ci --omit=dev --no-audit --no-fund" \
-  || die "Yerel npm ci başarısız."
-[ -f "$LOCAL_REPO/node_modules/express/package.json" ] \
-  || die "node_modules eksik üretildi (express yok)."
-ok "node_modules hazır ($(du -sh "$LOCAL_REPO/node_modules" | awk '{print $1}'))"
-
 # ─── Geçici dizin ──────────────────────────────────────────────
 TMPDIR=$(mktemp -d)
 trap 'rm -rf "$TMPDIR"; unset SSHPASS' EXIT
 chmod 700 "$TMPDIR"
+
+# ─── Yerel npm install (linux/amd64 platformu için) ──────────────────────────────
+# Sunucudaki npm 10.x bug'ı yüzünden node_modules'u yerel makinada hazırlıyoruz.
+# Docker ile linux/amd64 platform'da npm ci çalıştırılır (qemu emulation).
+# Paketler repo dışındaki geçici dizinde kurulur: geliştiricinin node_modules'u (dev bağımlılıkları,
+# macOS'a derlenmiş bcrypt) değişmez.
+log "node_modules geçici dizinde hazırlanıyor (linux/amd64 container)"
+command -v docker >/dev/null || die "Docker yerelde bulunamadı."
+docker info >/dev/null 2>&1 || die "Docker Desktop çalışmıyor."
+BUILD_DIR="$TMPDIR/build"
+mkdir -p "$BUILD_DIR"
+cp "$LOCAL_REPO/package.json" "$LOCAL_REPO/package-lock.json" "$BUILD_DIR/"
+docker run --rm \
+  -v "$BUILD_DIR:/app" \
+  -w /app \
+  --platform linux/amd64 \
+  node:20-bookworm-slim \
+  bash -c "npm ci --omit=dev --no-audit --no-fund" \
+  || die "Yerel npm ci başarısız."
+[ -f "$BUILD_DIR/node_modules/express/package.json" ] \
+  || die "node_modules eksik üretildi (express yok)."
+ok "node_modules hazır ($(du -sh "$BUILD_DIR/node_modules" | awk '{print $1}'))"
 
 # ─── .env üret (sadece fresh) ──────────────────────────────────────────────
 if [ "$MODE" = "fresh" ]; then
@@ -334,8 +339,9 @@ ok ".env hazır"
 fi
 
 # ─── Rsync exclude listesi ──────────────────────────────────────────────
-# Not: node_modules dahil ediliyor (yerel'de linux/amd64 için kuruldu).
+# Yereldeki node_modules gönderilmez; linux/amd64 paketleri $BUILD_DIR'den ayrıca gider.
 cat > "$TMPDIR/rsync-exclude" <<EOF
+node_modules/
 .git/
 .idea/
 .vscode/
@@ -366,6 +372,7 @@ log "Dosyalar transfer ediliyor (rsync)"
 run_rsync -az --delete \
   --exclude-from="$TMPDIR/rsync-exclude" \
   "$LOCAL_REPO/" "$TARGET:$DEPLOY_DIR/"
+run_rsync -az --delete "$BUILD_DIR/node_modules/" "$TARGET:$DEPLOY_DIR/node_modules/"
 ok "Transfer tamam"
 
 # grep rc: 0 = eşleşti, 1 = eşleşmedi, diğer = ssh/dosya hatası. Hata "yok"

@@ -184,6 +184,9 @@ async function listMine(userId) {
 async function adminSetStatus(id, { status }, actor = {}) {
   const row = await db('fire_reports').where({ id }).first();
   if (!row) throw errors.notFound('Bildirim bulunamadı', 'not_found');
+  if (status === 'rejected' && row.mission_id) {
+    throw errors.conflict('Olaya bağlı ihbar reddedilemez; önce olaydan ayırın', { missionId: row.mission_id }, 'report_linked');
+  }
 
   await db('fire_reports').where({ id }).update({ status, updated_at: new Date() });
 
@@ -298,33 +301,44 @@ async function linkToMission(missionId, reportIds, actor = {}) {
     throw errors.conflict('Olay arşivlendi, ihbar bağlanamaz', undefined, 'mission_archived');
   }
 
-  const rows = await db('fire_reports').whereIn('id', reportIds);
+  const rows = await linkReports(db, missionId, reportIds, actor);
+  await notifyLinked(rows, missionId);
+  return { ok: true, missionId, linked: reportIds };
+}
+
+/**
+ * Bağlamanın yazım kısmı; olay oluşturma bunu kendi işleminde çağırır, bildirim (notifyLinked)
+ * işlem kesinleştikten sonra gider. Olmayan ihbar 404'tür, hiçbiri bağlanmaz.
+ */
+async function linkReports(conn, missionId, reportIds, actor = {}) {
+  const rows = await conn('fire_reports').whereIn('id', reportIds);
   const missing = reportIds.filter((id) => !rows.some((r) => r.id === id));
-  if (missing.length) throw errors.notFound('İhbar bulunamadı', 'not_found');
+  if (missing.length) throw errors.make(404, 'not_found', 'İhbar bulunamadı', { missing });
 
   const now = new Date();
-  await db('fire_reports')
+  await conn('fire_reports')
     .whereIn('id', reportIds)
     .update({ mission_id: missionId, status: 'confirmed', updated_at: now });
 
-  await writeAudit({
-    userId: actor.userId || null,
-    action: 'fire_reports.link',
-    entity: 'mission',
-    entityId: missionId,
-    ip: actor.ip,
-    userAgent: actor.userAgent,
-    payload: { reportIds },
-  });
+  const audit = { userId: actor.userId || null, entity: 'mission', ip: actor.ip, userAgent: actor.userAgent };
+  await writeAudit({ ...audit, action: 'fire_reports.link', entityId: missionId, payload: { reportIds } }, conn);
+  // Başka olaydan taşınan ihbar eski olayın zaman çizelgesinde "ayrıldı" olarak kalır.
+  for (const row of rows.filter((r) => r.mission_id && r.mission_id !== missionId)) {
+    await writeAudit(
+      { ...audit, action: 'fire_reports.unlink', entityId: row.mission_id, payload: { reportId: row.id, movedTo: missionId } },
+      conn,
+    );
+  }
+  return rows;
+}
 
-  // Bağlama ihbarı "Doğrulandı" yapar — ihbarcı bunu push ile öğrenir. Zaten bu olaya
-  // bağlı ve onaylı olan ihbar için tekrar bildirim gönderilmez.
+// Bağlama ihbarı "Doğrulandı" yapar — ihbarcı bunu push ile öğrenir. Zaten bu olaya
+// bağlı ve onaylı olan ihbar için tekrar bildirim gönderilmez.
+async function notifyLinked(rows, missionId) {
   for (const row of rows) {
     if (row.mission_id === missionId && row.status === 'confirmed') continue;
     await notifyReporter(row, 'confirmed', missionId);
   }
-
-  return { ok: true, missionId, linked: reportIds };
 }
 
 async function unlinkFromMission(missionId, reportId, actor = {}) {
@@ -378,6 +392,8 @@ module.exports = {
   titlesFor,
   titleFor,
   linkToMission,
+  linkReports,
+  notifyLinked,
   unlinkFromMission,
   mediaForMission,
   STATUS_LABEL,

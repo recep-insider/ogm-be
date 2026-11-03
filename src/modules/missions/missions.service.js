@@ -14,7 +14,7 @@ const { writeAudit } = require('../../shared/audit');
 const { sendPushToUser } = require('../../shared/push-provider');
 const readinessService = require('../users/readiness.service');
 const assemblyPoints = require('./assemblyPoints.service');
-const { regionForCity, regionLabel, applyRegionFilter } = require('../../shared/regions');
+const { regionForCity, regionLabel, applyRegionFilter, canonicalCity } = require('../../shared/regions');
 const { coversTarget } = require('../../shared/geo-distance');
 const { refYear, formatRefNo } = require('../../shared/mission-ref');
 
@@ -102,19 +102,27 @@ async function approvedPhotosFor(missionId) {
   return rows.map((p) => ({ id: p.id, url: assetUrl(p.file_path), kind: p.kind, createdAt: toIso(p.submitted_at) }));
 }
 
+// §5: bağlı ihbarların fotoğraf/videoları olayın medya havuzunu besler. Mobil galeri yalnızca
+// görsel çizer; onaylı videolar yalnız `photos` içinde gider. Aktif ve geçmiş detay aynı kaynağı kullanır.
+function galleryOf(m, linkedMedia, photos) {
+  return [
+    ...safeJson(m.gallery, []).map(assetUrl),
+    ...linkedMedia.map((x) => x.url),
+    ...photos.filter((p) => p.kind === 'image').map((p) => p.url),
+  ];
+}
+
+function mediaOf(missionId) {
+  return Promise.all([require('../fireReports/fireReports.service').mediaForMission(missionId), approvedPhotosFor(missionId)]);
+}
+
 function mapActiveDetail(m, userStatus, { onSiteCount, trend, assemblyPoint, userId, linkedMedia = [], photos = [] }) {
   return {
     ...mapActiveSummary(m, userStatus),
     regionLabel: m.region_label || '',
     fullTitle: m.full_title || m.title,
     description: m.description || '',
-    // §5: bağlı ihbarların fotoğraf/videoları olayın medya havuzunu besler.
-    // Mobil galeri yalnızca görsel çizer; onaylı videolar yalnız `photos` içinde gider.
-    gallery: [
-      ...safeJson(m.gallery, []).map(assetUrl),
-      ...linkedMedia.map((x) => x.url),
-      ...photos.filter((p) => p.kind === 'image').map((p) => p.url),
-    ],
+    gallery: galleryOf(m, linkedMedia, photos),
     photos,
     // §12 / mobil §6: tahmini alan, ihtiyaç listesi, kapsama yarıçapı, şiddet, hava
     // durumu ve ekip sayıları KALDIRILDI — merkez operatörünün doğrulayamayacağı saha
@@ -165,11 +173,12 @@ function mapHistorySummary(m, userStatus = m.user_status) {
   };
 }
 
-function mapHistoryDetail(m, volunteers, userStatus) {
+function mapHistoryDetail(m, volunteers, userStatus, { linkedMedia = [], photos = [] } = {}) {
   return {
     ...mapHistorySummary(m, userStatus),
     subtitle: m.subtitle || null,
-    gallery: safeJson(m.gallery, []).map(assetUrl),
+    gallery: galleryOf(m, linkedMedia, photos),
+    photos,
     summary: m.summary || '',
     stats: { volunteers },
   };
@@ -217,12 +226,11 @@ async function getActive(userId, id) {
   if (!m || m.status === 'archived') throw errors.notFound('Görev bulunamadı', 'mission_not_found');
   // §12: "saha güncellemeleri akışı" kaldırıldı — merkez operatörünün doğrulayamayacağı
   // saha verisiydi; duyurular artık Bildirim Merkezi'nden gider.
-  const [onSiteCount, trend, assemblyPoint, linkedMedia, photos] = await Promise.all([
+  const [onSiteCount, trend, assemblyPoint, [linkedMedia, photos]] = await Promise.all([
     sahadakiSayisi(id, m),
     checkInTrend(id),
     assemblyPointFor(id),
-    require('../fireReports/fireReports.service').mediaForMission(id),
-    approvedPhotosFor(id),
+    mediaOf(id),
   ]);
   return mapActiveDetail(m, await statusFor(userId, id), {
     onSiteCount,
@@ -379,11 +387,13 @@ async function scan(missionId, body, actor = {}) {
   if (readiness.engeller.length) {
     throw errors.make(403, 'readiness_incomplete', 'Hazırlık zincirinde eksik adım var', {
       engeller: readiness.engeller,
+      volunteerName: [user.ad, user.soyad].filter(Boolean).join(' ') || null,
     });
   }
 
-  const checkedInAt = body.scannedAt ? new Date(body.scannedAt) : new Date();
   const existing = await db('check_ins').where({ mission_id: missionId, user_id: userId }).first();
+  // Tekrar okutma ilk giriş zamanını değiştirmez.
+  let checkedInAt = existing ? existing.checked_in_at : body.scannedAt ? new Date(body.scannedAt) : new Date();
   if (!existing) {
     try {
       await db('check_ins').insert({
@@ -395,8 +405,11 @@ async function scan(missionId, body, actor = {}) {
         recorded_by: actor.name || actor.role || 'officer',
       });
     } catch (err) {
-      // Aynı QR eş zamanlı iki kez okutulursa (BUG-025) ilk giriş kaydı geçerlidir.
+      // Aynı QR eş zamanlı iki kez okutulursa (BUG-025) ilk giriş kaydı geçerlidir; yanıt ve katılım
+      // kaydı da onun zamanını taşır.
       if (err.code !== 'ER_DUP_ENTRY') throw err;
+      const first = await db('check_ins').where({ mission_id: missionId, user_id: userId }).first();
+      if (first) checkedInAt = first.checked_in_at;
     }
   }
 
@@ -428,6 +441,7 @@ async function scan(missionId, body, actor = {}) {
       if (err.code !== 'ER_DUP_ENTRY') throw err;
       await db('mission_participants')
         .where({ user_id: userId, mission_id: missionId })
+        .whereNot({ status: 'sahada' })
         .update({ status: 'sahada', on_site_at: checkedInAt, updated_at: now });
     }
   }
@@ -546,8 +560,11 @@ async function getHistory(userId, id) {
   if (!participant || !HISTORY_STATUSES.includes(participant.status)) {
     throw errors.make(403, 'not_participated', 'Bu görevde yer almadınız');
   }
-  const volunteers = await db('check_ins').where({ mission_id: id }).count({ c: '*' }).first();
-  return mapHistoryDetail(m, Number(volunteers?.c || 0), participant.status);
+  const [volunteers, [linkedMedia, photos]] = await Promise.all([
+    db('check_ins').where({ mission_id: id }).count({ c: '*' }).first(),
+    mediaOf(id),
+  ]);
+  return mapHistoryDetail(m, Number(volunteers?.c || 0), participant.status, { linkedMedia, photos });
 }
 
 // Admin (panel) görünümü — tüm alanlar camelCase + cover URL + bekleyen foto sayısı.
@@ -759,8 +776,12 @@ async function adminDeleteMedia(missionId, mediaId, actor = {}) {
  */
 async function adminCreate(body, actor = {}) {
   const id = uuidv4();
-  const now = new Date();
+  // Saniyeye kırpılır: DATETIME(0) milisaniyeyi yukarı yuvarlıyor, aynı istekte yazılan çağrı kaydı
+  // (audit, aşağı yuvarlanır) zaman çizelgesinde oluşturmadan önce görünüyordu.
+  const now = new Date(Math.floor(Date.now() / 1000) * 1000);
+  const fireReports = require('../fireReports/fireReports.service');
   let refNo;
+  let linked = null;
 
   await db.transaction(async (trx) => {
     refNo = await nextRefNo(trx, now);
@@ -801,26 +822,12 @@ async function adminCreate(body, actor = {}) {
     });
 
     // İhbardan olay oluşturulduysa bağ kalıcıdır ve ihbar "Doğrulandı" olur
-    // (§5, mobil §7); bağın tek sahibi fire_reports.mission_id'dir.
+    // (§5, mobil §7); bağın tek sahibi fire_reports.mission_id'dir. Olmayan ihbar olayı da açtırmaz.
     if (body.linkedReportIds?.length) {
-      await trx('fire_reports')
-        .whereIn('id', body.linkedReportIds)
-        .update({ mission_id: id, status: 'confirmed', updated_at: now });
-      // Zaman çizelgesi bağı bu kayıttan okur.
-      await writeAudit(
-        {
-          userId: actor.userId || null,
-          action: 'fire_reports.link',
-          entity: 'mission',
-          entityId: id,
-          ip: actor.ip,
-          userAgent: actor.userAgent,
-          payload: { reportIds: body.linkedReportIds },
-        },
-        trx,
-      );
+      linked = await fireReports.linkReports(trx, id, body.linkedReportIds, actor);
     }
   });
+  if (linked) await fireReports.notifyLinked(linked, id);
 
   let called = null;
   if (body.callVolunteers) called = await callReadyVolunteers(id, actor);
@@ -876,6 +883,13 @@ async function adminUpdate(missionId, body, actor = {}) {
   }
   for (const [key, column] of Object.entries(CLEARABLE_FIELDS)) {
     if (body[key] !== undefined) row[column] = body[key] || null;
+  }
+  // İl listesi doğrulaması sonradan geldi: değişmeyen eski il yeniden gönderilince reddedilmez.
+  if (row.il && row.il !== mission.il) {
+    row.il = canonicalCity(row.il);
+    if (!row.il) {
+      throw errors.validation('Form alanlarında hata var', { errors: [{ field: 'il', message: 'Geçersiz il adı' }] });
+    }
   }
   if (body.coordinates !== undefined) {
     row.lat = body.coordinates.lat;

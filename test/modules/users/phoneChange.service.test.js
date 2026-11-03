@@ -125,3 +125,46 @@ describe('phone-change.commit — hata kodları (BUG-038)', () => {
     expect(db.rows('users')[0].phone).toBe('+905320000000');
   });
 });
+
+describe('phone-change — numara başkasına geçtiyse (BUG-048)', () => {
+  it('commit 500 değil 409; telefon değişmez', async () => {
+    redis.store.set('otp:phone-change:s1', {
+      value: JSON.stringify({ userId: 'u1', newPhone: NEW_PHONE, codeHash: 'hash:123456', attempts: 0 }),
+      expiresAt: null,
+    });
+    db.reset({ users: [{ id: 'u1', phone: '+905320000000', is_active: true }, { id: 'u2', phone: NEW_PHONE, is_active: true }] });
+    db.unique('users', 'phone');
+
+    await expect(service.commit({ userId: 'u1', sessionId: 's1', code: '123456', ip: '1.1.1.1', userAgent: 'jest' }))
+      .rejects.toMatchObject({ status: 409, code: 'conflict' });
+    expect(db.rows('users')[0].phone).toBe('+905320000000');
+  });
+
+  it('çakışma dışı veritabanı hatası 409 sayılmaz, olduğu gibi yükselir', async () => {
+    redis.store.set('otp:phone-change:s1', {
+      value: JSON.stringify({ userId: 'u1', newPhone: NEW_PHONE, codeHash: 'hash:123456', attempts: 0 }),
+      expiresAt: null,
+    });
+    const lockErr = Object.assign(new Error('lock'), { code: 'ER_LOCK_WAIT_TIMEOUT' });
+    Object.defineProperty(db.rows('users')[0], 'phone', {
+      get: () => '+905320000000',
+      set: () => { throw lockErr; },
+    });
+
+    await expect(service.commit({ userId: 'u1', sessionId: 's1', code: '123456', ip: '1.1.1.1', userAgent: 'jest' }))
+      .rejects.toBe(lockErr);
+    expect(writeAudit).not.toHaveBeenCalledWith(expect.objectContaining({ action: 'users.phone-change.commit' }));
+  });
+});
+
+describe('phone-change — test numarası (KALAN_ISLER §2.3)', () => {
+  it('test numarasına sabit test kodu gider; o kodla değiştirilir', async () => {
+    env.sms.dummyPhones = [NEW_PHONE];
+    const { sessionId } = await init();
+    const stored = JSON.parse(redis.set.mock.calls[0][1]);
+    redis.store.set(`otp:phone-change:${sessionId}`, { value: JSON.stringify(stored), expiresAt: null });
+
+    await expect(service.commit({ userId: 'u1', sessionId, code: env.sms.dummyCode, ip: '1.1.1.1', userAgent: 'jest' }))
+      .resolves.toMatchObject({ ok: true, phone: NEW_PHONE });
+  });
+});

@@ -23,10 +23,11 @@ const trainingsService = require('../trainings/trainings.service');
 const blogService = require('../blog/blog.service');
 const adminService = require('./admin.service');
 const dispatchService = require('../notifications/dispatch.service');
-const { REGIONS, REGION_KEYS } = require('../../shared/regions');
+const { REGIONS, REGION_KEYS, cityJoiValidator } = require('../../shared/regions');
 const equipmentService = require('../equipment/equipment.service');
 const readinessService = require('../users/readiness.service');
 const { KKD_ITEM_KEYS } = require('../../shared/kkd');
+const { toLocalDateOnly, todayLocal } = require('../../shared/dates');
 
 // İşlemi yapan panel kullanıcısının audit bağlamı; userId panel_users.id'dir.
 // SOS geçmişi ve bildirim kaydı ad'ı "by" olarak saklar.
@@ -125,6 +126,7 @@ router.put(
  *               note: { type: string }
  *     responses:
  *       200: { description: Güncellendi }
+ *       409: { description: 'report_linked — olaya bağlı ihbar reddedilemez; önce olaydan ayrılmalı (BUG-059)' }
  */
 router.put(
   '/fire-reports/:id',
@@ -498,7 +500,6 @@ const sosQuerySchema = Joi.object({
 const sosHistorySchema = Joi.object({
   action: Joi.string().valid('responded').optional(),
   note: Joi.string().trim().max(300).optional(),
-  by: Joi.string().trim().max(120).optional(),
 }).or('action', 'note');
 
 /**
@@ -551,8 +552,7 @@ router.get(
  *             type: object
  *             properties:
  *               action: { type: string, enum: [responded] }
- *               note: { type: string, maxLength: 300 }
- *               by: { type: string, description: 'Kaydı düşen operatör/görevli adı' }
+ *               note: { type: string, maxLength: 300, description: 'Kaydı düşen oturumdaki panel kullanıcısıdır (BUG-060)' }
  *     responses:
  *       200: { description: '{ok, sosId, status, history[], responseSeconds}' }
  *       404: { description: sos_not_found }
@@ -1189,9 +1189,16 @@ router.post(
 
 const kkdDeliverSchema = Joi.object({
   // Operatör YALNIZCA seri numarası girer; beden profilden, ömür sonu kalem tipinden türer.
-  serials: Joi.object().pattern(Joi.string().valid(...KKD_ITEM_KEYS), Joi.string().trim().max(64).allow('', null)).optional(),
+  // Bilinmeyen kalem anahtarı sessizce atılmaz, 400 döner (stripUnknown bu nesnede kapalı).
+  serials: Joi.object()
+    .pattern(Joi.string().valid(...KKD_ITEM_KEYS), Joi.string().trim().max(64).allow('', null))
+    .prefs({ stripUnknown: false })
+    .optional(),
   itemKeys: Joi.array().items(Joi.string().valid(...KKD_ITEM_KEYS)).min(1).optional(),
-  assignedAt: Joi.date().iso().optional(),
+  // Türkiye gününe göre bugün dahil; tarih-only değer UTC gece yarısı olarak çözülür.
+  assignedAt: Joi.date().iso()
+    .custom((v, h) => (toLocalDateOnly(v) > todayLocal() ? h.message('Teslim tarihi gelecekte olamaz') : v))
+    .optional(),
 });
 
 /**
@@ -1209,6 +1216,7 @@ const kkdDeliverSchema = Joi.object({
  *       - { in: path, name: userId, required: true, schema: { type: string } }
  *     responses:
  *       200: { description: '{ok, delivered[], kkdDurumu, items[]}' }
+ *       400: { description: 'validation_error — assignedAt gelecekte (BUG-061) ya da serials içinde bilinmeyen kalem anahtarı (BUG-105)' }
  *       404: { description: user_not_found }
  *       409: { description: 'commission_not_approved — en güncel komisyon kararı onay değil' }
  *   get:
@@ -1219,6 +1227,7 @@ const kkdDeliverSchema = Joi.object({
  *       - { in: path, name: userId, required: true, schema: { type: string } }
  *     responses:
  *       200: { description: 'beş kalemin zimmet/ömür/beden görünümü' }
+ *       404: { description: user_not_found }
  */
 router.post(
   '/volunteers/:userId/kkd',
@@ -1231,6 +1240,7 @@ router.post(
 router.get(
   '/volunteers/:userId/kkd',
   asyncHandler(async (req, res) => {
+    await adminService.assertVolunteer(req.params.userId);
     res.json({ items: await readinessService.kkdSet(req.params.userId) });
   }),
 );
@@ -1246,10 +1256,12 @@ router.get(
  *       - { in: path, name: userId, required: true, schema: { type: string } }
  *     responses:
  *       200: { description: '{zincir, kisiDurumu, mudahaleYetkisi, engeller, komisyon}' }
+ *       404: { description: user_not_found }
  */
 router.get(
   '/volunteers/:userId/readiness',
   asyncHandler(async (req, res) => {
+    await adminService.assertVolunteer(req.params.userId);
     res.json(await readinessService.getReadiness(req.params.userId));
   }),
 );
@@ -1328,7 +1340,7 @@ const missionCreateSchema = Joi.object({
   fullTitle: Joi.string().trim().max(200).optional(),
   shortLocation: Joi.string().trim().max(120).required(),
   // §11: bölge kapsamı il alanından eşleşir.
-  il: Joi.string().trim().max(60).optional(),
+  il: Joi.string().trim().max(60).custom(cityJoiValidator).messages({ 'any.invalid': 'Geçersiz il adı' }).optional(),
   ilce: Joi.string().trim().max(60).optional(),
   regionLabel: Joi.string().trim().max(120).optional(),
   locationLabel: Joi.string().trim().max(200).optional(),
@@ -1388,10 +1400,11 @@ const assemblyPointUpsertSchema = Joi.object({
  *         schema: { type: string, maxLength: 200 }
  *         description: >-
  *           Aynı anahtar ve aynı gövdeyle tekrar gelen istek yeniden işlenmez; 24 saat içinde ilk
- *           başarılı yanıt `Idempotent-Replayed: true` başlığıyla döner. İlk istek sürerken (süre sınırı yok) aynı anahtar 409 idempotency_in_flight alır. 4xx yanıt anahtarı serbest bırakır; 5xx'te anahtar işlem bittikten 40–60 sn sonra düşer, bu sürede tekrar deneme 409 alır.
+ *           başarılı yanıt `Idempotent-Replayed: true` başlığıyla döner. İlk istek sürerken (en çok 30 dk) aynı anahtar 409 idempotency_in_flight alır. 4xx yanıt anahtarı serbest bırakır; 5xx'te anahtar işlem bittikten 40–60 sn sonra düşer, bu sürede tekrar deneme 409 alır.
  *     responses:
- *       200: { description: '{ok, missionId, refNo, status: active, called}' }
+ *       200: { description: '{ok, missionId, refNo, status: active, called}. linkedReportIds ihbarları "Doğrulandı" olur, sahiplerine bildirim gider; başka olaya bağlı ihbar taşınır ve eski olayda ayrılma kaydı kalır.' }
  *       400: { description: idempotency_key_invalid }
+ *       404: { description: 'not_found — linkedReportIds içinde olmayan ihbar (details.missing); olay oluşmaz (BUG-056)' }
  *       409: { description: idempotency_in_flight }
  *       422: { description: idempotency_key_reused }
  *       503: { description: 'idempotency_unavailable — Redis yok; istek işlenmedi, tekrar denenebilir' }
@@ -1512,6 +1525,7 @@ router.post(
  *       - { in: path, name: id, required: true, schema: { type: string } }
  *     responses:
  *       200: { description: 'Toplanma noktası veya null' }
+ *       404: { description: 'mission_not_found — olay yok (BUG-058)' }
  *   put:
  *     tags: [Admin]
  *     summary: Toplanma noktasını oluştur/güncelle (panel)
@@ -1529,6 +1543,7 @@ router.post(
 router.get(
   '/missions/:id/assembly-point',
   asyncHandler(async (req, res) => {
+    await adminService.assertMission(req.params.id);
     res.json(await assemblyPointsService.getByMission(req.params.id));
   }),
 );
@@ -1666,7 +1681,7 @@ router.get(
  *         name: Idempotency-Key
  *         required: false
  *         schema: { type: string, maxLength: 200 }
- *         description: Aynı anahtar ve gövdeyle tekrar gelen istek yeniden işlenmez; ilk başarılı yanıt `Idempotent-Replayed: true` ile döner (ayrıntı POST /admin/missions).
+ *         description: 'Aynı anahtar ve gövdeyle tekrar gelen istek yeniden işlenmez; ilk başarılı yanıt `Idempotent-Replayed: true` ile döner (ayrıntı POST /admin/missions).'
  *     requestBody:
  *       required: true
  *       content:
@@ -1795,6 +1810,8 @@ const notificationSendSchema = Joi.object({
   region: Joi.string().valid(...REGION_KEYS, 'all').optional(),
 })
   .oxor('missionId', 'audience')
+  // Olaysız segment sessizce genel "hazır" kitlesine gidiyordu; segment yalnız olayla anlamlı.
+  .with('segments', 'missionId')
   // Yarıçap/mesafe alanı bilinçli olarak YOK: admin mesafe girmez (§4).
   .without('segments', ['audience']);
 
@@ -1824,10 +1841,10 @@ const notificationSendSchema = Joi.object({
  *         schema: { type: string, maxLength: 200 }
  *         description: >-
  *           Aynı anahtar ve aynı gövdeyle tekrar gelen istek yeniden işlenmez; 24 saat içinde ilk
- *           başarılı yanıt `Idempotent-Replayed: true` başlığıyla döner. İlk istek sürerken (süre sınırı yok) aynı anahtar 409 idempotency_in_flight alır. 4xx yanıt anahtarı serbest bırakır; 5xx'te anahtar işlem bittikten 40–60 sn sonra düşer, bu sürede tekrar deneme 409 alır.
+ *           başarılı yanıt `Idempotent-Replayed: true` başlığıyla döner. İlk istek sürerken (en çok 30 dk) aynı anahtar 409 idempotency_in_flight alır. 4xx yanıt anahtarı serbest bırakır; 5xx'te anahtar işlem bittikten 40–60 sn sonra düşer, bu sürede tekrar deneme 409 alır.
  *     responses:
  *       200: { description: '{ok, notificationId, channel, recipients, pushCount, smsCount}' }
- *       400: { description: idempotency_key_invalid }
+ *       400: { description: 'idempotency_key_invalid; validation_error — segments yalnız missionId ile (BUG-062)' }
  *       422: { description: idempotency_key_reused }
  *       409: { description: 'idempotency_in_flight; mission_archived — arşivlenmiş olaya bildirim gönderilemez' }
  *       503: { description: 'idempotency_unavailable — Redis yok; istek işlenmedi, tekrar denenebilir' }

@@ -94,3 +94,18 @@ describe('onboardingSchema — hobiler artık opsiyonel', () => {
     expect(value.kisisel.hobiler).toEqual([]);
   });
 });
+
+describe('onboardingSchema — ad deseni (BUG-051)', () => {
+  const check = (patch) => onboardingSchema.validate({ ...basePayload(), ...patch }, VALIDATE_OPTIONS);
+
+  it.each(['Âdem', 'Îlik', 'Ûmit'])('büyük şapkalı harfle başlayan ad (%s) kabul', (ad) => {
+    const kimlik = { ...basePayload().kimlik, ad };
+    expect(check({ kimlik }).error).toBeUndefined();
+    expect(check({ acil: { ...basePayload().acil, ad } }).error).toBeUndefined();
+  });
+
+  it('yalnız boşluk ad 400', () => {
+    const { error } = check({ kimlik: { ...basePayload().kimlik, soyad: '   ' } });
+    expect(error.details.map((d) => d.path.join('.'))).toContain('kimlik.soyad');
+  });
+});

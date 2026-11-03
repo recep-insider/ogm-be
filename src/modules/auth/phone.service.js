@@ -46,6 +46,15 @@ function getOtpForPhone(phone) {
   return generateOtp();
 }
 
+// Kod gönderimi ve hatalı kod denemesi aynı saatlik bütçeden düşer: yeni kod isteyerek deneme hakkı yenilenmez.
+function hitPhoneHourly(phone) {
+  return hitFixedWindow(rawRedis, `${RATE_PHONE_PREFIX}${phone}`, {
+    max: 5,
+    windowSec: 3600,
+    message: 'Telefon başına saatlik OTP limiti aşıldı',
+  });
+}
+
 async function checkRateLimits(phone, ip) {
   const banned = await redis.get(`${BAN_PREFIX}${phone}`);
   if (banned) {
@@ -55,11 +64,7 @@ async function checkRateLimits(phone, ip) {
     });
   }
 
-  await hitFixedWindow(rawRedis, `${RATE_PHONE_PREFIX}${phone}`, {
-    max: 5,
-    windowSec: 3600,
-    message: 'Telefon başına saatlik OTP limiti aşıldı',
-  });
+  await hitPhoneHourly(phone);
 
   if (ip) {
     await hitFixedWindow(rawRedis, `${RATE_IP_PREFIX}${ip}`, {
@@ -157,6 +162,13 @@ async function verifyOtpFlow({ sessionId, code, ip, userAgent }) {
   const ok = await verifyOtp(code, session.codeHash);
   if (!ok) {
     await redis.set(sessionKey(sessionId), JSON.stringify(session), 'KEEPTTL');
+    // Deneme sayılır ama yanıt invalid_otp kalır: bütçe dolunca yeni kod istenemez, oturumun kendi deneme
+    // sınırı ve kilidi işlemeye devam eder.
+    try {
+      await hitPhoneHourly(session.phone);
+    } catch (err) {
+      if (err.status !== 429) throw err;
+    }
     throw errors.make(400, 'invalid_otp', 'Geçersiz doğrulama kodu. Lütfen tekrar deneyin.');
   }
 

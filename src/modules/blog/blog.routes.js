@@ -1,8 +1,10 @@
 'use strict';
 
 const { Router } = require('express');
+const Joi = require('joi');
 const asyncHandler = require('../../shared/async-handler');
 const { optionalAuth } = require('../../middlewares/auth');
+const validate = require('../../middlewares/validate');
 const service = require('./blog.service');
 
 const router = Router();
@@ -18,6 +20,10 @@ router.use(optionalAuth);
  *     tags: [Blog]
  *     summary: Blog yazıları
  *     security: [ {}, { bearerAuth: [] } ]
+ *     parameters:
+ *       - { in: query, name: category, schema: { type: string, enum: [haber, teknik, egitim, tumu] } }
+ *       - { in: query, name: page, schema: { type: integer, minimum: 1, default: 1 } }
+ *       - { in: query, name: pageSize, schema: { type: integer, minimum: 1, maximum: 100 }, description: 'Verilmezse tüm liste' }
  *     responses:
  *       200:
  *         description: Yazı listesi
@@ -26,9 +32,16 @@ router.use(optionalAuth);
  *             schema:
  *               type: array
  *               items: { $ref: '#/components/schemas/BlogPost' }
+ *       400: { description: 'validation_error — geçersiz category (dizi dahil), page ya da pageSize' }
  */
-// mobil §9: kategori filtresi — Haber · Teknik · Eğitim + "Tümü".
-router.get('/posts', asyncHandler(async (req, res) => {
+// mobil §9: kategori filtresi — Haber · Teknik · Eğitim + "Tümü". pageSize verilmezse tüm liste döner.
+const listQuery = Joi.object({
+  category: Joi.string().valid('haber', 'teknik', 'egitim', 'tumu'),
+  page: Joi.number().integer().min(1).default(1),
+  pageSize: Joi.number().integer().min(1).max(100),
+});
+
+router.get('/posts', validate({ query: listQuery }), asyncHandler(async (req, res) => {
   res.status(200).json(await service.list(req.query));
 }));
 

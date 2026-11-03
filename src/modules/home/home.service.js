@@ -2,7 +2,7 @@
 
 const { db } = require('../../config/db');
 const { assetUrl } = require('../../shared/asset-url');
-const { toDateOnly } = require('../../shared/dates');
+const { toDateOnly, startOfLocalDay } = require('../../shared/dates');
 
 const NEWS_LIMIT = 5;
 
@@ -32,7 +32,7 @@ async function getFeed(userId) {
   }
 
   const todayCount = await db('fire_reports')
-    .whereRaw('DATE(created_at) = CURDATE()')
+    .where('created_at', '>=', startOfLocalDay())
     .count({ c: '*' })
     .first();
 

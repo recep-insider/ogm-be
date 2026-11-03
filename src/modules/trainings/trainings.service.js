@@ -4,7 +4,7 @@ const { v4: uuidv4 } = require('uuid');
 const { db } = require('../../config/db');
 const { errors } = require('../../shared/errors');
 const { assetUrl } = require('../../shared/asset-url');
-const { toDateOnly, toLocalDateOnly, toIso } = require('../../shared/dates');
+const { toDateOnly, toLocalDateOnly, toIso, todayLocal } = require('../../shared/dates');
 const { writeAudit } = require('../../shared/audit');
 const { deliverKkdSet, assertCommissionApproved } = require('../equipment/equipment.service');
 const { safeJson, mapContentBlock, mapAdminContentBlock } = require('../blog/blog.service');
@@ -83,15 +83,6 @@ async function seatInfo(trainingId, totalSeats) {
     // variant and would break on an unknown one. Fullness is `availableSeats === 0`.
     seatStatus: available > 0 && available <= LAST_SEATS_THRESHOLD ? 'last_seats' : 'available',
   };
-}
-
-/**
- * Today's calendar day in Turkey ('YYYY-MM-DD'). Field trainings are dated in local
- * days, so "past" is judged against the Istanbul day, not the UTC one — otherwise a
- * training would stay open until 03:00 the next morning.
- */
-function todayLocal() {
-  return toLocalDateOnly(new Date());
 }
 
 /** True when the training's day is already over (strictly before today, Istanbul). */
@@ -609,8 +600,8 @@ async function adminListSahaApplications(trainingId, { status } = {}) {
   const rows = await query;
   // §8: eğitim tarihinden ÖNCE başvuru listesi, tarih geçince YOKLAMA listesi döner —
   // panel aynı ekranı iki modda gösteriyor, kaynağı bu bayrak.
-  const today = toDateOnly(new Date());
-  const mode = toDateOnly(training.start_date) <= today ? 'yoklama' : 'basvuru';
+  // Gün Türkiye saatiyle: 00:00–03:00 arasında eğitim günü gelmiş eğitim yoklamaya açılır.
+  const mode = toDateOnly(training.start_date) <= todayLocal() ? 'yoklama' : 'basvuru';
   return {
     training: {
       id: training.id,

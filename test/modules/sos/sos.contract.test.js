@@ -34,3 +34,15 @@ describe('OPERATOR_ACTIONS — hazır aksiyonlar merkezin kendi işlemleriyle s�
     expect(Object.values(OPERATOR_ACTIONS).some((a) => a.status === 'cancelled')).toBe(false);
   });
 });
+
+describe('sosSchema — konumsuz çağrı (BUG-053)', () => {
+  const { sosSchema } = require('../../../src/modules/sos/sos.validators');
+
+  it.each([[{}], [{ coordinates: null }], [{ coordinates: { lat: 36.8, lng: 28.2 } }]])('%j kabul', (body) => {
+    expect(sosSchema.validate(body).error).toBeUndefined();
+  });
+
+  it('eksik koordinat 400', () => {
+    expect(sosSchema.validate({ coordinates: { lat: 36.8 } }).error).toBeDefined();
+  });
+});

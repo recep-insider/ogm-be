@@ -15,6 +15,10 @@ const request = require('supertest');
 const { db } = require('../../../src/config/db');
 const { redis } = require('../../../src/config/redis');
 const app = require('../../../src/app');
+// Tek sunucu: supertest'in istek başına açıp kapattığı geçici sunucu node 26'da ara sıra ECONNRESET
+// veriyordu (BUG-096).
+const server = app.listen(0);
+afterAll(() => new Promise((done) => server.close(done)));
 const service = require('../../../src/modules/admin/panelUsers/panelUsers.service');
 
 const PASSWORD = 'dogru-sifre-123';
@@ -59,7 +63,7 @@ function seed(users = [SUPER, ADMIN, PENDING]) {
 beforeEach(() => seed());
 
 async function tokenFor(email, password = PASSWORD) {
-  const res = await request(app).post('/v1/admin/auth/login').send({ email, password });
+  const res = await request(server).post('/v1/admin/auth/login').send({ email, password });
   return res.body.accessToken;
 }
 
@@ -69,7 +73,7 @@ const actions = () => db.rows('panel_user_audit').map((a) => a.action);
 
 describe('GET /v1/admin/auth/units', () => {
   it('oturumsuz döner; bölge ve işletmeler tekil ve Türkçe sıralı', async () => {
-    const res = await request(app).get('/v1/admin/auth/units');
+    const res = await request(server).get('/v1/admin/auth/units');
     expect(res.status).toBe(200);
     expect(res.body.items).toEqual([
       { bolge: 'Antalya OBM', isletmeler: ['Alanya OİM', 'Manavgat OİM'] },
@@ -90,7 +94,7 @@ describe('POST /v1/admin/auth/request', () => {
     note: 'Yangın sezonu için erişim',
     ...overrides,
   });
-  const submit = (b) => request(app).post('/v1/admin/auth/request').send(b);
+  const submit = (b) => request(server).post('/v1/admin/auth/request').send(b);
 
   it('pending kayıt açar, şifreyi özetler, denetime yazar; giriş onay bekler', async () => {
     const res = await submit(body());
@@ -105,7 +109,7 @@ describe('POST /v1/admin/auth/request', () => {
     expect(created.requested_at).toBeInstanceOf(Date);
     expect(actions()).toContain('request.create');
 
-    const login = await request(app).post('/v1/admin/auth/login').send({ email: 'elif@ogm.gov.tr', password: 'elif-sifre-123' });
+    const login = await request(server).post('/v1/admin/auth/login').send({ email: 'elif@ogm.gov.tr', password: 'elif-sifre-123' });
     expect(login.status).toBe(403);
     expect(login.body.error.code).toBe('account_pending');
   });
@@ -117,6 +121,13 @@ describe('POST /v1/admin/auth/request', () => {
     const res = await submit(body({ email }));
     expect(res.status).toBe(409);
     expect(res.body.error.code).toBe(code);
+  });
+
+  it('telefon biçimi doğrulanır: "abc" 400 phone, boşluklu yerel biçim kabul (BUG-113)', async () => {
+    const bad = await submit(body({ phone: 'abc' }));
+    expect(bad.status).toBe(400);
+    expect(bad.body.error.details.errors.map((e) => e.field)).toEqual(['phone']);
+    expect((await submit(body({ phone: '0532 111 22 33' }))).status).toBe(202);
   });
 
   it('pasif hesap da 409 email_taken', async () => {
@@ -203,22 +214,22 @@ describe('POST /v1/admin/auth/request', () => {
 
 describe('/v1/admin/panel-users yetkisi', () => {
   it('oturumsuz 403, admin rolü 403 super_admin_required', async () => {
-    expect((await request(app).get('/v1/admin/panel-users')).status).toBe(403);
-    const res = await request(app).get('/v1/admin/panel-users').set(as(await tokenFor(ADMIN.email)));
+    expect((await request(server).get('/v1/admin/panel-users')).status).toBe(403);
+    const res = await request(server).get('/v1/admin/panel-users').set(as(await tokenFor(ADMIN.email)));
     expect(res.status).toBe(403);
     expect(res.body.error.code).toBe('super_admin_required');
   });
 
   it('şifresini değiştirmesi gereken süper admin 403 password_change_required', async () => {
     seed([{ ...SUPER, must_change_password: true }]);
-    const res = await request(app).get('/v1/admin/panel-users').set(as(await tokenFor(SUPER.email)));
+    const res = await request(server).get('/v1/admin/panel-users').set(as(await tokenFor(SUPER.email)));
     expect(res.body.error.code).toBe('password_change_required');
   });
 
   it('rol veritabanından okunur: yetkisi alınan süper admin bir sonraki istekte giremez', async () => {
     const token = await tokenFor(SUPER.email);
     row('su-1').role = 'admin';
-    expect((await request(app).get('/v1/admin/panel-users').set(as(token))).status).toBe(403);
+    expect((await request(server).get('/v1/admin/panel-users').set(as(token))).status).toBe(403);
   });
 });
 
@@ -227,7 +238,7 @@ describe('süper admin işlemleri', () => {
   beforeEach(async () => {
     token = await tokenFor(SUPER.email);
   });
-  const call = (method, path, body) => request(app)[method](`/v1/admin/panel-users${path}`).set(as(token)).send(body);
+  const call = (method, path, body) => request(server)[method](`/v1/admin/panel-users${path}`).set(as(token)).send(body);
 
   it('listeyi yeniden eskiye döner; status ve Türkçe büyük/küçük harf duyarsız q ile süzer', async () => {
     const all = await call('get', '');
@@ -272,7 +283,7 @@ describe('süper admin işlemleri', () => {
     const res = await call('post', '/pe-1/reject', { reason: 'Birim doğrulanamadı' });
     expect(res.body).toMatchObject({ status: 'rejected', rejectionReason: 'Birim doğrulanamadı' });
 
-    const login = await request(app).post('/v1/admin/auth/login').send({ email: PENDING.email, password: PASSWORD });
+    const login = await request(server).post('/v1/admin/auth/login').send({ email: PENDING.email, password: PASSWORD });
     expect(login.body.error).toMatchObject({ code: 'account_rejected', details: { reason: 'Birim doğrulanamadı' } });
     expect(db.rows('panel_user_audit').find((a) => a.action === 'user.reject').detail).toBe(JSON.stringify({ reason: 'Birim doğrulanamadı' }));
   });
@@ -331,8 +342,8 @@ describe('süper admin işlemleri', () => {
       const res = await call('put', '/ad-1/status', { status: 'disabled' });
       expect(res.body.status).toBe('disabled');
       expect(db.rows('panel_refresh_tokens').filter((t) => t.user_id === 'ad-1').every((t) => t.revoked_at instanceof Date)).toBe(true);
-      expect((await request(app).get('/v1/admin/regions').set(as(adminToken))).status).toBe(401);
-      expect((await request(app).post('/v1/admin/auth/login').send({ email: ADMIN.email, password: PASSWORD })).body.error.code).toBe('account_disabled');
+      expect((await request(server).get('/v1/admin/regions').set(as(adminToken))).status).toBe(401);
+      expect((await request(server).post('/v1/admin/auth/login').send({ email: ADMIN.email, password: PASSWORD })).body.error.code).toBe('account_disabled');
 
       expect((await call('put', '/ad-1/status', { status: 'active' })).body.status).toBe('active');
       expect(await tokenFor(ADMIN.email)).toEqual(expect.any(String));
@@ -395,9 +406,9 @@ describe('süper admin işlemleri', () => {
       expect(res.body.temporaryPassword).toMatch(/^[A-Za-z0-9]{20}$/);
       expect(row('ad-1')).toMatchObject({ must_change_password: true, password_hash: `hash:${res.body.temporaryPassword}` });
       expect(db.rows('panel_refresh_tokens').filter((t) => t.user_id === 'ad-1').every((t) => t.revoked_at instanceof Date)).toBe(true);
-      expect((await request(app).get('/v1/admin/auth/me').set(as(adminToken))).status).toBe(401);
+      expect((await request(server).get('/v1/admin/auth/me').set(as(adminToken))).status).toBe(401);
 
-      const login = await request(app).post('/v1/admin/auth/login').send({ email: ADMIN.email, password: res.body.temporaryPassword });
+      const login = await request(server).post('/v1/admin/auth/login').send({ email: ADMIN.email, password: res.body.temporaryPassword });
       expect(login.body.user.mustChangePassword).toBe(true);
       expect(actions()).toContain('user.reset_password');
     });

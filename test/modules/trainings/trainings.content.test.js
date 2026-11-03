@@ -127,7 +127,8 @@ describe('admin read paths', () => {
     expect(items[0].content[1]).toEqual({
       type: 'image', source: 'content/a.jpg', sourceUrl: 'https://cdn.test/content/a.jpg', caption: 'Ekipman',
     });
-    expect(items[0].content[2]).toEqual(BLOCKS[2]);
+    // Video bloğu da tam adresi taşır (KALAN_ISLER §2.3); tam URL kaynak olduğu gibi kalır.
+    expect(items[0].content[2]).toEqual({ ...BLOCKS[2], sourceUrl: BLOCKS[2].source });
     expect(items[1]).toMatchObject({ videoPath: null, cover: null, coverPath: null, content: [] });
   });
 
@@ -244,6 +245,17 @@ describe('adminListAllSahaApplications', () => {
     const rowsQuery = mockDb.chains.find((c) => c.calls.some(([m]) => m === 'limit'));
     expect(countQuery.calls).toContainEqual(['where', 'a.status', 'rejected']);
     expect(rowsQuery.calls).toContainEqual(['where', 'a.status', 'rejected']);
+  });
+
+  it('eğitim günü Türkiye saatiyle 00:00–03:00 arasında da yoklama modunda açılır (BUG-063)', async () => {
+    jest.useFakeTimers({ now: new Date('2026-11-02T22:30:00Z'), doNotFake: ['nextTick', 'setImmediate'] });
+    try {
+      mockDb.first.saha_trainings = { id: 's1', title: 'S', start_date: '2026-11-03' };
+      mockDb.rows['saha_training_applications as a'] = [];
+      expect((await service.adminListSahaApplications('s1')).mode).toBe('yoklama');
+    } finally {
+      jest.useRealTimers();
+    }
   });
 
   it('the per-training list returns the same item shape', async () => {

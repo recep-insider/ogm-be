@@ -56,6 +56,9 @@ Tüm 4xx/5xx response'ları aşağıdaki şema ile dönecek:
 - `details` (opsiyonel): validation hata listesi, ek metadata.
 - Tüm `429` yanıtları (`rate_limited`, `sms_daily_limit`) `details.retryAfterSec` taşır: tekrar denemeden önce beklenecek saniye (BUG-028).
 - `503 service_unavailable`: Redis (oturum, kod ve hız sınırı deposu) yanıt vermiyor; SMS koduyla giriş, SMS kodu isteme, telefon değiştirme ve panel girişi en geç ~1 sn içinde bu kodla döner, kısa süre sonra tekrar denenebilir (BUG-024). Bağlantı yoksa istek işlenmez; yanıt gecikmesinde gönderilen komut Redis'te sonradan uygulanabilir (ör. sayaç artar). Kod doğrulandıktan sonraki gecikme isteği bozmaz, giriş ya da telefon değişimi tamamlanır. e-Devlet girişi ve oturum yenileme bu kapsamda değildir.
+- Bozuk JSON gövde `400 invalid_json`; 1 MB'ı aşan JSON gövde `413 payload_too_large` (`details.limitBytes`). Bozuk
+  multipart ve diğer yükleme sınırları `400 validation_error` (`details.reason`). `413 file_too_large` her zaman
+  `details.limitBytes` taşır; tam sınırdaki dosya kabul edilir (BUG-043, BUG-049).
 
 ### 0.5 Pagination
 **Yok.** Frontend tüm list endpoint'lerini flat `T[]` olarak tüketiyor (`useBlogPosts`, `useFireMissions`, `useCompletedTrainings`, `useMyFireReports` vs.). Pagination'a geçiş ileride backend tarafından tetiklenirse `FRONTEND_CHANGES.md`'ye geçiş notu eklenir.
@@ -823,6 +826,10 @@ edilsin mi?" diye sorar. "Devam" → `POST /auth/restore`; "Vazgeç" → hiçbir
 { "ok": true, "userStatus": "on_site" }
 ```
 - **Frontend sync:** Push notification (taskCalls topic) + React Query invalidation ile sync. Bu endpoint mobile app'ten doğrudan çağrılmaz — push tetiklenir, frontend `/missions/active/{id}` yeniden fetch eder.
+- **Error cases:** `403 readiness_incomplete` (kayıt oluşmaz; `details.engeller` eksik adımlar, `details.volunteerName`
+  gönüllünün ad soyadı — BUG-065), `404 volunteer_not_found`, `409 mission_archived`, `400 validation_error`
+  (`scannedAt` 5 dk'dan ileri ya da 7 günden eski — BUG-050). Daha önce okutulmuş gönüllüde `checkedInAt` ilk giriş
+  zamanıdır.
 - **Notlar (Ek B):** Backend QR validation şeması (HMAC? signed token?) ve admin/officer auth modeli backend kararıdır.
 - **Güncel karar (2026-09-21 sözleşmesi):** Mobil QR `OGM:VOL:{userId}` taşır ve **imzasızdır**. Güven sınırı saha amirinin kimlik doğrulamasıdır (`OFFICER_API_KEY` / `role=officer`) ve seçtiği olaydır. `SCAN_HMAC_SECRET` yalnızca çıplak `userId` gövdesine uygulanır; aynı gönüllü `qr: "OGM:VOL:{id}"` veya `tcKimlik` ile imzasız okutulabildiği için secret'ı açmak QR/TC okutmalarına koruma **eklemez** — fiilen emekliye ayrılmıştır.
 
@@ -1158,6 +1165,9 @@ edilsin mi?" diye sorar. "Devam" → `POST /auth/restore`; "Vazgeç" → hiçbir
 ### 13.1 GET /blog/posts
 - **Kullanıldığı yer:** `src/services/api/endpoints/blog.ts:16`, `src/screens/Blog/hooks/useBlog.ts:14`
 - **Auth:** Evet
+- **Query (opsiyonel):** `category` (`haber` | `teknik` | `egitim` | `tumu`), `page` (≥1), `pageSize` (1–100; verilmezse
+  tüm liste). Yanıt her durumda düz dizidir. Geçersiz değer ya da dizi biçimli `category` `400 validation_error`
+  (BUG-054, SG-18).
 - **Success Response (200):**
 ```json
 [

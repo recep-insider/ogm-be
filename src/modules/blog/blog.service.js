@@ -44,10 +44,12 @@ function mapPost(row) {
   };
 }
 
-async function list({ category } = {}) {
+async function list({ category, page = 1, pageSize } = {}) {
   const query = db('blog_posts').where({ is_active: true });
   if (category && category !== 'tumu') query.where({ category });
-  const rows = await query.orderBy('published_at', 'desc');
+  if (pageSize) query.limit(pageSize).offset((page - 1) * pageSize);
+  // published_at gün hassasiyetinde; aynı günün yazıları sayfalar arasında tekrar etmesin diye id ile sabitlenir.
+  const rows = await query.orderBy([{ column: 'published_at', order: 'desc' }, { column: 'id', order: 'desc' }]);
   return rows.map(mapPost);
 }
 
@@ -63,7 +65,7 @@ async function getById(id) {
 // (URL'den path'e geri çevirmek kırılgandır); (2) taslaklar (is_active=false) da listelenir.
 
 function mapAdminContentBlock(block) {
-  if (block && block.type === 'image') {
+  if (block && (block.type === 'image' || block.type === 'video')) {
     return { ...block, source: block.source, sourceUrl: assetUrl(block.source) };
   }
   return block;

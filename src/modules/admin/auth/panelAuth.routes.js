@@ -76,7 +76,8 @@ const requestSchema = Joi.object({
   password: newPassword.required(),
   bolge: Joi.string().trim().max(100).required(),
   isletme: Joi.string().trim().max(100).required(),
-  phone: Joi.string().trim().max(20).allow('', null).optional(),
+  // Görevli telefonuyla aynı biçim (BUG-113).
+  phone: Joi.string().trim().max(20).pattern(/^[+0-9 ()-]*$/).allow('', null).optional(),
   note: Joi.string().trim().max(500).allow('', null).optional(),
 });
 

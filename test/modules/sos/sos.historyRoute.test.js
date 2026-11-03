@@ -37,4 +37,9 @@ describe('POST /admin/sos-reports/:id/history', () => {
     expect(res.status).toBe(200);
     expect(sosService.adminAddHistory).toHaveBeenCalledWith('s1', body, expect.anything());
   });
+
+  it('gövdedeki by servise geçmez (BUG-060)', async () => {
+    await request(app).post('/admin/sos-reports/s1/history').send({ note: 'not', by: 'Sahte Ad' });
+    expect(sosService.adminAddHistory).toHaveBeenCalledWith('s1', { note: 'not' }, expect.anything());
+  });
 });

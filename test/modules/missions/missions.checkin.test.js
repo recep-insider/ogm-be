@@ -20,6 +20,10 @@ jest.mock('../../../src/config/db', () => {
   const makeChain = (table) => {
     const c = {
       where: jest.fn(() => c),
+      whereNot: jest.fn((cond) => {
+        mockState.whereNotCalls.push([table, cond]);
+        return c;
+      }),
       whereNull: jest.fn(() => c),
       whereIn: jest.fn((col, values) => {
         mockState.whereInCalls.push([table, col, values]);
@@ -58,6 +62,7 @@ jest.mock('../../../src/config/db', () => {
           const concurrentRow = mockState.dupOnce[table];
           delete mockState.dupOnce[table];
           if (table === 'mission_participants') mockState.participant = concurrentRow;
+          if (table === 'check_ins' && typeof concurrentRow === 'object') mockState.checkIn = concurrentRow;
           throw Object.assign(new Error('Duplicate entry'), { code: 'ER_DUP_ENTRY' });
         }
         mockState.inserts[table] = [...(mockState.inserts[table] || []), row];
@@ -68,7 +73,7 @@ jest.mock('../../../src/config/db', () => {
         return 1;
       }),
       then: (resolve, reject) =>
-        Promise.resolve(table === 'missions' ? mockState.historyRows : []).then(resolve, reject),
+        Promise.resolve(table === 'missions' ? mockState.historyRows : mockState.listRows?.[table] || []).then(resolve, reject),
     };
     return c;
   };
@@ -105,6 +110,8 @@ const reset = () => {
   mockState.whereInCalls = [];
   mockState.orderCalls = [];
   mockState.dupOnce = {};
+  mockState.whereNotCalls = [];
+  mockState.listRows = {};
   mockState.failOnce = {};
   mockState.insertAttempts = {};
   env.admin.scanHmacSecret = '';
@@ -173,6 +180,24 @@ describe('eş zamanlı ilk kayıt (BUG-025)', () => {
     expect(mockState.inserts.check_ins).toBeUndefined();
     expect(mockState.updates.mission_participants.at(-1)).toMatchObject({ status: 'sahada' });
   });
+
+  it('scan: yarışı kaybeden okutma ilk girişin zamanını döner ve yazar', async () => {
+    const first = new Date('2026-11-03T09:00:00Z');
+    mockState.dupOnce = { check_ins: { id: 'ci-ilk', checked_in_at: first } };
+
+    const result = await service.scan('m1', { qr: 'OGM:VOL:u1', scannedAt: '2026-11-03T09:00:05Z' }, { role: 'officer' });
+
+    expect(result.checkedInAt).toBe(first.toISOString());
+    expect(mockState.inserts.mission_participants[0]).toMatchObject({ on_site_at: first, joined_at: first });
+  });
+
+  it('scan: katılım satırı yarışında sahadaki satırın giriş zamanı ezilmez', async () => {
+    mockState.dupOnce = { mission_participants: { id: 'p-diger', status: 'sahada' } };
+
+    await service.scan('m1', { qr: 'OGM:VOL:u1' }, { role: 'officer' });
+
+    expect(mockState.whereNotCalls).toContainEqual(['mission_participants', { status: 'sahada' }]);
+  });
 });
 
 describe('yinelenme dışı insert hatası (BUG-025)', () => {
@@ -231,6 +256,8 @@ describe('scan — yangın sahası giriş kaydı', () => {
     await expect(service.scan('m1', { qr: 'OGM:VOL:u1' }, {})).rejects.toMatchObject({
       status: 403,
       code: 'readiness_incomplete',
+      // BUG-065: panel reddedilen kartta adı gösterir.
+      details: { engeller: mockState.engeller, volunteerName: 'Ali Yılmaz' },
     });
     expect(mockState.inserts.check_ins).toBeUndefined();
     expect(mockState.inserts.mission_participants).toBeUndefined();
@@ -346,6 +373,23 @@ describe('history — missions the volunteer actually took part in', () => {
     const detail = await service.getHistory('u1', 'm1');
     expect(detail.userStatus).toBe('sahada');
   });
+
+  it('arşivlenmiş olayın geçmiş detayı aktif detayla aynı medyayı gösterir (BUG-087)', async () => {
+    mockState.mission = { ...mockState.mission, status: 'archived', gallery: JSON.stringify(['missions/eski.jpg']) };
+    mockState.participant = { id: 'p1', status: 'tamamladi' };
+    mockState.listRows = {
+      fire_reports: [{ id: 'r1', photo_paths: JSON.stringify(['reports/ihbar.jpg']) }],
+      mission_photos: [
+        { id: 'p1', file_path: 'missions/onayli.jpg', kind: 'image', submitted_at: new Date() },
+        { id: 'p2', file_path: 'missions/video.mp4', kind: 'video', submitted_at: new Date() },
+      ],
+    };
+
+    const detail = await service.getHistory('u1', 'm1');
+
+    expect(detail.gallery.map((u) => u.split('/').pop())).toEqual(['eski.jpg', 'ihbar.jpg', 'onayli.jpg']);
+    expect(detail.photos.map((p) => p.kind)).toEqual(['image', 'video']);
+  });
 });
 
 describe('adminArchive — arşiv terminaldir', () => {
@@ -369,5 +413,35 @@ describe('adminArchive — arşiv terminaldir', () => {
     expect(mockState.updates.mission_participants).toEqual([
       expect.objectContaining({ status: 'tamamladi' }),
     ]);
+  });
+});
+
+describe('scan — giriş zamanı (BUG-050)', () => {
+  beforeEach(reset);
+
+  it('tekrar okutmada ilk giriş zamanı korunur, yeni kayıt yazılmaz', async () => {
+    const first = new Date('2026-08-01T09:00:00Z');
+    mockState.checkIn = { id: 'c1', checked_in_at: first };
+    mockState.participant = { id: 'p1', status: 'sahada' };
+
+    const result = await service.scan('m1', { qr: 'OGM:VOL:u1', scannedAt: new Date() }, {});
+
+    expect(result.checkedInAt).toBe(first.toISOString());
+    expect(mockState.inserts.check_ins).toBeUndefined();
+  });
+
+  describe('scanSchema.scannedAt', () => {
+    const { scanSchema } = require('../../../src/modules/missions/missions.validators');
+    const check = (scannedAt) => scanSchema.validate({ qr: 'OGM:VOL:u1', scannedAt }).error;
+
+    it('gelecek tarih reddedilir; birkaç saniyelik saat kayması kabul', () => {
+      expect(check(new Date(Date.now() + 2 * 86400 * 1000).toISOString()).message).toMatch(/gelecekte/);
+      expect(check(new Date(Date.now() + 30 * 1000).toISOString())).toBeUndefined();
+    });
+
+    it('çok eski tarih reddedilir; çevrimdışı kuyruktan gelen yakın geçmiş kabul', () => {
+      expect(check(new Date(Date.now() - 30 * 86400 * 1000).toISOString()).message).toMatch(/7 günden eski/);
+      expect(check(new Date(Date.now() - 3600 * 1000).toISOString())).toBeUndefined();
+    });
   });
 });

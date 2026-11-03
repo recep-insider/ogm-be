@@ -83,3 +83,38 @@ describe('errorHandler — log', () => {
     expect(logger.error).toHaveBeenCalledWith('beklenmeyen', expect.objectContaining({ stack: expect.any(String) }));
   });
 });
+
+describe('errorHandler — gövde ayrıştırma hataları (BUG-043)', () => {
+  const express = require('express');
+  const request = require('supertest');
+
+  const app = express();
+  app.use(express.json({ limit: '1kb' }));
+  app.post('/x', (_req, res) => res.json({ ok: true }));
+  app.use(errorHandler);
+
+  it('bozuk JSON 400 invalid_json', async () => {
+    const res = await request(app).post('/x').set('Content-Type', 'application/json').send('{"a":');
+    expect(res.status).toBe(400);
+    expect(res.body.error.code).toBe('invalid_json');
+    expect(logger.error).not.toHaveBeenCalled();
+  });
+
+  it('sınırı aşan gövde 413 payload_too_large, sınır yanıtta', async () => {
+    const res = await request(app).post('/x').send({ a: 'x'.repeat(2048) });
+    expect(res.status).toBe(413);
+    expect(res.body.error).toMatchObject({ code: 'payload_too_large', details: { limitBytes: 1024 } });
+  });
+
+  it('istemci hatası taşımayan beklenmeyen hata 500 kalır', () => {
+    const res = run(Object.assign(new Error('x'), { status: 400 }));
+    expect(res.status).toHaveBeenCalledWith(500);
+  });
+
+  it('desteklenmeyen karakter kümesi 415 bad_request, ayrıntısız', async () => {
+    const res = await request(app).post('/x').set('Content-Type', 'application/json; charset=koi8-r').send('{"a":1}');
+    expect(res.status).toBe(415);
+    expect(res.body).toEqual({ error: { code: 'bad_request', message: 'Geçersiz istek' } });
+    expect(logger.error).not.toHaveBeenCalled();
+  });
+});

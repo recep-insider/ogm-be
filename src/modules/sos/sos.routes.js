@@ -28,7 +28,7 @@ const router = Router();
  *         name: Idempotency-Key
  *         required: false
  *         schema: { type: string, maxLength: 200 }
- *         description: Aynı anahtar ve gövdeyle tekrar gelen istek yeniden işlenmez; ilk başarılı yanıt `Idempotent-Replayed: true` ile döner (ayrıntı POST /admin/missions).
+ *         description: 'Aynı anahtar ve gövdeyle tekrar gelen istek yeniden işlenmez; ilk başarılı yanıt `Idempotent-Replayed: true` ile döner (ayrıntı POST /admin/missions).'
  *     requestBody:
  *       required: false
  *       content:

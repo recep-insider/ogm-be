@@ -2,6 +2,7 @@
 
 const { pingDb } = require('../../config/db');
 const { pingRedis } = require('../../config/redis');
+const logger = require('../../config/logger');
 
 async function checkComponent(name, fn) {
   const startedAt = Date.now();
@@ -9,12 +10,9 @@ async function checkComponent(name, fn) {
     await fn();
     return { name, status: 'up', latencyMs: Date.now() - startedAt };
   } catch (err) {
-    return {
-      name,
-      status: 'down',
-      latencyMs: Date.now() - startedAt,
-      error: err.message,
-    };
+    // Uç kimliksizdir; hata metni (iç adresler, sürücü mesajı) yalnız loga yazılır.
+    logger.warn('Hazırlık kontrolü başarısız', { component: name, error: err.message });
+    return { name, status: 'down', latencyMs: Date.now() - startedAt };
   }
 }
 

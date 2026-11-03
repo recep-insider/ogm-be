@@ -143,13 +143,13 @@ router.post(
  *               qr: { type: string, example: 'OGM:VOL:8f3c...' }
  *               userId: { type: string }
  *               tcKimlik: { type: string, description: 'QR okutulamazsa yedek yöntem' }
- *               scannedAt: { type: string, format: date-time }
+ *               scannedAt: { type: string, format: date-time, description: 'En çok 5 dk ileri, en çok 7 gün geri. Gönüllü daha önce okutulduysa yanıt ilk giriş zamanını döner.' }
  *               token: { type: string, description: 'HMAC imzası — yalnızca userId formatında, SCAN_HMAC_SECRET doluysa' }
  *     responses:
  *       200:
  *         description: 'Giriş kaydedildi — künye (ad, soyad, maskeli TC, kişi/KKD/eğitim durumu, STK) döner'
  *       400: { description: 'invalid_qr — userId formatında imza eksik/geçersiz' }
- *       403: { description: 'readiness_incomplete — katılım engeli, kayıt OLUŞMAZ' }
+ *       403: { description: 'readiness_incomplete — katılım engeli, kayıt OLUŞMAZ; details.engeller ve details.volunteerName (ad soyad)' }
  *       404: { description: 'volunteer_not_found | mission_not_found' }
  *       409: { description: 'mission_archived' }
  */

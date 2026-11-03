@@ -144,6 +144,11 @@ describe('blog.service — admin CRUD', () => {
     expect(img).toMatchObject({ source: 'content/ic.jpg', sourceUrl: 'https://cdn.test/content/ic.jpg' });
   });
 
+  test('mapAdminPost: video bloğu da tam adres (sourceUrl) taşır (KALAN_ISLER §2.3)', () => {
+    const dto = blogService.mapAdminPost({ ...dbRow, content: '[{"type":"video","source":"content/v.mp4"}]' });
+    expect(dto.content[0]).toEqual({ type: 'video', source: 'content/v.mp4', sourceUrl: 'https://cdn.test/content/v.mp4' });
+  });
+
   test('mobil görünüm görsel bloğunun açıklamasını düşürmez, kaynağı tam URL döner', async () => {
     mockQueue.push({ ...dbRow, is_active: 1, content: '[{"type":"image","source":"content/ic.jpg","caption":"Ekip"}]' });
 

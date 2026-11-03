@@ -64,10 +64,10 @@ describe('admin — isteğe bağlı metin alanları kırpılır', () => {
     expect(adminService.listVolunteers).toHaveBeenCalledWith(expect.objectContaining({ q: 'Ayşe' }));
   });
 
-  it('SOS geçmiş notu ve yazan', async () => {
+  it('SOS geçmiş notu (yazan oturumdaki kullanıcıdır, gövdedeki by düşer — BUG-060)', async () => {
     const res = await request(app).post('/admin/sos-reports/s1/history').send({ note: '  Ulaşıldı  ', by: ' Operatör ' });
     expect(res.status).toBe(200);
-    expect(sosService.adminAddHistory).toHaveBeenCalledWith('s1', { note: 'Ulaşıldı', by: 'Operatör' }, expect.anything());
+    expect(sosService.adminAddHistory).toHaveBeenCalledWith('s1', { note: 'Ulaşıldı' }, expect.anything());
   });
 
   it('blog açıklaması ve yazar alanları', async () => {
