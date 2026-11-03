@@ -58,6 +58,10 @@ describe('onboardingSchema — egitim bloğu', () => {
     ['aciklama 500 karakterden uzun', { aciklama: 'x'.repeat(501) }],
     ['il eksik', { il: undefined }],
     ['isletmeMudurlugu eksik', { isletmeMudurlugu: undefined }],
+    ['il yalnız boşluk', { il: '   ' }],
+    ['ilce yalnız boşluk', { ilce: '   ' }],
+    ['bolgeMudurlugu yalnız boşluk', { bolgeMudurlugu: '   ' }],
+    ['isletmeMudurlugu yalnız boşluk', { isletmeMudurlugu: '   ' }],
   ])('geçersiz egitim reddedilir: %s', (_label, patch) => {
     const payload = { ...basePayload(), egitim: { ...validEgitim(), ...patch } };
     const { error } = onboardingSchema.validate(payload, VALIDATE_OPTIONS);

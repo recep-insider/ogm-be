@@ -15,6 +15,11 @@ jest.mock('../../../src/config/db', () => {
         return 1;
       }),
       insert: jest.fn(async (row) => {
+        if (mockState.failInsert) {
+          const err = mockState.failInsert;
+          mockState.failInsert = null;
+          throw err;
+        }
         if (mockState.dupInsert) {
           mockState.dupInsert = false;
           throw Object.assign(new Error('Duplicate entry'), { code: 'ER_DUP_ENTRY' });
@@ -124,5 +129,15 @@ describe('preferences.update — eş zamanlı ilk kayıt (BUG-025)', () => {
     expect(mockState.writes).toHaveLength(1);
     expect(mockState.writes[0].insert).toBeUndefined();
     expect(mockState.writes[0]).toMatchObject({ user_id: 'u1', trainings: true });
+  });
+
+  it('yinelenme dışı insert hatası döner, yedek güncelleme çalışmaz', async () => {
+    mockState.row = null;
+    mockState.writes = [];
+    const err = Object.assign(new Error('Cannot add or update a child row'), { code: 'ER_NO_REFERENCED_ROW_2' });
+    mockState.failInsert = err;
+
+    await expect(service.update('u1', { trainings: true })).rejects.toBe(err);
+    expect(mockState.writes).toHaveLength(0);
   });
 });
