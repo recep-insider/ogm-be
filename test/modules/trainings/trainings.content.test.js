@@ -127,7 +127,8 @@ describe('admin read paths', () => {
     expect(items[0].content[1]).toEqual({
       type: 'image', source: 'content/a.jpg', sourceUrl: 'https://cdn.test/content/a.jpg', caption: 'Ekipman',
     });
-    expect(items[0].content[2]).toEqual(BLOCKS[2]);
+    // Video bloğu da tam adresi taşır (KALAN_ISLER §2.3); tam URL kaynak olduğu gibi kalır.
+    expect(items[0].content[2]).toEqual({ ...BLOCKS[2], sourceUrl: BLOCKS[2].source });
     expect(items[1]).toMatchObject({ videoPath: null, cover: null, coverPath: null, content: [] });
   });
 
