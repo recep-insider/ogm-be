@@ -88,6 +88,24 @@ describe('sendOtp — günlük SMS limiti ve log maskeleme', () => {
     await expect(sms.sendOtp('+905329998877', '444444')).resolves.toMatchObject({ providerMessageId: expect.any(String) });
   });
 
+  test('günlük sınır numara + IP başınadır: başka bağlantıdan aynı numaraya kod istenebilir (K10)', async () => {
+    const PHONE = '+905321112233';
+    await sms.sendOtp(PHONE, '111111', { ip: '1.1.1.1' });
+    await sms.sendOtp(PHONE, '222222', { ip: '1.1.1.1' });
+
+    await expect(sms.sendOtp(PHONE, '333333', { ip: '1.1.1.1' })).rejects.toMatchObject({ status: 429, code: 'sms_daily_limit' });
+    await expect(sms.sendOtp(PHONE, '444444', { ip: '2.2.2.2' })).resolves.toMatchObject({ providerMessageId: expect.any(String) });
+  });
+
+  test('numara başına günde 30 SMS kesin tavan; tavana takılan istek IP hakkını harcamaz (K10)', async () => {
+    const PHONE = '+905321112233';
+    expect(sms.DAILY_OTP_PHONE_CAP).toBe(30);
+    await redis.set(`rl:sms:otp:daily:${PHONE}`, '30', 'EX', 86400);
+
+    await expect(sms.sendOtp(PHONE, '111111', { ip: '9.9.9.9' })).rejects.toMatchObject({ status: 429, code: 'sms_daily_limit' });
+    expect(await redis.get(`rl:sms:otp:daily:${PHONE}:9.9.9.9`)).toBe('0');
+  });
+
   test('dummy numaralar sayaca girmez', async () => {
     env.sms.dummyPhones = ['+905555555555'];
     for (let i = 0; i < 3; i += 1) {

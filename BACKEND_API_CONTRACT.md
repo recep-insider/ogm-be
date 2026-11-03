@@ -115,7 +115,7 @@ WGS84 datum. Frontend `react-native-maps` ile uyumlu.
 - **Error cases:**
   - `400 invalid_phone` — E.164 değil
   - `429 rate_limited` — çok sık deneme
-  - `429 sms_daily_limit` — numaraya günlük OTP SMS limiti (`SMS_DAILY_LIMIT_PER_USER`, varsayılan 10) doldu; `details.retryAfterSec` döner
+  - `429 sms_daily_limit` — günlük OTP SMS limiti doldu: aynı numaraya aynı bağlantıdan (IP) `SMS_DAILY_LIMIT_PER_USER` (varsayılan 10), numaraya toplamda 30 (K10); `details.retryAfterSec` döner
   - `503 sms_unavailable` — üretimde SMS sağlayıcı bağlı değil (`SMS_PROVIDER=mock`); yalnız `OTP_DUMMY_PHONES` numaraları giriş yapabilir. Oturum açılmaz, telefon/günlük SMS limitinden düşülmez. Mesaj: "SMS servisi henüz bağlı değil; şu an yalnız test numaralarıyla giriş yapılabilir."
 - **TS tipleri:** `SendOtpRequest`, `SendOtpResponse` (`src/services/api/types.ts:87-94`)
 - **Mock:** `src/services/api/mocks.ts:172` (`mockApi.sendOtp`)

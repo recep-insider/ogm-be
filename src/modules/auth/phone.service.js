@@ -70,7 +70,7 @@ async function sendOtpFlow({ phone, ip }) {
 
   // Oturum kod gönderildikten sonra yazılır: limit/sağlayıcı hatası gönderilmemiş koda oturum bırakmaz.
   try {
-    await sendOtp(phone, code);
+    await sendOtp(phone, code, { ip });
   } catch (err) {
     if (err instanceof AppError) throw err;
     logger.error('SMS gönderim hatası', { error: err.message, phone: maskPhone(phone) });
@@ -113,7 +113,7 @@ async function resendOtpFlow({ sessionId, ip }) {
 
   // Yeni kod gönderilemezse oturum değişmez; telefondaki önceki kod geçerli kalır.
   try {
-    await sendOtp(session.phone, code);
+    await sendOtp(session.phone, code, { ip });
   } catch (err) {
     if (err instanceof AppError) throw err;
     logger.error('SMS gönderim hatası', { error: err.message, phone: maskPhone(session.phone) });

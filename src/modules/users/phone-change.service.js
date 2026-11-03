@@ -24,7 +24,7 @@ async function init({ userId, newPhone, ip, userAgent }) {
   const code = generateOtp();
   const codeHash = await hashOtp(code);
   // Oturum kod gönderildikten sonra yazılır: limit/sağlayıcı hatası gönderilmemiş koda oturum bırakmaz.
-  await sendOtp(newPhone, code);
+  await sendOtp(newPhone, code, { ip });
 
   const sessionId = uuidv4();
   const ttl = env.sms.otpExpiresIn;
