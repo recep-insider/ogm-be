@@ -1810,6 +1810,8 @@ const notificationSendSchema = Joi.object({
   region: Joi.string().valid(...REGION_KEYS, 'all').optional(),
 })
   .oxor('missionId', 'audience')
+  // Olaysız segment sessizce genel "hazır" kitlesine gidiyordu; segment yalnız olayla anlamlı.
+  .with('segments', 'missionId')
   // Yarıçap/mesafe alanı bilinçli olarak YOK: admin mesafe girmez (§4).
   .without('segments', ['audience']);
 
@@ -1842,7 +1844,7 @@ const notificationSendSchema = Joi.object({
  *           başarılı yanıt `Idempotent-Replayed: true` başlığıyla döner. İlk istek sürerken (süre sınırı yok) aynı anahtar 409 idempotency_in_flight alır. 4xx yanıt anahtarı serbest bırakır; 5xx'te anahtar işlem bittikten 40–60 sn sonra düşer, bu sürede tekrar deneme 409 alır.
  *     responses:
  *       200: { description: '{ok, notificationId, channel, recipients, pushCount, smsCount}' }
- *       400: { description: idempotency_key_invalid }
+ *       400: { description: 'idempotency_key_invalid; validation_error — segments yalnız missionId ile (BUG-062)' }
  *       422: { description: idempotency_key_reused }
  *       409: { description: 'idempotency_in_flight; mission_archived — arşivlenmiş olaya bildirim gönderilemez' }
  *       503: { description: 'idempotency_unavailable — Redis yok; istek işlenmedi, tekrar denenebilir' }

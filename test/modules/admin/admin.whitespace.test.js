@@ -65,3 +65,17 @@ describe('admin — yalnız boşluk metin (BUG-032)', () => {
     expect(missionsService.adminCreate).not.toHaveBeenCalled();
   });
 });
+
+describe('admin bildirim — olaysız segment (BUG-062)', () => {
+  it('missionId olmadan segments 400; gönderilmez', async () => {
+    const res = await request(app).post('/admin/notifications').send({ category: 'bilgi', title: 'T', body: 'B', segments: ['sahada'] });
+    expect(res.status).toBe(400);
+    expect(JSON.stringify(res.body.error.details)).toMatch(/missionId/);
+    expect(dispatchService.send).not.toHaveBeenCalled();
+  });
+
+  it('olayla segment kabul', async () => {
+    const res = await request(app).post('/admin/notifications').send({ category: 'gorev', title: 'T', body: 'B', missionId: 'm1', segments: ['sahada'] });
+    expect(res.status).toBe(200);
+  });
+});
