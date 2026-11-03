@@ -160,3 +160,29 @@ describe('assemblyPoints.mapPoint — görevli alanları', () => {
     });
   });
 });
+
+describe('assemblyPoints.upsert — bildirim sayıları (BUG-111)', () => {
+  beforeEach(reset);
+
+  it('konum değişmediyse bildirim gitmez; notifiedCount ve unreachableCount 0', async () => {
+    const result = await service.upsert('m1', SAME_PLACE, {});
+    expect(result).toMatchObject({ locationChanged: false, notified: null, notifiedCount: 0, unreachableCount: 0 });
+  });
+
+  it('konum değişince yanıtta ulaşan ve ulaşılamayan sayıları döner', async () => {
+    const spy = jest.spyOn(service, 'notifyLocationChange');
+    const { db } = require('../../../src/config/db');
+    const participants = { join() { return this; }, where() { return this; }, whereIn() { return this; }, whereNull() { return this; },
+      select: async () => [{ status: 'sahada', user_id: 'u1', phone: null }, { status: 'sahada', user_id: 'u2', phone: null }] };
+    const { sendPushToUser } = require('../../../src/shared/push-provider');
+    sendPushToUser.mockResolvedValueOnce({ sent: 1 }).mockResolvedValueOnce({ sent: 0, noDevices: true });
+    const realDb = db.getMockImplementation();
+    db.mockImplementation((table) => (table === 'mission_participants as mp' ? participants : realDb(table)));
+
+    const result = await service.upsert('m1', { name: 'Stadyum', coordinates: { lat: 37.0, lng: 28.5 } }, {});
+
+    expect(result).toMatchObject({ locationChanged: true, notifiedCount: 1, unreachableCount: 1, notified: { sahada: 1 } });
+    db.mockImplementation(realDb);
+    spy.mockRestore();
+  });
+});

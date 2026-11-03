@@ -1523,7 +1523,7 @@ router.post(
  *     parameters:
  *       - { in: path, name: id, required: true, schema: { type: string } }
  *     responses:
- *       200: { description: '{ok, assemblyPoint, locationChanged, notified}' }
+ *       200: { description: '{ok, assemblyPoint, locationChanged, notified{yolda,sahada,sms,notifiedCount,unreachableCount}|null, notifiedCount, unreachableCount}. notifiedCount: push''u gerçekten giden (cihazı olan, sağlayıcının kabul ettiği) gönüllü sayısı; unreachableCount: ne push''u ne SMS''i ulaşan gönüllü sayısı. Konum değişmediyse ikisi 0 (BUG-111).' }
  *       409: { description: mission_archived }
  */
 router.get(
