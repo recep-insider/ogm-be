@@ -21,7 +21,9 @@ jest.mock('../../../src/config/db', () => {
           throw err;
         }
         if (mockState.dupInsert) {
+          // Satırı diğer istek açtı: sonraki okumalar onun yazdığını görür.
           mockState.dupInsert = false;
+          mockState.row = mockState.rowAfterDup;
           throw Object.assign(new Error('Duplicate entry'), { code: 'ER_DUP_ENTRY' });
         }
         mockState.writes.push({ insert: true, ...row });
@@ -124,11 +126,25 @@ describe('preferences.update — eş zamanlı ilk kayıt (BUG-025)', () => {
     mockState.row = null;
     mockState.writes = [];
     mockState.dupInsert = true;
+    mockState.rowAfterDup = { ...ROW };
 
     await expect(service.update('u1', { trainings: true })).resolves.toMatchObject({ trainings: true });
     expect(mockState.writes).toHaveLength(1);
     expect(mockState.writes[0].insert).toBeUndefined();
     expect(mockState.writes[0]).toMatchObject({ user_id: 'u1', trainings: true });
+  });
+
+  it('diğer isteğin kapattığı kategori yeniden açılmaz; güncelleme onun satırından hesaplanır', async () => {
+    mockState.row = null;
+    mockState.writes = [];
+    mockState.dupInsert = true;
+    mockState.rowAfterDup = { ...ROW, trainings: 0, announcements: 1 };
+
+    const prefs = await service.update('u1', { announcements: false });
+
+    expect(mockState.writes).toHaveLength(1);
+    expect(mockState.writes[0]).toMatchObject({ trainings: 0, announcements: false });
+    expect(prefs).toMatchObject({ trainings: false, announcements: false });
   });
 
   it('yinelenme dışı insert hatası döner, yedek güncelleme çalışmaz', async () => {

@@ -106,9 +106,10 @@ async function update(userId, body) {
     try {
       await db('notification_preferences').insert({ ...next, created_at: new Date() });
     } catch (err) {
-      // Eş zamanlı ilk kayıt (BUG-025): satırı diğer istek açtı, bu istek onu günceller.
+      // Eş zamanlı ilk kayıt (BUG-025): satırı diğer istek açtı. Varsayılanlardan kurulan `next` onun
+      // seçimlerini ezer; güncelleme diğer isteğin yazdığı satırdan yeniden hesaplanır.
       if (err.code !== 'ER_DUP_ENTRY') throw err;
-      await db('notification_preferences').where({ user_id: userId }).update(next);
+      return update(userId, body);
     }
   }
 
