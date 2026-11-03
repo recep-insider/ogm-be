@@ -100,7 +100,18 @@ describe('kanal kategoriden türer', () => {
     expect(result.channel).toBe('sms+push');
     expect(sendPushToUser).toHaveBeenCalledWith('u1', expect.objectContaining({ topic: 'acil' }));
     expect(sendSms).toHaveBeenCalledTimes(1);
+    expect(result.smsCount).toBe(1);
   });
+
+  it.each([[{ providerMessageId: 'mock-1', mock: true }], [{ providerMessageId: 'dummy-1', dummy: true }]])(
+    'acil SMS mock ya da test numarasına düştüyse (%p) gönderildi sayılmaz',
+    async (smsResult) => {
+      sendSms.mockResolvedValueOnce(smsResult);
+      const result = await service.send({ category: 'acil', title: 'Tahliye', body: 'Bölgeyi terk edin', audience: 'tumu' }, {});
+      expect(sendSms).toHaveBeenCalledTimes(1);
+      expect(result.smsCount).toBe(0);
+    },
+  );
 
   it('eğitim duyurusu SMS DEĞİL push kanalından gider', async () => {
     const result = await service.send(

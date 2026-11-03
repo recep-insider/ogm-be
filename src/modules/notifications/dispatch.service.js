@@ -188,8 +188,9 @@ async function send(input, actor = {}) {
         if (phone?.phone) {
           try {
             // eslint-disable-next-line no-await-in-loop
-            await sendSms(phone.phone, `${input.title}. ${input.body}`);
-            smsCount += 1;
+            const sms = await sendSms(phone.phone, `${input.title}. ${input.body}`);
+            // Test numarası ve mock gönderim SMS sayılmaz (push'taki kuralla aynı).
+            if (!sms?.dummy && !sms?.mock) smsCount += 1;
           } catch (err) {
             logger.error('Acil SMS gönderilemedi', { userId, error: err.message });
           }
