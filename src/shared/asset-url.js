@@ -49,6 +49,23 @@ function assetUrl(rel) {
   return `${url}?exp=${exp}&sig=${signature(normalized, exp)}`;
 }
 
+/**
+ * İçerik alanına (kapak, blok kaynağı, eğitmen görseli) yazılabilir mi: http(s) adresi ya da yükleme
+ * kökünde kalan, imzalı klasör dışındaki göreli yol. Herkese açık uçlar bu alanlar için imzalı adres
+ * üretir; KVKK belgesinin yolu buraya yazılırsa belge herkese açılır.
+ */
+function isPublicAssetPath(value) {
+  if (/^https?:\/\//i.test(value)) return true;
+  let normalized;
+  try {
+    normalized = normalizeRel(decodeURIComponent(value).replace(/^\/+/, ''));
+  } catch {
+    return false;
+  }
+  if (normalized === '..' || normalized.startsWith('../')) return false;
+  return !needsSignature(normalized);
+}
+
 /** `/uploads` mount'unda express.static'ten önce: imzalı klasörlerde geçerli `exp`+`sig` ister. */
 function signedUploadGuard(req, res, next) {
   let rel;
@@ -74,4 +91,4 @@ function signedUploadGuard(req, res, next) {
   return next();
 }
 
-module.exports = { assetUrl, signedUploadGuard, SIGNED_URL_TTL_SEC };
+module.exports = { assetUrl, signedUploadGuard, isPublicAssetPath, SIGNED_URL_TTL_SEC };

@@ -53,7 +53,7 @@ async function fillLocation(sosId, lat, lng) {
 
 async function create({ userId, body, ip, userAgent }) {
   // Kötüye kullanımı sınırla — kullanıcı başına dakikada 5 (emergency ile aynı politika, ayrı anahtar).
-  await hitFixedWindow(redis, `rl:sos:${userId}`, { max: 5, windowSec: 60, message: 'Çok sık SOS çağrısı gönderiyorsunuz' });
+  await hitFixedWindow(redis, `rl:sos:${userId}`, { max: 5, windowSec: 60, message: 'Çok sık SOS çağrısı gönderiyorsunuz', failOpen: true });
 
   const user = await db('users').where({ id: userId, is_active: true }).first();
   if (!user) throw errors.notFound('Kullanıcı bulunamadı');

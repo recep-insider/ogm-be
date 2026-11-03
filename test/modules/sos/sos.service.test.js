@@ -338,3 +338,25 @@ describe('sos.service.adminList — bağlı olay başlığı', () => {
     expect(result.items[0]).toMatchObject({ missionId: 'm1', missionTitle: 'Marmaris Yangını' });
   });
 });
+
+describe('sos.service.create — Redis kesintisi', () => {
+  beforeEach(() => {
+    mockInserted.length = 0;
+    mockHistory.length = 0;
+    mockState.updateError = null;
+    mockState.user = { ...USER_ROW };
+    jest.clearAllMocks();
+    reverseGeocode.mockResolvedValue({ il: null, ilce: null });
+  });
+
+  test('hız sınırı sayacı tutulamazsa çağrı yine kaydedilir (K23)', async () => {
+    const chain = { incr: () => chain, expire: () => chain, ttl: () => chain, exec: jest.fn().mockRejectedValue(new Error('ECONNREFUSED')) };
+    jest.spyOn(redis, 'multi').mockReturnValueOnce(chain);
+
+    const result = await service.create({ userId: 'u1', body: {}, ip: '1.2.3.4', userAgent: 'jest' });
+
+    expect(chain.exec).toHaveBeenCalledTimes(1);
+    expect(result.ok).toBe(true);
+    expect(mockInserted).toHaveLength(1);
+  });
+});

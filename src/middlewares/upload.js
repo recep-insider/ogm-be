@@ -6,6 +6,7 @@ const multer = require('multer');
 const { v4: uuidv4 } = require('uuid');
 const env = require('../config/env');
 const { errors } = require('../shared/errors');
+const { discardUploads } = require('../shared/discard-uploads');
 
 function ensureDir(dir) {
   try {
@@ -87,7 +88,7 @@ function imageSizeGuard(maxBytes) {
     const files = req.files || (req.file ? [req.file] : []);
     const oversized = files.find((f) => f.mimetype.startsWith('image/') && f.size > maxBytes);
     if (!oversized) return next();
-    for (const f of files) fs.unlink(f.path, () => {});
+    discardUploads(req);
     return next(
       errors.make(413, 'file_too_large', 'Dosya boyutu sınırı aşıldı', {
         limitBytes: maxBytes,

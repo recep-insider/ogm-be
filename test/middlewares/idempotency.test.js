@@ -259,12 +259,13 @@ describe('idempotent()', () => {
     expect(handler).toHaveBeenCalledTimes(1);
   });
 
-  it('Redis erişilemezse isteği engellemez', async () => {
+  it('Redis erişilemezse panel isteği işlenmez: 503 idempotency_unavailable (K23)', async () => {
     redis.set.mockRejectedValueOnce(new Error('ECONNREFUSED'));
     const res = await post({ a: 1 });
 
-    expect(res.status).toBe(200);
-    expect(handler).toHaveBeenCalledTimes(1);
+    expect(res.status).toBe(503);
+    expect(res.body.error.code).toBe('idempotency_unavailable');
+    expect(handler).not.toHaveBeenCalled();
     expect(logger.warn).toHaveBeenCalled();
   });
 
@@ -277,5 +278,162 @@ describe('idempotent()', () => {
     expect(res.status).toBe(400);
     expect(res.body.error.code).toBe('idempotency_key_invalid');
     expect(handler).not.toHaveBeenCalled();
+  });
+});
+
+describe('idempotent() — gönüllü, misafir ve dosyalı istek', () => {
+  const fs = require('fs');
+  const os = require('os');
+  const path = require('path');
+
+  function buildVolunteerApp({ user = null, file = null, options } = {}) {
+    const vApp = express();
+    vApp.use(express.json());
+    vApp.use((req, _res, next) => {
+      if (user) req.user = user;
+      if (file) req.file = file();
+      next();
+    });
+    vApp.post('/sos', idempotent(options), (req, res, next) => handler(req, res, next));
+    vApp.use(errorHandler);
+    return vApp;
+  }
+  const tempFile = (size = 3) => {
+    const p = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'idem-')), 'a.jpg');
+    fs.writeFileSync(p, 'x'.repeat(size));
+    return { path: p, fieldname: 'file', originalname: 'a.jpg', size };
+  };
+
+  it('gönüllü anahtarı kullanıcıya bağlıdır; aynı anahtarla ikinci istek tek kayıt açar', async () => {
+    const vApp = buildVolunteerApp({ user: { id: 'v1' } });
+    const first = await request(vApp).post('/sos').set('Idempotency-Key', 'k-1').send({ a: 1 });
+    await flush();
+    const second = await request(vApp).post('/sos').set('Idempotency-Key', 'k-1').send({ a: 1 });
+
+    expect(redis.set).toHaveBeenNthCalledWith(1, 'idem:v1:POST:/sos:k-1', expect.any(String), 'EX', 60, 'NX');
+    expect(first.status).toBe(200);
+    expect(second.headers['idempotent-replayed']).toBe('true');
+    expect(handler).toHaveBeenCalledTimes(1);
+  });
+
+  it('misafir anahtarı IP\'ye bağlıdır', async () => {
+    await request(buildVolunteerApp()).post('/sos').set('Idempotency-Key', 'k-1').send({ a: 1 });
+    expect(redis.set.mock.calls[0][0]).toMatch(/^idem:ip:.+:POST:\/sos:k-1$/);
+  });
+
+  it('Redis erişilemezse gönüllü isteği işlenir (K23)', async () => {
+    redis.set.mockRejectedValueOnce(new Error('ECONNREFUSED'));
+    const res = await request(buildVolunteerApp({ user: { id: 'v1' } })).post('/sos').set('Idempotency-Key', 'k-1').send({ a: 1 });
+
+    expect(res.status).toBe(200);
+    expect(handler).toHaveBeenCalledTimes(1);
+  });
+
+  it('releaseOn5xx: gönüllü isteği 5xx alırsa anahtar bırakılır, aynı anahtarla tekrar deneme işlenir', async () => {
+    const vApp = buildVolunteerApp({ user: { id: 'v1' }, options: { releaseOn5xx: true } });
+    handler.mockImplementationOnce((req, res) => res.status(500).json({ error: { code: 'internal_error' } }));
+    const first = await request(vApp).post('/sos').set('Idempotency-Key', 'k-1').send({ a: 1 });
+    await flush();
+    const retry = await request(vApp).post('/sos').set('Idempotency-Key', 'k-1').send({ a: 1 });
+
+    expect(first.status).toBe(500);
+    expect(retry.status).toBe(200);
+    expect(handler).toHaveBeenCalledTimes(2);
+  });
+
+  it('tekrar oynatılan istekle yüklenen dosya silinir, ilk isteğinki kalır', async () => {
+    const files = [];
+    const vApp = buildVolunteerApp({ user: { id: 'v1' }, file: () => { const f = tempFile(); files.push(f); return f; } });
+    await request(vApp).post('/sos').set('Idempotency-Key', 'k-1').send({ a: 1 });
+    await flush();
+    const replay = await request(vApp).post('/sos').set('Idempotency-Key', 'k-1').send({ a: 1 });
+    await new Promise((done) => setTimeout(done, 50));
+
+    expect(replay.headers['idempotent-replayed']).toBe('true');
+    expect(fs.existsSync(files[0].path)).toBe(true);
+    expect(fs.existsSync(files[1].path)).toBe(false);
+  });
+
+  it('aynı anahtar farklı dosyayla gelirse 422 ve yeni dosya silinir', async () => {
+    const files = [];
+    let size = 3;
+    const vApp = buildVolunteerApp({ user: { id: 'v1' }, file: () => { const f = tempFile(size); files.push(f); return f; } });
+    await request(vApp).post('/sos').set('Idempotency-Key', 'k-1').send({ a: 1 });
+    await flush();
+    size = 5;
+    const res = await request(vApp).post('/sos').set('Idempotency-Key', 'k-1').send({ a: 1 });
+    await new Promise((done) => setTimeout(done, 50));
+
+    expect(res.status).toBe(422);
+    expect(fs.existsSync(files[1].path)).toBe(false);
+  });
+});
+
+describe('idempotent() — panel yüklemesi ve çok dosyalı istek', () => {
+  const fs = require('fs');
+  const os = require('os');
+  const path = require('path');
+
+  const tempFile = (name = 'a.jpg', size = 3) => {
+    const p = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'idem-')), name);
+    fs.writeFileSync(p, 'x'.repeat(size));
+    return { path: p, fieldname: 'media', originalname: name, size };
+  };
+  const unlinked = () => new Promise((done) => setTimeout(done, 50));
+
+  function buildUploadApp({ panel = false, attach }) {
+    const uApp = express();
+    uApp.use(express.json());
+    uApp.use((req, _res, next) => {
+      if (panel) req.panelUser = { id: 'p1' };
+      else req.user = { id: 'v1' };
+      attach(req);
+      next();
+    });
+    uApp.post('/upload', idempotent(), (req, res, next) => handler(req, res, next));
+    uApp.use(errorHandler);
+    return uApp;
+  }
+  const send = (uApp) => request(uApp).post('/upload').set('Idempotency-Key', 'k-1').send({ a: 1 });
+
+  it('Redis erişilemezse panel isteği 503 alır ve yüklenen dosya silinir', async () => {
+    let file;
+    const uApp = buildUploadApp({ panel: true, attach: (req) => { file = tempFile(); req.file = file; } });
+    redis.set.mockRejectedValueOnce(new Error('ECONNREFUSED'));
+    const res = await send(uApp);
+    await unlinked();
+
+    expect(res.status).toBe(503);
+    expect(res.body.error.code).toBe('idempotency_unavailable');
+    expect(handler).not.toHaveBeenCalled();
+    expect(fs.existsSync(file.path)).toBe(false);
+  });
+
+  it.each([
+    ['boyutu', [['a.jpg', 3], ['b.jpg', 5]]],
+    ['adı', [['a.jpg', 3], ['c.jpg', 4]]],
+    ['sayısı', [['a.jpg', 3]]],
+  ])('req.files dizisinde dosya %s değişirse aynı anahtar 422 idempotency_key_reused', async (_label, secondList) => {
+    let list = [['a.jpg', 3], ['b.jpg', 4]];
+    const uApp = buildUploadApp({ attach: (req) => { req.files = list.map(([name, size]) => tempFile(name, size)); } });
+    await send(uApp);
+    await flush();
+    list = secondList;
+    const res = await send(uApp);
+
+    expect(res.status).toBe(422);
+    expect(res.body.error.code).toBe('idempotency_key_reused');
+    expect(handler).toHaveBeenCalledTimes(1);
+  });
+
+  it('req.files dizisi aynıysa istek tekrar oynatılır', async () => {
+    const uApp = buildUploadApp({ attach: (req) => { req.files = [tempFile('a.jpg', 3), tempFile('b.jpg', 4)]; } });
+    const first = await send(uApp);
+    await flush();
+    const second = await send(uApp);
+
+    expect(second.status).toBe(first.status);
+    expect(second.headers['idempotent-replayed']).toBe('true');
+    expect(handler).toHaveBeenCalledTimes(1);
   });
 });

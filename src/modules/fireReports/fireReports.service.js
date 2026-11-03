@@ -120,7 +120,7 @@ async function create({ userId, data, files, ip, userAgent }) {
 
   // Saatte 5 (kontrat 9.1 → 429 rate_limited) — üye için userId, guest için IP.
   const key = userId ? `rl:fire:${userId}` : `rl:fire:ip:${ip || 'unknown'}`;
-  await hitFixedWindow(redis, key, { max: 5, windowSec: 3600, message: 'Saatlik yangın bildirim limiti aşıldı' });
+  await hitFixedWindow(redis, key, { max: 5, windowSec: 3600, message: 'Saatlik yangın bildirim limiti aşıldı', failOpen: true });
 
   const { lat, lng } = data.coordinates;
   // İhbar yazma yolu: konum adı "nice to have", ihbarın kaydı hayati. Geocode

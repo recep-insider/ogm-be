@@ -10,6 +10,7 @@ jest.mock('../../../src/config/db', () => {
     for (const method of passthrough) {
       chain[method] = jest.fn(() => chain);
     }
+    chain.del = jest.fn(() => Promise.resolve(1));
     chain.first = jest.fn(() => Promise.resolve(mockQueue.shift()));
     chain.then = (resolve, reject) => Promise.resolve(mockQueue.shift()).then(resolve, reject);
     return chain;
@@ -23,7 +24,8 @@ jest.mock('../../../src/shared/asset-url', () => ({
   assetUrl: (rel) => (rel ? `https://cdn.test/${rel}` : null),
 }));
 
-const { adminListOnline, adminListSaha } = require('../../../src/modules/trainings/trainings.service');
+const { adminListOnline, adminListSaha, adminRemoveSaha } = require('../../../src/modules/trainings/trainings.service');
+const { writeAudit } = require('../../../src/shared/audit');
 
 describe('trainings.service — adminListOnline', () => {
   beforeEach(() => { mockQueue.length = 0; });
@@ -116,5 +118,23 @@ describe('trainings.service — adminListSaha', () => {
       .map(([sql]) => sql)
       .find((sql) => sql.includes('as enrolled_count'));
     expect(enrolledSql).toMatch(/status <> 'rejected'/);
+  });
+});
+
+describe('trainings.service — adminRemoveSaha', () => {
+  beforeEach(() => { mockQueue.length = 0; jest.clearAllMocks(); });
+
+  test('yoklamada katıldı kaydı olan eğitim silinmez: 409 training_has_attendance', async () => {
+    mockQueue.push({ id: 's1', title: 'Saha 1' }, { id: 'app-1' });
+
+    await expect(adminRemoveSaha('s1')).rejects.toMatchObject({ status: 409, code: 'training_has_attendance' });
+    expect(writeAudit).not.toHaveBeenCalled();
+  });
+
+  test('katılım kaydı yoksa silinir ve denetime yazılır', async () => {
+    mockQueue.push({ id: 's1', title: 'Saha 1' }, undefined);
+
+    await adminRemoveSaha('s1');
+    expect(writeAudit).toHaveBeenCalledWith(expect.objectContaining({ action: 'trainings.saha.delete', entityId: 's1' }));
   });
 });

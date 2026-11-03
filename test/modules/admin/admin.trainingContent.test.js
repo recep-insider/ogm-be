@@ -199,3 +199,24 @@ describe('GET /admin/trainings/saha/applications', () => {
     expect(trainingsService.adminListSahaApplications).toHaveBeenCalledWith('s1', {});
   });
 });
+
+describe('içerik yolu alanları KVKK belgesine işaret edemez', () => {
+  const BAD = ['onboarding/saglik.pdf', 'content/../onboarding/saglik.pdf', '/onboarding/x.pdf', '../secrets/x', 'content/%2e%2e/onboarding/x.pdf'];
+
+  it.each(BAD)('%s kapak, eğitmen görseli ve blok kaynağında 400', async (bad) => {
+    const cover = await request(app).post('/admin/trainings/online').send({ ...onlineBody, coverPath: bad });
+    const avatar = await request(app).put('/admin/trainings/saha/s1').send({ instructorAvatarPath: bad });
+    const block = await request(app).put('/admin/trainings/online/o1').send({ content: [{ type: 'image', source: bad }] });
+
+    for (const res of [cover, avatar, block]) expect(res.status).toBe(400);
+    expect(trainingsService.adminCreateOnline).not.toHaveBeenCalled();
+    expect(trainingsService.adminUpdateSaha).not.toHaveBeenCalled();
+  });
+
+  it('yükleme yolları, seed yolları ve dış adresler kabul edilir', async () => {
+    for (const ok of ['content/a.jpg', 'seed/blog/x.jpg', 'videos/t1.mp4', 'https://cdn.example/x.jpg']) {
+      const res = await request(app).put('/admin/trainings/online/o1').send({ coverPath: ok });
+      expect(res.status).toBe(200);
+    }
+  });
+});

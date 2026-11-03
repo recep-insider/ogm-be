@@ -9,7 +9,7 @@ const { idempotent } = require('../../middlewares/idempotency');
 const path = require('path');
 const env = require('../../config/env');
 const { contentUpload, missionMediaUpload } = require('../../middlewares/upload');
-const { assetUrl } = require('../../shared/asset-url');
+const { assetUrl, isPublicAssetPath } = require('../../shared/asset-url');
 const { errors } = require('../../shared/errors');
 const fireReportsController = require('../fireReports/fireReports.controller');
 const { adminStatusSchema } = require('../fireReports/fireReports.validators');
@@ -651,17 +651,22 @@ router.get(
 
 // ── Admin içerik yazma uçları (Ö3) ───────────────────────────────────────────
 
+// İçerik yolu alanları: KVKK belgelerinin (onboarding/) ve yükleme kökü dışının yolu yazılamaz (BUG-010).
+const publicAssetCheck = (value, helpers) => (isPublicAssetPath(value) ? value : helpers.error('any.invalid'));
+const ASSET_PATH_MESSAGES = { 'any.invalid': 'Bu dosya yolu içerik alanında kullanılamaz' };
+const assetPath = Joi.string().max(512).custom(publicAssetCheck).messages(ASSET_PATH_MESSAGES);
+
 const contentBlockSchema = Joi.object({
   type: Joi.string().valid('paragraph', 'heading', 'image', 'video').required(),
   text: Joi.string().allow('').max(5000).optional(),
-  source: Joi.string().max(512).optional(),
+  source: assetPath.optional(),
   caption: Joi.string().allow('').max(300).optional(),
 });
 
 const blogBaseKeys = {
   title: Joi.string().max(250),
   description: Joi.string().allow('').max(2000),
-  coverPath: Joi.string().allow('', null).max(512),
+  coverPath: assetPath.allow('', null),
   publishedAt: Joi.date().iso(),
   readTimeMin: Joi.number().integer().min(1).max(120),
   themes: Joi.array().items(Joi.string().max(60)).max(2),
@@ -810,7 +815,8 @@ router.post(
 // (MES-25708): "a.mp4?v=1" geçer, "a.php?f=.mp4" geçmez.
 const mp4Path = Joi.string()
   .pattern(/^[^\s?#]*\.mp4(?:[?#]\S*)?$/i)
-  .messages({ 'string.pattern.base': 'Yalnızca .mp4 video eklenebilir' });
+  .custom(publicAssetCheck)
+  .messages({ 'string.pattern.base': 'Yalnızca .mp4 video eklenebilir', ...ASSET_PATH_MESSAGES });
 
 // Eğitim içeriği blog blok biçimidir; görsel/video bloğu kaynaksız kaydedilmez.
 const trainingContentSchema = Joi.array()
@@ -819,7 +825,7 @@ const trainingContentSchema = Joi.array()
       source: Joi.when('type', {
         switch: [
           { is: 'video', then: mp4Path.max(512).required() },
-          { is: 'image', then: Joi.string().max(512).required() },
+          { is: 'image', then: assetPath.required() },
         ],
         otherwise: Joi.forbidden(),
       }),
@@ -837,7 +843,7 @@ const onlineBaseKeys = {
   delivery: Joi.string().valid('yuzyuze', 'online'),
   sortOrder: Joi.number().integer().min(0),
   videoPath: mp4Path.allow('', null).max(500),
-  coverPath: Joi.string().allow('', null).max(512),
+  coverPath: assetPath.allow('', null),
   content: trainingContentSchema,
   // Yüz yüze teorik eğitimin oturum bilgisi (opsiyonel) — mobil GET /trainings/online'da
   // yalnızca delivery=yuzyuze iken döner.
@@ -863,8 +869,8 @@ const sahaBaseKeys = {
   startTime: Joi.string().pattern(HHMM),
   endTime: Joi.string().pattern(HHMM),
   instructorName: Joi.string().max(120),
-  instructorAvatarPath: Joi.string().allow('', null).max(512),
-  coverPath: Joi.string().allow('', null).max(512),
+  instructorAvatarPath: assetPath.allow('', null),
+  coverPath: assetPath.allow('', null),
   // K4: kontenjan kesin sınırdır (applySaha dolu eğitime 410 döner) — 0 koltuklu eğitim
   // hiç başvuru alamayacağı için en az 1 zorunlu.
   totalSeats: Joi.number().integer().min(1).max(10000),
@@ -996,11 +1002,13 @@ router.delete(
  *   delete:
  *     tags: [Admin]
  *     summary: Saha eğitimini KALICI sil (başvurular CASCADE silinir)
+ *     description: Yoklamasında katılan olan eğitim silinmez (katılanların uygulamalı eğitim adımı geri alınırdı); pasife alınır.
  *     security: [ { panelBearer: [] } ]
  *     parameters: [ { in: path, name: id, required: true, schema: { type: string } } ]
  *     responses:
  *       204: { description: Silindi }
  *       404: { description: training_not_found }
+ *       409: { description: training_has_attendance }
  */
 router.post(
   '/trainings/saha',
@@ -1357,6 +1365,7 @@ const assemblyPointUpsertSchema = Joi.object({
  *       400: { description: idempotency_key_invalid }
  *       409: { description: idempotency_in_flight }
  *       422: { description: idempotency_key_reused }
+ *       503: { description: 'idempotency_unavailable — Redis yok; istek işlenmedi, tekrar denenebilir' }
  */
 router.post(
   '/missions',
@@ -1623,6 +1632,11 @@ router.get(
  *     security: [ { panelBearer: [] } ]
  *     parameters:
  *       - { in: path, name: id, required: true, schema: { type: string } }
+ *       - in: header
+ *         name: Idempotency-Key
+ *         required: false
+ *         schema: { type: string, maxLength: 200 }
+ *         description: Aynı anahtar ve gövdeyle tekrar gelen istek yeniden işlenmez; ilk başarılı yanıt `Idempotent-Replayed: true` ile döner (ayrıntı POST /admin/missions).
  *     requestBody:
  *       required: true
  *       content:
@@ -1646,6 +1660,7 @@ router.get(
 router.post(
   '/missions/:id/media',
   missionMediaUpload,
+  idempotent(),
   asyncHandler(async (req, res) => {
     res.status(201).json(await missionsService.adminAddMedia(req.params.id, req.file, actorFrom(req)));
   }),
@@ -1779,6 +1794,7 @@ const notificationSendSchema = Joi.object({
  *       400: { description: idempotency_key_invalid }
  *       409: { description: idempotency_in_flight }
  *       422: { description: idempotency_key_reused }
+ *       503: { description: 'idempotency_unavailable — Redis yok; istek işlenmedi, tekrar denenebilir' }
  *   get:
  *     tags: [Admin]
  *     summary: Bildirim gönderim geçmişi (panel)

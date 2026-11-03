@@ -531,10 +531,21 @@ async function adminUpdateSaha(id, body, actor = {}) {
   return adminGetSaha(id);
 }
 
-/** DİKKAT: kalıcı siler; saha_training_applications kayıtları FK CASCADE ile birlikte silinir. */
+/**
+ * DİKKAT: kalıcı siler; saha_training_applications kayıtları FK CASCADE ile birlikte silinir.
+ * Yoklaması alınmış eğitim silinmez: katılanların uygulamalı eğitim adımı geri alınırdı.
+ */
 async function adminRemoveSaha(id, actor = {}) {
   const existing = await db('saha_trainings').where({ id }).first();
   if (!existing) throw errors.notFound('Eğitim bulunamadı', 'training_not_found');
+  const attended = await db('saha_training_applications').where({ training_id: id, attendance: 'katildi' }).first('id');
+  if (attended) {
+    throw errors.conflict(
+      'Katılımı alınmış eğitim silinemez; yayından kaldırmak için pasife alın.',
+      undefined,
+      'training_has_attendance',
+    );
+  }
   await db('saha_trainings').where({ id }).del();
   await writeAudit({
     userId: actor.userId || null,

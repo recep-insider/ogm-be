@@ -85,3 +85,21 @@ describe('fireReports.service.create — guest (userId=null)', () => {
     expect(await redis.ttl('rl:fire:ip:9.9.9.9')).toBe(3600);
   });
 });
+
+describe('fireReports.service.create — Redis kesintisi', () => {
+  beforeEach(() => {
+    inserted.length = 0;
+    jest.clearAllMocks();
+  });
+
+  test('hız sınırı sayacı tutulamazsa ihbar yine kaydedilir (K23)', async () => {
+    const chain = { incr: () => chain, expire: () => chain, ttl: () => chain, exec: jest.fn().mockRejectedValue(new Error('ECONNREFUSED')) };
+    jest.spyOn(redis, 'multi').mockReturnValueOnce(chain);
+
+    const result = await service.create({ userId: null, data, files, ip: '1.2.3.4', userAgent: 'jest' });
+
+    expect(chain.exec).toHaveBeenCalledTimes(1);
+    expect(result.ok).toBe(true);
+    expect(inserted).toHaveLength(1);
+  });
+});
