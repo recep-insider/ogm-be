@@ -47,10 +47,12 @@ async function refresh({ refreshToken, ip, userAgent }) {
   const newAccess = signAccessToken({ sub: payload.sub });
 
   await db.transaction(async (trx) => {
-    await trx('refresh_tokens').where({ id: stored.id }).update({
+    // Koşullu güncelleme: aynı token eşzamanlı iki kez sunulursa yalnız biri yeni zincir alır.
+    const rotated = await trx('refresh_tokens').where({ id: stored.id }).whereNull('revoked_at').update({
       revoked_at: trx.fn.now(),
       replaced_by: newId,
     });
+    if (!rotated) throw errors.unauthorized('Refresh token bulunamadı');
     await trx('refresh_tokens').insert({
       id: newId,
       user_id: payload.sub,
