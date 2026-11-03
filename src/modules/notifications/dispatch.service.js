@@ -37,8 +37,11 @@ const GENERAL_AUDIENCES = ['hazir', 'egitim_bekleyen', 'tumu'];
 
 /** Olay bazlı hedef kitle: seçilen durumlardaki katılımcılar ∪ olayı kapsayan, bölgedeki `hazir` gönüllüler. */
 async function resolveEventTargets(missionId, segments, region) {
-  const mission = await db('missions').where({ id: missionId }).first('id', 'title', 'lat', 'lng');
+  const mission = await db('missions').where({ id: missionId }).first('id', 'title', 'lat', 'lng', 'status');
   if (!mission) throw errors.notFound('Görev bulunamadı', 'mission_not_found');
+  if (mission.status === 'archived') {
+    throw errors.conflict('Olay arşivlendi, bildirim gönderilemez', undefined, 'mission_archived');
+  }
   const target = mission.lat != null && mission.lng != null
     ? { lat: Number(mission.lat), lng: Number(mission.lng) }
     : null;

@@ -205,6 +205,17 @@ describe('hedef kitle', () => {
   });
 });
 
+describe('arşivlenmiş olay (BUG-020)', () => {
+  it('arşivlenmiş olaya bildirim gönderilemez: 409 mission_archived, kayıt ve push yok', async () => {
+    mockState.mission = { id: 'm1', title: 'Eski Yangın', status: 'archived' };
+
+    await expect(service.send({ category: 'acil', title: 'x', body: 'y', missionId: 'm1', segments: ['hazir'] }, {}))
+      .rejects.toMatchObject({ status: 409, code: 'mission_archived' });
+    expect(sendPushToUser).not.toHaveBeenCalled();
+    expect(mockState.inserts.notification_log).toBeUndefined();
+  });
+});
+
 describe('olaya bağlı gönderimde mesafe tercihi (K6)', () => {
   const READY = { kisiDurumu: 'hazir', zincir: { komisyon: 'approved', eksikAdimlar: [] } };
   // Marmaris yangını; yakın gönüllü Marmaris'te, uzak gönüllü İstanbul'da.

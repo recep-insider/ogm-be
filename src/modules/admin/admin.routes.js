@@ -1490,6 +1490,7 @@ router.post(
  *       - { in: path, name: id, required: true, schema: { type: string } }
  *     responses:
  *       200: { description: '{called}' }
+ *       409: { description: 'mission_archived — arşivlenmiş olaya gönüllü çağrılamaz' }
  */
 router.post(
   '/missions/:id/call',
@@ -1825,8 +1826,8 @@ const notificationSendSchema = Joi.object({
  *     responses:
  *       200: { description: '{ok, notificationId, channel, recipients, pushCount, smsCount}' }
  *       400: { description: idempotency_key_invalid }
- *       409: { description: idempotency_in_flight }
  *       422: { description: idempotency_key_reused }
+ *       409: { description: 'idempotency_in_flight; mission_archived — arşivlenmiş olaya bildirim gönderilemez' }
  *       503: { description: 'idempotency_unavailable — Redis yok; istek işlenmedi, tekrar denenebilir' }
  *   get:
  *     tags: [Admin]
@@ -1871,6 +1872,7 @@ const linkReportsSchema = Joi.object({
  *     responses:
  *       200: { description: '{ok, missionId, linked[]}' }
  *       404: { description: 'mission_not_found | not_found' }
+ *       409: { description: 'mission_archived — arşivlenmiş olaya ihbar bağlanamaz' }
  */
 router.post(
   '/missions/:id/reports',

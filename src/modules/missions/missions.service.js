@@ -890,6 +890,9 @@ async function adminUpdate(missionId, body, actor = {}) {
 async function callReadyVolunteers(missionId, actor = {}) {
   const mission = await db('missions').where({ id: missionId }).first();
   if (!mission) throw errors.notFound('Görev bulunamadı', 'mission_not_found');
+  if (mission.status === 'archived') {
+    throw errors.conflict('Olay arşivlendi, gönüllü çağrılamaz', undefined, 'mission_archived');
+  }
 
   const target =
     mission.lat != null && mission.lng != null

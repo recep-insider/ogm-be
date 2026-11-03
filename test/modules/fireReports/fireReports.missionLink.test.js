@@ -138,3 +138,13 @@ describe('adminSetStatus — push data', () => {
     expect(sendPushToUser.mock.calls[0][1].data).not.toHaveProperty('missionId');
   });
 });
+
+describe('linkToMission — arşivlenmiş olay (BUG-020)', () => {
+  it('arşivlenmiş olaya ihbar bağlanamaz: 409 mission_archived, ihbar ve bildirim değişmez', async () => {
+    mockState.mission = { id: 'm1', status: 'archived' };
+
+    await expect(service.linkToMission('m1', ['fr1'], {})).rejects.toMatchObject({ status: 409, code: 'mission_archived' });
+    expect(mockState.updates).toHaveLength(0);
+    expect(sendPushToUser).not.toHaveBeenCalled();
+  });
+});
