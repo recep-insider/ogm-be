@@ -1011,6 +1011,7 @@ router.delete(
  *               isActive: { type: boolean }
  *     responses:
  *       200: { description: 'Oluşturulan eğitim (admin görünümü, başvuru sayaçlarıyla)' }
+ *       400: { description: 'start_date_past; end_time_before_start — bitiş saati başlangıçtan sonra olmalı (details.errors[].field = endTime)' }
  * /admin/trainings/saha/{id}:
  *   put:
  *     tags: [Admin]
@@ -1019,6 +1020,7 @@ router.delete(
  *     parameters: [ { in: path, name: id, required: true, schema: { type: string } } ]
  *     responses:
  *       200: { description: Güncellenen eğitim }
+ *       400: { description: 'end_time_before_start — saat değişiyorsa kayıtlı değerle birleşik kontrol edilir' }
  *       404: { description: training_not_found }
  *   delete:
  *     tags: [Admin]
