@@ -393,7 +393,7 @@ async function scan(missionId, body, actor = {}) {
 
   const existing = await db('check_ins').where({ mission_id: missionId, user_id: userId }).first();
   // Tekrar okutma ilk giriş zamanını değiştirmez.
-  const checkedInAt = existing ? existing.checked_in_at : body.scannedAt ? new Date(body.scannedAt) : new Date();
+  let checkedInAt = existing ? existing.checked_in_at : body.scannedAt ? new Date(body.scannedAt) : new Date();
   if (!existing) {
     try {
       await db('check_ins').insert({
@@ -405,8 +405,11 @@ async function scan(missionId, body, actor = {}) {
         recorded_by: actor.name || actor.role || 'officer',
       });
     } catch (err) {
-      // Aynı QR eş zamanlı iki kez okutulursa (BUG-025) ilk giriş kaydı geçerlidir.
+      // Aynı QR eş zamanlı iki kez okutulursa (BUG-025) ilk giriş kaydı geçerlidir; yanıt ve katılım
+      // kaydı da onun zamanını taşır.
       if (err.code !== 'ER_DUP_ENTRY') throw err;
+      const first = await db('check_ins').where({ mission_id: missionId, user_id: userId }).first();
+      if (first) checkedInAt = first.checked_in_at;
     }
   }
 
@@ -438,6 +441,7 @@ async function scan(missionId, body, actor = {}) {
       if (err.code !== 'ER_DUP_ENTRY') throw err;
       await db('mission_participants')
         .where({ user_id: userId, mission_id: missionId })
+        .whereNot({ status: 'sahada' })
         .update({ status: 'sahada', on_site_at: checkedInAt, updated_at: now });
     }
   }
