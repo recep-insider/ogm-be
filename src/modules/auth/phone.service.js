@@ -162,7 +162,13 @@ async function verifyOtpFlow({ sessionId, code, ip, userAgent }) {
   const ok = await verifyOtp(code, session.codeHash);
   if (!ok) {
     await redis.set(sessionKey(sessionId), JSON.stringify(session), 'KEEPTTL');
-    await hitPhoneHourly(session.phone);
+    // Deneme sayılır ama yanıt invalid_otp kalır: bütçe dolunca yeni kod istenemez, oturumun kendi deneme
+    // sınırı ve kilidi işlemeye devam eder.
+    try {
+      await hitPhoneHourly(session.phone);
+    } catch (err) {
+      if (err.status !== 429) throw err;
+    }
     throw errors.make(400, 'invalid_otp', 'Geçersiz doğrulama kodu. Lütfen tekrar deneyin.');
   }
 

@@ -86,6 +86,16 @@ describe('phone.service — sendOtpFlow limitleri', () => {
     await expect(svc.sendOtpFlow({ phone: PHONE, ip: '1.2.3.4' })).rejects.toMatchObject({ status: 429, code: 'rate_limited' });
   });
 
+  test('saatlik bütçe dolduktan sonra da yanlış kod 429 değil 400 invalid_otp döner; deneme yine sayılır', async () => {
+    await svc.sendOtpFlow({ phone: PHONE, ip: '1.2.3.4' });
+    redis.store.set('otp:phone:s1', { value: JSON.stringify({ phone: PHONE, codeHash: 'x', attempts: 0 }), expiresAt: null });
+    for (let i = 0; i < 6; i += 1) {
+      // eslint-disable-next-line no-await-in-loop
+      await expect(svc.verifyOtpFlow({ sessionId: 's1', code: '000000' })).rejects.toMatchObject({ status: 400, code: 'invalid_otp' });
+    }
+    expect(Number(await redis.get(`rl:otp:phone:${PHONE}`))).toBe(7);
+  });
+
   test('günlük sınır numara + IP çiftine göredir: başka IP aynı numaraya yine kod gönderebilir (K10)', async () => {
     env.sms.dailyLimitPerUser = 2;
     await svc.sendOtpFlow({ phone: PHONE, ip: '1.1.1.1' });
