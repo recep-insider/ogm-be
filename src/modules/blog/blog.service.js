@@ -77,6 +77,7 @@ function mapAdminPost(row) {
     content: safeJson(row.content, []).map(mapAdminContentBlock),
     createdAt: toIso(row.created_at),
     updatedAt: toIso(row.updated_at),
+    version: row.version ?? 1,
   };
 }
 
@@ -135,12 +136,24 @@ async function adminCreate(body, actor = {}) {
   return mapAdminPost(row);
 }
 
-/** Admin — yazı güncelle (kısmi). */
-async function adminUpdate(id, body, actor = {}) {
+/**
+ * Admin — yazı güncelle (kısmi). `version` verilirse yazı o sürümde değilse kaydedilmez (K17):
+ * araya başka bir kayıt girdiyse 409 blog_version_conflict. Her kayıt sürümü bir artırır.
+ */
+async function adminUpdate(id, { version, ...body }, actor = {}) {
   const existing = await db('blog_posts').where({ id }).first();
   if (!existing) throw errors.notFound('Yazı bulunamadı', 'post_not_found');
 
-  await db('blog_posts').where({ id }).update({ ...toRow(body), updated_at: new Date() });
+  const target = db('blog_posts').where({ id });
+  if (version !== undefined) target.where({ version });
+  const updated = await target.update({ ...toRow(body), version: db.raw('version + 1'), updated_at: new Date() });
+  if (version !== undefined && !updated) {
+    throw errors.conflict(
+      'Yazı siz düzenlerken başka biri tarafından değiştirildi. Sayfayı yenileyip tekrar kaydedin.',
+      { currentVersion: existing.version },
+      'blog_version_conflict',
+    );
+  }
 
   await writeAudit({
     userId: actor.userId || null,

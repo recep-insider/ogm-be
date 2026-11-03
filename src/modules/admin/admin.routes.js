@@ -687,7 +687,7 @@ const blogBaseKeys = {
 };
 
 const blogCreateSchema = Joi.object({ ...blogBaseKeys, title: blogBaseKeys.title.required() });
-const blogUpdateSchema = Joi.object(blogBaseKeys).min(1);
+const blogUpdateSchema = Joi.object({ ...blogBaseKeys, version: Joi.number().integer().min(1) }).min(1);
 
 /**
  * @openapi
@@ -748,12 +748,24 @@ router.post(
  *   put:
  *     tags: [Admin]
  *     summary: Blog yazısı güncelle (kısmi — isActive:false = yayından kaldır)
+ *     description: >-
+ *       Gövdede `version` (düzenleme açılırken okunan sürüm) gönderilirse yazı arada başka biri tarafından
+ *       kaydedildiyse 409 blog_version_conflict döner, değişiklik yazılmaz (K17). Her kayıt sürümü bir artırır;
+ *       yanıttaki `version` bir sonraki kayıtta gönderilir.
  *     security: [ { panelBearer: [] } ]
  *     parameters:
  *       - { in: path, name: id, required: true, schema: { type: string } }
+ *     requestBody:
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               version: { type: integer, minimum: 1, description: 'Okunan sürüm; verilmezse kontrol yapılmaz' }
  *     responses:
- *       200: { description: Güncellenen yazı }
+ *       200: { description: Güncellenen yazı (yeni version ile) }
  *       404: { description: post_not_found }
+ *       409: { description: 'blog_version_conflict — yazı arada değişti; details.currentVersion' }
  *   delete:
  *     tags: [Admin]
  *     summary: Blog yazısını KALICI sil
