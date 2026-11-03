@@ -13,8 +13,8 @@ const updatePreferencesSchema = Joi.object({
   baseLocation: Joi.object({
     lat: Joi.number().min(-90).max(90).required(),
     lng: Joi.number().min(-180).max(180).required(),
-    il: Joi.string().max(60).optional(),
-    ilce: Joi.string().max(60).optional(),
+    il: Joi.string().trim().max(60).optional(),
+    ilce: Joi.string().trim().max(60).optional(),
   })
     .allow(null)
     .optional(),

@@ -20,7 +20,8 @@ const router = Router();
  *       Ana sayfadaki SOS butonundan tetiklenir. /emergency'den farklı olarak görev (mission)
  *       bağlamı yoktur. Konum izni yoksa coordinates alanı hiç gönderilmez; konumsuz çağrı da
  *       kabul edilir. Sebep alanı YOKTUR (backend §12). Çağrı `active` durumunda açılır ve
- *       geçmişine "SOS çağrısı gönderildi" satırı düşer.
+ *       geçmişine "SOS çağrısı gönderildi" satırı düşer. Gönüllünün zaten açık bir çağrısı varsa
+ *       yenisi açılmaz; açık çağrı `alreadyActive: true` ile döner (BUG-023).
  *     security: [ { bearerAuth: [] } ]
  *     parameters:
  *       - in: header
@@ -54,6 +55,7 @@ const router = Router();
  *                 status: { type: string, enum: [active, responded, cancelled] }
  *                 createdAt: { type: string, format: date-time }
  *                 dispatchedTo: { type: string, example: 'OGM Yangın Harekat Merkezi' }
+ *                 alreadyActive: { type: boolean, description: 'Yalnız açık çağrı zaten varken; yeni çağrı açılmadı' }
  *       400: { description: 'validation_error | idempotency_key_invalid' }
  *       401: { $ref: '#/components/responses/Unauthorized' }
  *       409: { description: 'idempotency_in_flight — aynı anahtarlı ilk istek sürüyor' }

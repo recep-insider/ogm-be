@@ -294,6 +294,9 @@ async function adminGetById(id) {
 async function linkToMission(missionId, reportIds, actor = {}) {
   const mission = await db('missions').where({ id: missionId }).first('id', 'status');
   if (!mission) throw errors.notFound('Görev bulunamadı', 'mission_not_found');
+  if (mission.status === 'archived') {
+    throw errors.conflict('Olay arşivlendi, ihbar bağlanamaz', undefined, 'mission_archived');
+  }
 
   const rows = await db('fire_reports').whereIn('id', reportIds);
   const missing = reportIds.filter((id) => !rows.some((r) => r.id === id));

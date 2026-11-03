@@ -5,8 +5,8 @@ const Joi = require('joi');
 // §13: kimlik QR (`OGM:VOL:{id}`), doğrudan userId veya — QR okutulamazsa yedek yöntem
 // olarak — TC kimlik numarasıyla gelir.
 const scanSchema = Joi.object({
-  qr: Joi.string().max(120).optional(),
-  userId: Joi.string().max(36).optional(),
+  qr: Joi.string().trim().max(120).optional(),
+  userId: Joi.string().trim().max(36).optional(),
   tcKimlik: Joi.string().length(11).pattern(/^\d+$/).optional(),
   scannedAt: Joi.string().isoDate().optional(),
   token: Joi.string().optional(),

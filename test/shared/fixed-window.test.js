@@ -51,13 +51,38 @@ describe('hitFixedWindow', () => {
     expect(await redis.ttl('live')).toBe(10);
   });
 
-  test('MULTI içindeki komut hatası yutulmaz', async () => {
+  test('MULTI içindeki komut hatası yutulmaz: sınır doğrulanamadı, 503 service_unavailable', async () => {
     const redis = createFakeRedis();
     const boom = new Error('ERR wrong number of arguments');
     const chain = { incr: () => chain, expire: () => chain, ttl: () => chain, exec: async () => [[null, 1], [boom, null], [null, -1]] };
     redis.multi = () => chain;
 
-    await expect(hitFixedWindow(redis, 'k', opts)).rejects.toBe(boom);
+    await expect(hitFixedWindow(redis, 'k', opts)).rejects.toMatchObject({ status: 503, code: 'service_unavailable' });
+  });
+
+  test('Redis bağlantısı düşükse beklemeden 503; failOpen ise istek geçer (BUG-024)', async () => {
+    const redis = createFakeRedis();
+    redis.status = 'reconnecting';
+    redis.multi = jest.fn();
+
+    await expect(hitFixedWindow(redis, 'k', opts)).rejects.toMatchObject({ status: 503, code: 'service_unavailable' });
+    await expect(hitFixedWindow(redis, 'k', { ...opts, failOpen: true })).resolves.toBeUndefined();
+    expect(redis.multi).not.toHaveBeenCalled();
+  });
+
+  test('Redis yanıt vermezse 1 sn içinde 503 (BUG-024)', async () => {
+    jest.useFakeTimers();
+    try {
+      const redis = createFakeRedis();
+      const chain = { incr: () => chain, expire: () => chain, ttl: () => chain, exec: () => new Promise(() => {}) };
+      redis.multi = () => chain;
+
+      const pending = expect(hitFixedWindow(redis, 'k', opts)).rejects.toMatchObject({ status: 503, code: 'service_unavailable' });
+      await jest.advanceTimersByTimeAsync(1000);
+      await pending;
+    } finally {
+      jest.useRealTimers();
+    }
   });
 
   test('failOpen: sayaç tutulamazsa (Redis hatası) istek sınırsız geçer; failOpen yoksa hata yükselir', async () => {
@@ -67,7 +92,7 @@ describe('hitFixedWindow', () => {
       return chain;
     };
     await expect(hitFixedWindow(redis, 'rl:sos:u1', { ...opts, failOpen: true })).resolves.toBeUndefined();
-    await expect(hitFixedWindow(redis, 'rl:sos:u1', opts)).rejects.toThrow('Connection is closed');
+    await expect(hitFixedWindow(redis, 'rl:sos:u1', opts)).rejects.toMatchObject({ status: 503, code: 'service_unavailable' });
   });
 
   test('failOpen sınır aşımını (429) kaldırmaz', async () => {

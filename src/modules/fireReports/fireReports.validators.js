@@ -11,7 +11,7 @@ const fireReportDataSchema = Joi.object({
     lat: Joi.number().min(-90).max(90).required(),
     lng: Joi.number().min(-180).max(180).required(),
   }).required(),
-  description: Joi.string().max(1000).allow('', null).optional(),
+  description: Joi.string().trim().max(1000).allow('', null).optional(),
 });
 
 // §5: İhbar kapatma TEK SONUÇ üretir — "Yangın tespit edilmedi". Ret gerekçesi

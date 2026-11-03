@@ -67,3 +67,61 @@ describe('phone-change.init', () => {
     expect(redis.store.size).toBe(0);
   });
 });
+
+describe('phone-change.commit — hata kodları (BUG-038)', () => {
+  const commit = (code) => service.commit({ userId: 'u1', sessionId: 's1', code, ip: '1.1.1.1', userAgent: 'jest' });
+  const putSession = () => redis.store.set('otp:phone-change:s1', {
+    value: JSON.stringify({ userId: 'u1', newPhone: NEW_PHONE, codeHash: 'hash:123456', attempts: 0 }),
+    expiresAt: null,
+  });
+
+  it('yanlış kod 401 değil 400 invalid_otp (mobil oturum yenileyip ikinci hak harcamasın)', async () => {
+    putSession();
+    await expect(commit('000000')).rejects.toMatchObject({ status: 400, code: 'invalid_otp' });
+  });
+
+  it('süresi dolmuş ya da bilinmeyen oturum 410 otp_expired', async () => {
+    await expect(commit('123456')).rejects.toMatchObject({ status: 410, code: 'otp_expired' });
+  });
+
+  it('doğru kod telefonu değiştirir', async () => {
+    putSession();
+    await expect(commit('123456')).resolves.toBeTruthy();
+    expect(db.rows('users')[0].phone).toBe(NEW_PHONE);
+  });
+
+  it('deneme hakkı tükenince 429 retryAfterSec döner, oturum silinir, telefon değişmez', async () => {
+    redis.store.set('otp:phone-change:s1', {
+      value: JSON.stringify({ userId: 'u1', newPhone: NEW_PHONE, codeHash: 'hash:123456', attempts: env.sms.otpMaxAttempts }),
+      expiresAt: null,
+    });
+
+    await expect(commit('123456')).rejects.toMatchObject({
+      status: 429,
+      details: { retryAfterSec: env.sms.resendCooldown },
+    });
+    expect(redis.store.has('otp:phone-change:s1')).toBe(false);
+    expect(db.rows('users')[0].phone).toBe('+905320000000');
+  });
+
+  it('oturum silmenin yanıtı gecikse de (komut Redis\'e gitti) telefon değişir, 503 dönmez', async () => {
+    putSession();
+    jest.useFakeTimers();
+    try {
+      jest.spyOn(redis, 'del').mockImplementationOnce(() => new Promise(() => {}));
+      const pending = commit('123456');
+      await jest.advanceTimersByTimeAsync(1000);
+      await expect(pending).resolves.toBeTruthy();
+      expect(db.rows('users')[0].phone).toBe(NEW_PHONE);
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it('oturum silme hemen hata verirse (uygulanmadı) 503, telefon değişmez', async () => {
+    putSession();
+    jest.spyOn(redis, 'del').mockRejectedValueOnce(new Error('Connection is closed.'));
+    await expect(commit('123456')).rejects.toMatchObject({ status: 503, code: 'service_unavailable' });
+    expect(db.rows('users')[0].phone).toBe('+905320000000');
+  });
+});

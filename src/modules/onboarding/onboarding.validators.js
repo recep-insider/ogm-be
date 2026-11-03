@@ -46,7 +46,7 @@ const iletisim = Joi.object({
   // mobil §11: "İkamet Adresi" serbest metin alanı formdan KALKIYOR, yerini İl/İlçe
   // alıyor — panelin bölge kapsamı il alanına dayanıyor ve serbest metin bu eşleşmeyi
   // imkânsız kılıyordu. Alan geçiş süresince opsiyonel tutuluyor (eski mobil gönderiyor).
-  adres: Joi.string().min(10).max(500).optional(),
+  adres: Joi.string().trim().min(10).max(500).optional(),
   // İkamet ili 81 ilin kanonik adına normalize edilir; tanınmayan il 400.
   il: Joi.string()
     .trim()
@@ -70,12 +70,12 @@ const kisisel = Joi.object({
   meslek: Joi.string().valid(...MESLEK).required(),
   meslekDiger: Joi.alternatives().conditional('meslek', {
     is: 'Diğer',
-    then: Joi.string().min(2).max(100).required(),
+    then: Joi.string().trim().min(2).max(100).required(),
     otherwise: Joi.any().valid(null, '').optional(),
   }),
-  hobiler: Joi.array().items(Joi.string().min(1).max(100)).default([]),
+  hobiler: Joi.array().items(Joi.string().trim().min(1).max(100)).default([]),
   // mobil §11: STK üyeliği BAŞVURU SIRASINDA beyan edilir (ORBİS'te tutulur).
-  stkText: Joi.string().max(200).allow('', null).optional(),
+  stkText: Joi.string().trim().max(200).allow('', null).optional(),
 });
 
 const acil = Joi.object({
@@ -88,13 +88,13 @@ const acil = Joi.object({
 // İl/ilçe/bölge/işletme kanonik ad doğrulaması servis katmanında forest_units
 // tablosuna karşı tek sorguyla yapılır (dört alanın kombinasyonu eşleşmeli).
 const egitim = Joi.object({
-  il: Joi.string().min(1).max(50).required(),
-  ilce: Joi.string().min(1).max(60).required(),
-  bolgeMudurlugu: Joi.string().min(1).max(100).required(),
-  isletmeMudurlugu: Joi.string().min(1).max(100).required(),
+  il: Joi.string().trim().min(1).max(50).required(),
+  ilce: Joi.string().trim().min(1).max(60).required(),
+  bolgeMudurlugu: Joi.string().trim().min(1).max(100).required(),
+  isletmeMudurlugu: Joi.string().trim().min(1).max(100).required(),
   giysiBedeni: Joi.string().valid(...GIYSI_BEDENI).required(),
   ayakkabiNumarasi: Joi.number().integer().min(34).max(50).required(),
-  aciklama: Joi.string().max(500).allow('', null).optional(),
+  aciklama: Joi.string().trim().max(500).allow('', null).optional(),
 });
 
 const onboardingSchema = Joi.object({

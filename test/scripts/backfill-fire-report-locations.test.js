@@ -139,6 +139,35 @@ describe('scripts/backfill-fire-report-locations', () => {
 
   // Script cron/deploy adımından çağrılıyor: sorgu patlarsa süreç sessizce
   // "başarılı" (exit 0) bitmemeli, yoksa backfill atlandığı fark edilmez.
+  describe('il, ilçe ve posta kodu (BUG-100)', () => {
+    const FULL = { locationName: 'Tepe', regionLabel: 'Muğla / Marmaris', postalCode: '48700', il: 'Muğla', ilce: 'Marmaris' };
+
+    test('kapsam konum adı dolu ama il\'i boş koordinatlı satırları da içerir', async () => {
+      const { done, db } = loadScript({ rows: [] });
+      await done;
+
+      const scope = db.mock.results[0].value.where.mock.calls[0][0];
+      const calls = [];
+      const recorder = new Proxy({}, { get: (_t, name) => (...args) => { calls.push([name, ...args.map((a) => (typeof a === 'function' ? (a(recorder), 'fn') : a))]); return recorder; } });
+      scope(recorder);
+      expect(calls).toEqual(expect.arrayContaining([['whereNull', 'il'], ['whereNotNull', 'latitude'], ['whereNotNull', 'longitude']]));
+    });
+
+    test('beş alanın yalnız boş olanlarını yazar; dolu konum adına dokunmaz', async () => {
+      const rows = [
+        { id: 'r1', latitude: '36.85', longitude: '28.27', location_name: PLACEHOLDER, postal_code: null, il: null, ilce: null },
+        { id: 'r3', latitude: '36.85', longitude: '28.27', location_name: 'Eski Ad', postal_code: '48000', il: null, ilce: null },
+      ];
+      const { done, updates } = loadScript({ rows, geocode: jest.fn(async () => FULL) });
+      await done;
+
+      expect(updates[0]).toMatchObject({ location_name: 'Tepe', region_label: 'Muğla / Marmaris', postal_code: '48700', il: 'Muğla', ilce: 'Marmaris' });
+      expect(updates[1]).toMatchObject({ il: 'Muğla', ilce: 'Marmaris' });
+      expect(updates[1]).not.toHaveProperty('location_name');
+      expect(updates[1]).not.toHaveProperty('postal_code');
+    });
+  });
+
   describe('hata yolu', () => {
     test('select reddedilirse process.exitCode = 1 olur', async () => {
       const { done } = loadScript({ selectError: new Error('ER_NO_SUCH_TABLE') });

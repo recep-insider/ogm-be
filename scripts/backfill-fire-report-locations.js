@@ -1,9 +1,11 @@
 #!/usr/bin/env node
 'use strict';
 
-// NOMINATIM_URL tanımsızken oluşturulan ihbarların location_name/region_label
-// alanları 'Bilinmeyen Konum' + koordinat metni olarak kaydedildi. Bu script
-// kayıtlı latitude/longitude üzerinden tekrar reverse geocode edip günceller.
+// Adres servisi yokken ya da aksarken oluşturulan ihbarların konum adı 'Bilinmeyen Konum'a
+// düştü, il/ilçe/posta kodu boş kaldı; il'i boş ihbar bölge seçili panelde hiç görünmüyor.
+// Bu script kayıtlı latitude/longitude üzerinden tekrar reverse geocode edip yeni ihbar yolunun
+// yazdığı beş alanı (konum adı, bölge etiketi, posta kodu, il, ilçe) yalnız BOŞ olanlara yazar.
+// Konum adı dolu ama il'i boş satırlar da kapsamdadır (BUG-100).
 //
 // Kullanım (sunucuda):
 //   docker compose exec -T backend npm run backfill:locations
@@ -24,8 +26,12 @@ const DRY_RUN = process.argv.includes('--dry-run');
 
 async function main() {
   const rows = await db('fire_reports')
-    .where((qb) => qb.where('location_name', PLACEHOLDER).orWhere('location_name', '').orWhereNull('location_name'))
-    .select('id', 'latitude', 'longitude', 'location_name');
+    .where((qb) => qb
+      .where('location_name', PLACEHOLDER)
+      .orWhere('location_name', '')
+      .orWhereNull('location_name')
+      .orWhere((inner) => inner.whereNull('il').whereNotNull('latitude').whereNotNull('longitude')))
+    .select('id', 'latitude', 'longitude', 'location_name', 'postal_code', 'il', 'ilce');
 
   console.log(`${rows.length} kayıt güncellenecek${DRY_RUN ? ' (dry-run)' : ''}`);
 
@@ -45,19 +51,27 @@ async function main() {
   for (const row of rows) {
     const lat = Number(row.latitude);
     const lng = Number(row.longitude);
-    const { locationName, regionLabel } = await reverseGeocode(lat, lng);
+    const geo = await reverseGeocode(lat, lng);
 
-    if (locationName === PLACEHOLDER) {
+    const patch = {};
+    const nameMissing = !row.location_name || row.location_name === PLACEHOLDER;
+    if (nameMissing && geo.locationName && geo.locationName !== PLACEHOLDER) {
+      patch.location_name = geo.locationName;
+      patch.region_label = geo.regionLabel;
+    }
+    if (!row.postal_code && geo.postalCode) patch.postal_code = geo.postalCode;
+    if (!row.il && geo.il) patch.il = geo.il;
+    if (!row.ilce && geo.ilce) patch.ilce = geo.ilce;
+
+    if (!Object.keys(patch).length) {
       failed += 1;
-      console.warn(`  ${row.id}: geocode başarısız (${lat}, ${lng}) — atlandı`);
+      console.warn(`  ${row.id}: geocode başarısız — atlandı`);
       continue;
     }
 
-    await db('fire_reports')
-      .where({ id: row.id })
-      .update({ location_name: locationName, region_label: regionLabel, updated_at: new Date() });
+    await db('fire_reports').where({ id: row.id }).update({ ...patch, updated_at: new Date() });
     updated += 1;
-    console.log(`  ${row.id}: ${locationName} — ${regionLabel}`);
+    console.log(`  ${row.id}: ${[patch.location_name, patch.il, patch.ilce].filter(Boolean).join(' — ') || 'güncellendi'}`);
   }
 
   console.log(`Bitti: ${updated} güncellendi, ${failed} başarısız.`);

@@ -10,9 +10,11 @@ const mockUpdates = [];
 const mockState = {
   user: null,
   participation: undefined,
+  openSos: undefined,
   whereCalls: [],
   whereInCalls: [],
   orderByCalls: [],
+  forUpdateTables: [],
   leftJoinCalls: [],
   selectCalls: [],
   adminRows: [],
@@ -23,9 +25,15 @@ jest.mock('../../../src/config/db', () => {
     const c = {
       where: jest.fn((...args) => {
         mockState.whereCalls.push([table, ...args]);
+        c.lastWhere = args[0];
         return c;
       }),
       join: jest.fn(() => c),
+      forUpdate: jest.fn(() => {
+        mockState.forUpdateTables.push([table, c.lastWhere]);
+        c.locked = true;
+        return c;
+      }),
       leftJoin: jest.fn((...args) => {
         mockState.leftJoinCalls.push(args);
         return c;
@@ -49,6 +57,8 @@ jest.mock('../../../src/config/db', () => {
       first: jest.fn(async () => {
         if (table === 'users') return mockState.user;
         if (table === 'mission_participants as mp') return mockState.participation;
+        // Kilitli yeniden okuma, arada kapatılan çağrıyı (lockedSos) görebilir.
+        if (table === 'sos_reports') return c.locked && 'lockedSos' in mockState ? mockState.lockedSos : mockState.openSos;
         return undefined;
       }),
       insert: jest.fn(async (row) => {
@@ -66,6 +76,7 @@ jest.mock('../../../src/config/db', () => {
     return c;
   };
   const db = Object.assign(jest.fn((table) => makeChain(table)), { raw: jest.fn() });
+  db.transaction = jest.fn(async (cb) => cb(db));
   return { db };
 });
 jest.mock('../../../src/config/redis', () => {
@@ -105,9 +116,12 @@ describe('sos.service.create', () => {
     mockState.user = { ...USER_ROW };
     redis.store.clear();
     mockState.participation = undefined;
+    mockState.openSos = undefined;
     mockState.whereCalls = [];
     mockState.whereInCalls = [];
     mockState.orderByCalls = [];
+    mockState.forUpdateTables = [];
+    delete mockState.lockedSos;
     jest.clearAllMocks();
     reverseGeocode.mockResolvedValue({ il: null, ilce: null });
   });
@@ -132,6 +146,63 @@ describe('sos.service.create', () => {
     // Geçmişteki ilk satır mobil kaynaklıdır — yanıt süresi operatör kaydından türer.
     expect(mockHistory).toHaveLength(1);
     expect(mockHistory[0]).toMatchObject({ event: 'SOS çağrısı gönderildi', by_kind: 'mobil' });
+  });
+
+  test('açık çağrısı olan gönüllü yeni çağrı açamaz; mevcut çağrı döner (BUG-023)', async () => {
+    mockState.openSos = { id: 'eski', status: 'active', created_at: new Date('2026-11-01T10:00:00Z'), dispatched_to: 'OGM Yangın Harekat Merkezi' };
+
+    const result = await service.create({ userId: 'u1', body: {}, ip: '1.2.3.4', userAgent: 'jest' });
+
+    expect(result).toMatchObject({ ok: true, sosId: 'eski', status: 'active', createdAt: '2026-11-01T10:00:00.000Z', alreadyActive: true });
+    expect(mockInserted).toHaveLength(0);
+    expect(mockUpdates).toHaveLength(0);
+    expect(mockHistory).toEqual([expect.objectContaining({ sos_id: 'eski', event: 'SOS tekrar gönderildi', by_kind: 'mobil' })]);
+    expect(writeAudit).toHaveBeenCalledWith(expect.objectContaining({ action: 'sos.repeat', entityId: 'eski' }));
+    // Açık çağrı birincil anahtarla kilitlenerek yeniden okunur; aynı anda kapatılan çağrıya yazılmaz.
+    expect(mockState.forUpdateTables).toEqual([['users', { id: 'u1' }], ['sos_reports', { id: 'eski', status: 'active' }]]);
+  });
+
+  test('açık çağrısı olmayan gönüllüde sos_reports kilitlenmez (eş zamanlı SOS boşluk kilidinde takılmaz)', async () => {
+    await service.create({ userId: 'u1', body: {}, ip: '1.2.3.4', userAgent: 'jest' });
+
+    expect(mockState.forUpdateTables).toEqual([['users', { id: 'u1' }]]);
+    expect(mockInserted).toHaveLength(1);
+  });
+
+  test('bulunan çağrı kilitlenmeden önce kapatıldıysa tekrar basış ona yazılmaz, yeni çağrı açılır', async () => {
+    mockState.openSos = { id: 'eski', status: 'active', created_at: new Date('2026-11-01T10:00:00Z') };
+    mockState.lockedSos = undefined;
+
+    const result = await service.create({ userId: 'u1', body: {}, ip: '1.2.3.4', userAgent: 'jest' });
+
+    expect(result.alreadyActive).toBeUndefined();
+    expect(mockInserted).toHaveLength(1);
+    expect(mockHistory).toEqual([expect.objectContaining({ event: 'SOS çağrısı gönderildi' })]);
+    expect(mockHistory.some((h) => h.sos_id === 'eski')).toBe(false);
+  });
+
+  test('konumsuz açık çağrıya tekrar basışta gelen konum eklenir ve il/ilçe çözülür', async () => {
+    mockState.openSos = { id: 'eski', status: 'active', lat: null, lng: null, created_at: new Date('2026-11-01T10:00:00Z') };
+    reverseGeocode.mockResolvedValue({ il: 'Muğla', ilce: 'Marmaris' });
+
+    const result = await service.create({ userId: 'u1', body: { coordinates: { lat: 36.85, lng: 28.27 } }, ip: '1.2.3.4', userAgent: 'jest' });
+    await new Promise((r) => setImmediate(r));
+
+    expect(result).toMatchObject({ sosId: 'eski', alreadyActive: true });
+    expect(mockInserted).toHaveLength(0);
+    expect(mockUpdates[0]).toMatchObject({ table: 'sos_reports', values: { lat: 36.85, lng: 28.27 } });
+    expect(mockUpdates[1]).toMatchObject({ table: 'sos_reports', values: { il: 'Muğla', ilce: 'Marmaris' } });
+    expect(mockHistory[0]).toMatchObject({ sos_id: 'eski', event: 'SOS tekrar gönderildi, konum eklendi' });
+  });
+
+  test('konumu olan açık çağrının konumu tekrar basışta değişmez', async () => {
+    mockState.openSos = { id: 'eski', status: 'active', lat: 36.8, lng: 28.2, created_at: new Date('2026-11-01T10:00:00Z') };
+
+    await service.create({ userId: 'u1', body: { coordinates: { lat: 36.85, lng: 28.27 } }, ip: '1.2.3.4', userAgent: 'jest' });
+
+    expect(mockUpdates).toHaveLength(0);
+    expect(reverseGeocode).not.toHaveBeenCalled();
+    expect(mockHistory[0]).toMatchObject({ event: 'SOS tekrar gönderildi' });
   });
 
   test('kullanıcı bilgileri satıra snapshot\'lanır (geri arama telefonu dahil)', async () => {

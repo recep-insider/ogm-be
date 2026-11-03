@@ -3,7 +3,7 @@
 // il is validated/normalised against the 81 provinces in shared/regions.js for both
 // PATCH /users/me and onboarding iletisim; ilce stays free text (trimmed, max 60).
 
-const { patchMeSchema } = require('../../../src/modules/users/users.validators');
+const { patchMeSchema, consentSchema } = require('../../../src/modules/users/users.validators');
 const { onboardingSchema } = require('../../../src/modules/onboarding/onboarding.validators');
 
 const OPTS = { abortEarly: false, stripUnknown: true, convert: true };
@@ -77,5 +77,22 @@ describe('onboarding iletisim — il', () => {
   it('rejects an unknown province', () => {
     const { error } = onboardingSchema.validate(payload('Gotham'), OPTS);
     expect(error.details.some((d) => d.path.join('.') === 'iletisim.il')).toBe(true);
+  });
+});
+
+describe('PATCH /users/me — acil kimlik alanları', () => {
+  const acil = (patch) => ({ ad: 'Ayşe', soyad: 'Yılmaz', telefon: '+905329876543', yakinlik: 'Eş', ...patch });
+
+  it.each(['ad', 'soyad'])('rejects a whitespace-only acil.%s', (field) => {
+    const { error } = patchMeSchema.validate({ acil: acil({ [field]: '   ' }) }, OPTS);
+    expect(error.details.some((d) => d.path.join('.') === `acil.${field}`)).toBe(true);
+  });
+});
+
+describe('consentSchema — version', () => {
+  it('trims the version so it matches the published version', () => {
+    const { error, value } = consentSchema.validate({ document: 'kvkk', version: ' v1.0 ' }, OPTS);
+    expect(error).toBeUndefined();
+    expect(value.version).toBe('v1.0');
   });
 });

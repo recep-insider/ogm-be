@@ -56,6 +56,17 @@ describe('sos.cancel', () => {
     expect(mockState.updates).toHaveLength(0);
   });
 
+  it('eş zamanlı ikinci iptal yazmaz: koşullu güncelleme 0 satır → 409, ikinci geçmiş satırı yok (BUG-025)', async () => {
+    const { db } = require('../../../src/config/db');
+    const updateZero = { where: jest.fn(() => updateZero), update: jest.fn(async () => 0) };
+    db.mockImplementationOnce(() => ({ where: () => ({ first: async () => mockState.row }) }));
+    db.mockImplementationOnce(() => updateZero);
+
+    await expect(service.cancel('s1', { userId: 'u1' })).rejects.toMatchObject({ status: 409, code: 'sos_not_active' });
+    expect(updateZero.where).toHaveBeenCalledWith({ id: 's1', status: 'active' });
+    expect(mockState.history).toHaveLength(0);
+  });
+
   it('okuma ile yazma arasında operatör müdahale ettiyse iptal onun kaydını ezmez: 409, geçmiş yok', async () => {
     mockState.updateCount = 0;
     await expect(service.cancel('s1', { userId: 'u1' })).rejects.toMatchObject({ status: 409, code: 'sos_not_active' });

@@ -130,3 +130,40 @@ describe('trainings.service — saat bilgili tarih İstanbul gününe göre okun
     mockState.existing = undefined;
   });
 });
+
+describe('trainings.service — bitiş saati başlangıçtan sonra (BUG-033)', () => {
+  beforeEach(() => {
+    mockInserts.length = 0;
+    mockUpdates.length = 0;
+    mockState.existing = { id: 's1', start_date: '2099-01-10', start_time: '09:00', end_time: '17:00' };
+  });
+  afterEach(() => {
+    mockState.existing = undefined;
+  });
+
+  it.each([['10:00', '09:00'], ['09:00', '09:00']])('oluşturmada %s–%s reddedilir, kayıt yok', async (startTime, endTime) => {
+    await expect(adminCreateSaha({ ...body('2099-01-10'), startTime, endTime })).rejects.toMatchObject({
+      status: 400,
+      code: 'end_time_before_start',
+      details: { errors: [{ field: 'endTime' }] },
+    });
+    expect(mockInserts).toHaveLength(0);
+  });
+
+  it('kısmi güncellemede yalnız bitiş verilirse kayıtlı başlangıçla karşılaştırılır', async () => {
+    await expect(adminUpdateSaha('s1', { endTime: '08:30' })).rejects.toMatchObject({ code: 'end_time_before_start' });
+    await expect(adminUpdateSaha('s1', { startTime: '18:00' })).rejects.toMatchObject({ code: 'end_time_before_start' });
+    expect(mockUpdates).toHaveLength(0);
+  });
+
+  it('saat değişmiyorsa eski (hatalı) kayıt başka alanlarıyla düzenlenebilir (PA-42999)', async () => {
+    mockState.existing = { id: 's1', start_date: '2099-01-10', start_time: '10:00', end_time: '09:00' };
+    await adminUpdateSaha('s1', { title: 'Yeni ad' });
+    expect(mockUpdates).toHaveLength(1);
+  });
+
+  it('geçerli aralık kaydedilir', async () => {
+    await adminUpdateSaha('s1', { startTime: '08:00', endTime: '12:00' });
+    expect(mockUpdates).toHaveLength(1);
+  });
+});

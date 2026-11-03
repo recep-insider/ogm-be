@@ -2,7 +2,10 @@
 
 const { v4: uuidv4 } = require('uuid');
 const { db } = require('../../config/db');
-const { redis } = require('../../config/redis');
+const { redis: rawRedis } = require('../../config/redis');
+const { guardedClient, delVerifiedSession } = require('../../shared/redis-guard');
+
+const redis = guardedClient(rawRedis);
 const env = require('../../config/env');
 const logger = require('../../config/logger');
 const { AppError, errors } = require('../../shared/errors');
@@ -45,16 +48,21 @@ function getOtpForPhone(phone) {
 
 async function checkRateLimits(phone, ip) {
   const banned = await redis.get(`${BAN_PREFIX}${phone}`);
-  if (banned) throw errors.rateLimit('Çok fazla başarısız deneme, lütfen sonra tekrar deneyin');
+  if (banned) {
+    const ttl = await redis.ttl(`${BAN_PREFIX}${phone}`);
+    throw errors.rateLimit('Çok fazla başarısız deneme, lütfen sonra tekrar deneyin', undefined, {
+      retryAfterSec: ttl > 0 ? ttl : env.sms.otpLockoutDuration,
+    });
+  }
 
-  await hitFixedWindow(redis, `${RATE_PHONE_PREFIX}${phone}`, {
+  await hitFixedWindow(rawRedis, `${RATE_PHONE_PREFIX}${phone}`, {
     max: 5,
     windowSec: 3600,
     message: 'Telefon başına saatlik OTP limiti aşıldı',
   });
 
   if (ip) {
-    await hitFixedWindow(redis, `${RATE_IP_PREFIX}${ip}`, {
+    await hitFixedWindow(rawRedis, `${RATE_IP_PREFIX}${ip}`, {
       max: 50,
       windowSec: 3600,
       message: 'IP başına saatlik OTP limiti aşıldı',
@@ -103,7 +111,8 @@ async function resendOtpFlow({ sessionId, ip }) {
   // cooldown kontrolü
   const elapsed = (Date.now() - session.createdAt) / 1000;
   if (elapsed < env.sms.resendCooldown) {
-    throw errors.rateLimit(`Lütfen ${Math.ceil(env.sms.resendCooldown - elapsed)} saniye bekleyin`);
+    const retryAfterSec = Math.ceil(env.sms.resendCooldown - elapsed);
+    throw errors.rateLimit(`Lütfen ${retryAfterSec} saniye bekleyin`, undefined, { retryAfterSec });
   }
 
   assertOtpDeliverable(session.phone);
@@ -140,7 +149,9 @@ async function verifyOtpFlow({ sessionId, code, ip, userAgent }) {
   if (session.attempts > env.sms.otpMaxAttempts) {
     await redis.del(sessionKey(sessionId));
     await redis.set(`${BAN_PREFIX}${session.phone}`, '1', 'EX', env.sms.otpLockoutDuration);
-    throw errors.rateLimit('Çok fazla başarısız deneme, hesap geçici olarak kilitlendi');
+    throw errors.rateLimit('Çok fazla başarısız deneme, hesap geçici olarak kilitlendi', undefined, {
+      retryAfterSec: env.sms.otpLockoutDuration,
+    });
   }
 
   const ok = await verifyOtp(code, session.codeHash);
@@ -149,7 +160,7 @@ async function verifyOtpFlow({ sessionId, code, ip, userAgent }) {
     throw errors.make(400, 'invalid_otp', 'Geçersiz doğrulama kodu. Lütfen tekrar deneyin.');
   }
 
-  await redis.del(sessionKey(sessionId));
+  await delVerifiedSession(redis, sessionKey(sessionId));
 
   const existing = await db('users').where({ phone: session.phone, is_active: true }).first();
 
@@ -214,13 +225,6 @@ async function restoreFlow({ restoreToken, ip, userAgent }) {
     throw errors.unauthorized('Silme talebi iptal edilemedi; lütfen tekrar giriş yapın.', 'restore_invalid');
   }
 
-  try {
-    await redis.del(userBlockKey(payload.sub));
-  } catch (err) {
-    logger.warn('Silinen hesabın erişim engeli kaldırılamadı', { userId: payload.sub, error: err.message });
-    throw errors.make(503, 'restore_unavailable', 'Hesap şu an açılamıyor; birkaç saniye sonra tekrar deneyin.');
-  }
-
   // Hesap açılamazsa (arada anonimleşti, DB hatası) kaldırılan erişim engeli geri yazılır:
   // silinmiş hesabın eski access token'ları yeniden işe yaramasın.
   const reblock = async () => {
@@ -230,6 +234,16 @@ async function restoreFlow({ restoreToken, ip, userAgent }) {
       logger.warn('Silinen hesabın erişim engeli geri yazılamadı', { userId: payload.sub, error: err.message });
     }
   };
+
+  try {
+    await redis.del(userBlockKey(payload.sub));
+  } catch (err) {
+    logger.warn('Silinen hesabın erişim engeli kaldırılamadı', { userId: payload.sub, error: err.message });
+    // Yanıtı geciken silme Redis'te sonradan uygulanabilir; hesap açılmadığı için engel geri yazılır.
+    if (err.maybeApplied) await reblock();
+    throw errors.make(503, 'restore_unavailable', 'Hesap şu an açılamıyor; birkaç saniye sonra tekrar deneyin.');
+  }
+
   const now = new Date();
   let restored;
   try {

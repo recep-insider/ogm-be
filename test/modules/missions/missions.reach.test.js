@@ -57,3 +57,14 @@ describe('respond — mesafe dışı katılım', () => {
     await expect(service.respond('u1', 'cagrildigi', 'yolda', {})).resolves.toMatchObject({ userStatus: 'yolda' });
   });
 });
+
+describe('callReadyVolunteers — arşivlenmiş olay (BUG-020)', () => {
+  it('arşivlenmiş olaya gönüllü çağrılamaz: 409 mission_archived, katılımcı ve push yok', async () => {
+    const { sendPushToUser } = require('../../../src/shared/push-provider');
+    db.reset({ ...{ missions: [{ ...mission('arsiv', 36.85, 28.27), status: 'archived' }] }, users: [], mission_participants: [] });
+
+    await expect(service.callReadyVolunteers('arsiv', {})).rejects.toMatchObject({ status: 409, code: 'mission_archived' });
+    expect(db.rows('mission_participants')).toHaveLength(0);
+    expect(sendPushToUser).not.toHaveBeenCalled();
+  });
+});

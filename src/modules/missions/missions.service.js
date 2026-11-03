@@ -277,14 +277,20 @@ async function respond(userId, id, decision, audit = {}) {
       updated_at: now,
     });
   } else {
-    await db('mission_participants').insert({
-      id: uuidv4(),
-      user_id: userId,
-      mission_id: id,
-      status: decision,
-      responded_at: now,
-      joined_at: now,
-    });
+    try {
+      await db('mission_participants').insert({
+        id: uuidv4(),
+        user_id: userId,
+        mission_id: id,
+        status: decision,
+        responded_at: now,
+        joined_at: now,
+      });
+    } catch (err) {
+      // Eş zamanlı ilk yanıt (BUG-025): satırı diğer istek açtı; karar mevcut satıra yazılır.
+      if (err.code !== 'ER_DUP_ENTRY') throw err;
+      return respond(userId, id, decision, audit);
+    }
   }
 
   await writeAudit({
@@ -379,14 +385,19 @@ async function scan(missionId, body, actor = {}) {
   const checkedInAt = body.scannedAt ? new Date(body.scannedAt) : new Date();
   const existing = await db('check_ins').where({ mission_id: missionId, user_id: userId }).first();
   if (!existing) {
-    await db('check_ins').insert({
-      id: uuidv4(),
-      mission_id: missionId,
-      user_id: userId,
-      checked_in_at: checkedInAt,
-      method: method || 'qr',
-      recorded_by: actor.name || actor.role || 'officer',
-    });
+    try {
+      await db('check_ins').insert({
+        id: uuidv4(),
+        mission_id: missionId,
+        user_id: userId,
+        checked_in_at: checkedInAt,
+        method: method || 'qr',
+        recorded_by: actor.name || actor.role || 'officer',
+      });
+    } catch (err) {
+      // Aynı QR eş zamanlı iki kez okutulursa (BUG-025) ilk giriş kaydı geçerlidir.
+      if (err.code !== 'ER_DUP_ENTRY') throw err;
+    }
   }
 
   // Olay durumu check-in sinyalinden türer; katılım kaydı yoksa burada açılır
@@ -404,14 +415,21 @@ async function scan(missionId, body, actor = {}) {
       });
     }
   } else {
-    await db('mission_participants').insert({
-      id: uuidv4(),
-      user_id: userId,
-      mission_id: missionId,
-      status: 'sahada',
-      joined_at: checkedInAt,
-      on_site_at: checkedInAt,
-    });
+    try {
+      await db('mission_participants').insert({
+        id: uuidv4(),
+        user_id: userId,
+        mission_id: missionId,
+        status: 'sahada',
+        joined_at: checkedInAt,
+        on_site_at: checkedInAt,
+      });
+    } catch (err) {
+      if (err.code !== 'ER_DUP_ENTRY') throw err;
+      await db('mission_participants')
+        .where({ user_id: userId, mission_id: missionId })
+        .update({ status: 'sahada', on_site_at: checkedInAt, updated_at: now });
+    }
   }
 
   await writeAudit({
@@ -890,6 +908,9 @@ async function adminUpdate(missionId, body, actor = {}) {
 async function callReadyVolunteers(missionId, actor = {}) {
   const mission = await db('missions').where({ id: missionId }).first();
   if (!mission) throw errors.notFound('Görev bulunamadı', 'mission_not_found');
+  if (mission.status === 'archived') {
+    throw errors.conflict('Olay arşivlendi, gönüllü çağrılamaz', undefined, 'mission_archived');
+  }
 
   const target =
     mission.lat != null && mission.lng != null

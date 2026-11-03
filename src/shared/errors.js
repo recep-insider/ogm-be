@@ -27,8 +27,8 @@ const errorFactories = {
     new AppError(message, { status: 410, code, details }),
   business: (message, details, code = 'business_error') =>
     new AppError(message, { status: 422, code, details }),
-  rateLimit: (message = 'İstek limiti aşıldı', code = 'rate_limited') =>
-    new AppError(message, { status: 429, code }),
+  rateLimit: (message = 'İstek limiti aşıldı', code = 'rate_limited', details) =>
+    new AppError(message, { status: 429, code, details }),
   internal: (message = 'Sunucu hatası', code = 'internal_error') =>
     new AppError(message, { status: 500, code }),
   make: (status, code, message, details) =>

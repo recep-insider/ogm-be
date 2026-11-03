@@ -130,6 +130,15 @@ function session(user, refreshToken) {
 }
 
 // Sayaç bcrypt'ten önce artırılır; başarılı giriş sayacı siler.
+// Başarılı denemeden sonra sayaç sıfırlanır; Redis o an yanıt vermezse giriş bozulmaz, sayaç süresince durur.
+async function resetAttempts(key) {
+  try {
+    await redis.del(key);
+  } catch (err) {
+    logger.warn('Giriş deneme sayacı sıfırlanamadı', { error: err.message });
+  }
+}
+
 function assertLoginAllowed(key) {
   return hitFixedWindow(redis, key, {
     max: LOGIN_MAX_FAILURES,
@@ -146,7 +155,7 @@ async function login({ email, password }, meta = {}) {
   const user = await db('panel_users').where({ email: normalized }).first();
   const ok = await bcrypt.compare(String(password), user ? user.password_hash : await dummyHash());
   if (!user || !ok) throw invalidCredentials();
-  await redis.del(rlKey);
+  await resetAttempts(rlKey);
   if (!isActive(user)) throw statusError(user);
 
   const refreshToken = await issueRefreshToken(user.id, meta);
@@ -214,7 +223,7 @@ async function changePassword(user, { currentPassword, newPassword }, currentRef
   await assertLoginAllowed(rlKey);
   const ok = await bcrypt.compare(String(currentPassword), user.password_hash);
   if (!ok) throw invalidCredentials();
-  await redis.del(rlKey);
+  await resetAttempts(rlKey);
 
   const now = new Date();
   await db('panel_users').where({ id: user.id }).update({

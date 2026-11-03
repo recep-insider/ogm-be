@@ -22,6 +22,15 @@ function adminBucket(req) {
   return sub ? `panel:${sub}` : null;
 }
 
+// Tüm 429 yanıtları istemciye ne kadar bekleyeceğini söyler (BUG-028, MOBIL_TALEPLERI §1).
+function rateLimitHandler(message) {
+  return (req, res) => {
+    const resetAt = req.rateLimit?.resetTime ? new Date(req.rateLimit.resetTime).getTime() : null;
+    const retryAfterSec = resetAt ? Math.max(1, Math.ceil((resetAt - Date.now()) / 1000)) : 60;
+    res.status(429).json({ error: { code: 'rate_limited', message, details: { retryAfterSec } } });
+  };
+}
+
 // Panel trafiği aynı ofis/NAT IP'sini mobil kullanıcılarla paylaşabilir; ayrı sayaç tutulur.
 const generalLimiter = rateLimit({
   windowMs: 60 * 1000,
@@ -29,7 +38,7 @@ const generalLimiter = rateLimit({
   keyGenerator: (req) => adminBucket(req) || req.ip,
   standardHeaders: 'draft-7',
   legacyHeaders: false,
-  message: { error: { code: 'rate_limited', message: 'İstek limiti aşıldı' } },
+  handler: rateLimitHandler('İstek limiti aşıldı'),
 });
 
-module.exports = { generalLimiter, GENERAL_LIMIT, ADMIN_LIMIT };
+module.exports = { generalLimiter, rateLimitHandler, GENERAL_LIMIT, ADMIN_LIMIT };

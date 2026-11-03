@@ -12,7 +12,7 @@ const router = Router();
 
 router.use(requireSuperAdmin);
 
-const idParams = Joi.object({ id: Joi.string().max(36).required() });
+const idParams = Joi.object({ id: Joi.string().trim().max(36).required() });
 const listQuery = Joi.object({
   status: Joi.string().valid('pending', 'active', 'rejected', 'disabled').optional(),
   q: Joi.string().trim().max(100).allow('').optional(),

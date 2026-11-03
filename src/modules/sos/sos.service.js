@@ -69,30 +69,74 @@ async function create({ userId, body, ip, userAgent }) {
 
   const id = uuidv4();
   const now = new Date();
-  await db('sos_reports').insert({
-    id,
-    user_id: userId,
-    mission_id: activeParticipation?.mission_id || null,
-    // §10 + mobil §4: konum YALNIZCA koordinattır; serbest metin etiket ve sebep alanı yoktur.
-    lat: body.coordinates?.lat ?? null,
-    lng: body.coordinates?.lng ?? null,
-    status: 'active',
-    // Geri arama bilgileri çağrı anında snapshot'lanır — profil sonradan değişse
-    // veya hesap silinse (user_id SET NULL) bile operasyon merkezinde kalır.
-    ad: user.ad,
-    soyad: user.soyad,
-    tc_kimlik: user.tc_kimlik,
-    phone: user.phone,
-    adres: user.adres,
-    acil_ad: user.acil_ad,
-    acil_soyad: user.acil_soyad,
-    acil_telefon: user.acil_telefon,
-    acil_yakinlik: user.acil_yakinlik,
-    dispatched_to: DISPATCH_TARGET,
-    ip: ip || null,
-    created_at: now,
-    updated_at: now,
+  // Gönüllü başına tek açık çağrı (BUG-023): kullanıcı satırı kilitlenir; açık çağrı varsa yenisi
+  // açılmaz, mevcut çağrı döner. Eş zamanlı iki istek de tek çağrı açar. Tekrar basış geçmişe düşer;
+  // çağrı konumsuz açıldıysa yeni gelen konum çağrıya eklenir.
+  const coords = body.coordinates;
+  const open = await db.transaction(async (trx) => {
+    await trx('users').where({ id: userId }).forUpdate().first('id');
+    // Bulunan çağrı birincil anahtarıyla kilitlenip yeniden okunur: aynı anda operatör kapattıysa ya da
+    // gönüllü iptal ettiyse tekrar basış kapanmış çağrıya yazılmaz. Koşullu okuma kilitlenmez; açık çağrısı
+    // olmayan gönüllülerin eş zamanlı SOS'u boşluk kilidinde kilitlenmesin.
+    const found = await trx('sos_reports').where({ user_id: userId, status: 'active' }).orderBy('created_at', 'desc').first('id');
+    const active = found && await trx('sos_reports').where({ id: found.id, status: 'active' }).forUpdate().first();
+    if (active) {
+      const locationAdded = coords != null && active.lat == null;
+      if (locationAdded) {
+        await trx('sos_reports').where({ id: active.id }).update({ lat: coords.lat, lng: coords.lng, updated_at: now });
+      }
+      const event = locationAdded ? 'SOS tekrar gönderildi, konum eklendi' : 'SOS tekrar gönderildi';
+      await addHistory(active.id, { event, by: 'Mobil', byKind: 'mobil' }, trx);
+      return { row: active, locationAdded };
+    }
+    await trx('sos_reports').insert({
+      id,
+      user_id: userId,
+      mission_id: activeParticipation?.mission_id || null,
+      // §10 + mobil §4: konum YALNIZCA koordinattır; serbest metin etiket ve sebep alanı yoktur.
+      lat: body.coordinates?.lat ?? null,
+      lng: body.coordinates?.lng ?? null,
+      status: 'active',
+      // Geri arama bilgileri çağrı anında snapshot'lanır — profil sonradan değişse
+      // veya hesap silinse (user_id SET NULL) bile operasyon merkezinde kalır.
+      ad: user.ad,
+      soyad: user.soyad,
+      tc_kimlik: user.tc_kimlik,
+      phone: user.phone,
+      adres: user.adres,
+      acil_ad: user.acil_ad,
+      acil_soyad: user.acil_soyad,
+      acil_telefon: user.acil_telefon,
+      acil_yakinlik: user.acil_yakinlik,
+      dispatched_to: DISPATCH_TARGET,
+      ip: ip || null,
+      created_at: now,
+      updated_at: now,
+    });
+    return null;
   });
+
+  if (open) {
+    const { row, locationAdded } = open;
+    if (locationAdded) fillLocation(row.id, coords.lat, coords.lng);
+    await writeAudit({
+      userId,
+      action: 'sos.repeat',
+      entity: 'sos_report',
+      entityId: row.id,
+      ip,
+      userAgent,
+      payload: { hasCoordinates: coords != null, locationAdded },
+    });
+    return {
+      ok: true,
+      sosId: row.id,
+      status: 'active',
+      createdAt: toIso(row.created_at),
+      dispatchedTo: row.dispatched_to || DISPATCH_TARGET,
+      alreadyActive: true,
+    };
+  }
 
   if (body.coordinates) fillLocation(id, body.coordinates.lat, body.coordinates.lng);
 
@@ -130,7 +174,8 @@ async function cancel(sosId, { userId, ip, userAgent }) {
   }
 
   const now = new Date();
-  // Koşullu yazım: arada operatör "müdahale edildi" dediyse iptal onun kaydını ezmez (BUG-025).
+  // Koşullu yazım (BUG-025): eş zamanlı iki iptalden yalnız biri yazar; arada operatör "müdahale edildi"
+  // dediyse iptal onun kaydını ezmez.
   const cancelled = await db('sos_reports').where({ id: sosId, status: 'active' }).update({
     status: 'cancelled',
     cancelled_at: now,

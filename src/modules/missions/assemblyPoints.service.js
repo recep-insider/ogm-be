@@ -49,28 +49,37 @@ async function notifyLocationChange(missionId, point) {
 
   const title = mission?.title || 'Toplanma noktası değişti';
   const body = `Toplanma noktası güncellendi: ${point.name}`;
-  const summary = { yolda: 0, sahada: 0, sms: 0 };
+  // Yalnız gerçekten ulaşan bildirim sayılır (BUG-111): cihazı olmayan, push'u başarısız ya da
+  // mock sağlayıcıya düşen gönüllü "bildirildi" değildir; test numarasına SMS gönderilmez.
+  const summary = { yolda: 0, sahada: 0, sms: 0, notifiedCount: 0, unreachableCount: 0 };
 
   for (const row of rows) {
     // eslint-disable-next-line no-await-in-loop
-    await sendPushToUser(row.user_id, {
+    const push = await sendPushToUser(row.user_id, {
       // Acil sınıfı kapatılamaz; topic opt-in'i bu bildirimi engellememelidir.
       topic: 'acil',
       title,
       body,
       data: { type: 'assembly_point_changed', missionId, ...point.coordinates },
     });
-    summary[row.status] += 1;
+    const pushed = push?.sent > 0 && !push.mock;
+    if (pushed) {
+      summary[row.status] += 1;
+      summary.notifiedCount += 1;
+    }
 
+    let texted = false;
     if (row.status === 'yolda' && row.phone) {
       try {
         // eslint-disable-next-line no-await-in-loop
-        await sendSms(row.phone, `${title}. ${body}`);
-        summary.sms += 1;
+        const sms = await sendSms(row.phone, `${title}. ${body}`);
+        texted = !sms?.dummy && !sms?.mock;
+        if (texted) summary.sms += 1;
       } catch (err) {
         logger.error('Toplanma noktası SMS gönderilemedi', { userId: row.user_id, error: err.message });
       }
     }
+    if (!pushed && !texted) summary.unreachableCount += 1;
   }
   return summary;
 }
@@ -131,7 +140,14 @@ async function upsert(missionId, body, actor = {}) {
     payload: { name: body.name, locationChanged, notified },
   });
 
-  return { ok: true, assemblyPoint: point, locationChanged, notified };
+  return {
+    ok: true,
+    assemblyPoint: point,
+    locationChanged,
+    notified,
+    notifiedCount: notified ? notified.notifiedCount : 0,
+    unreachableCount: notified ? notified.unreachableCount : 0,
+  };
 }
 
 /** Olay arşivlenince nokta kapanır — yeni gönüllü çağrısı durur. */

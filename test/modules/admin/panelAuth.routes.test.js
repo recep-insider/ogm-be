@@ -7,7 +7,10 @@ jest.mock('bcrypt', () => require('./panel-fakes').fakeBcrypt);
 jest.mock('../../../src/config/db', () => ({ db: require('./panel-fakes').createFakeDb() }));
 jest.mock('../../../src/config/redis', () => ({ redis: require('./panel-fakes').createFakeRedis() }));
 // Genel IP limiti kendi testinde (test/middlewares/rate-limit.test.js); burada istek sayısı onu aşıyor.
-jest.mock('../../../src/middlewares/rate-limit', () => ({ generalLimiter: (_req, _res, next) => next() }));
+jest.mock('../../../src/middlewares/rate-limit', () => ({
+  ...jest.requireActual('../../../src/middlewares/rate-limit'),
+  generalLimiter: (_req, _res, next) => next(),
+}));
 
 const crypto = require('crypto');
 const jwt = require('jsonwebtoken');

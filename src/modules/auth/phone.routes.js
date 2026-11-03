@@ -2,6 +2,7 @@
 
 const { Router } = require('express');
 const rateLimit = require('express-rate-limit');
+const { rateLimitHandler } = require('../../middlewares/rate-limit');
 
 const validate = require('../../middlewares/validate');
 const asyncHandler = require('../../shared/async-handler');
@@ -15,7 +16,7 @@ const sendOtpLimiter = rateLimit({
   limit: 50,
   standardHeaders: 'draft-7',
   legacyHeaders: false,
-  message: { error: { code: 'rate_limited', message: 'IP başına OTP isteği limiti aşıldı' } },
+  handler: rateLimitHandler('IP başına OTP isteği limiti aşıldı'),
 });
 
 const verifyLimiter = rateLimit({
@@ -23,7 +24,7 @@ const verifyLimiter = rateLimit({
   limit: 60,
   standardHeaders: 'draft-7',
   legacyHeaders: false,
-  message: { error: { code: 'rate_limited', message: 'OTP doğrulama limiti aşıldı' } },
+  handler: rateLimitHandler('OTP doğrulama limiti aşıldı'),
 });
 
 /**

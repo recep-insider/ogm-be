@@ -41,6 +41,8 @@ describe('generalLimiter', () => {
     const blocked = await hit(app, 1);
     expect(blocked.status).toBe(429);
     expect(blocked.body.error.code).toBe('rate_limited');
+    expect(blocked.body.error.details.retryAfterSec).toBeGreaterThanOrEqual(1);
+    expect(blocked.body.error.details.retryAfterSec).toBeLessThanOrEqual(60);
   });
 
   it('x-api-key başlığı yüksek sayaca girmez', async () => {

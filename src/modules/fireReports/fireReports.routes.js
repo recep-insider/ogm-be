@@ -2,12 +2,19 @@
 
 const { Router } = require('express');
 const asyncHandler = require('../../shared/async-handler');
-const { optionalAuth } = require('../../middlewares/auth');
+const { requireAuth } = require('../../middlewares/auth');
 const { fireReportUpload } = require('../../middlewares/upload');
 const { idempotent } = require('../../middlewares/idempotency');
 const controller = require('./fireReports.controller');
 
 const router = Router();
+
+// Token'sız ihbar misafir ihbarıdır; token gönderilip geçersiz ya da süresi dolmuşsa ihbar
+// sessizce anonim kaydedilmez, 401 döner ki mobil oturumu yenileyip tekrar göndersin (BUG-027).
+function guestOrAuthenticated(req, res, next) {
+  if (!req.headers.authorization) return next();
+  return requireAuth(req, res, next);
+}
 
 /**
  * @openapi
@@ -15,6 +22,7 @@ const router = Router();
  *   post:
  *     tags: [Fire Reports]
  *     summary: Yangın ihbarı (multipart, media[] min 1) — guest (token'sız) da gönderebilir
+ *     description: Authorization başlığı gönderilir ve token geçersiz ya da süresi dolmuşsa 401 döner, ihbar kaydedilmez (BUG-027); başlık yoksa misafir ihbarıdır.
  *     security: [ {}, { bearerAuth: [] } ]
  *     parameters:
  *       - in: header
@@ -56,6 +64,6 @@ const router = Router();
 // Yangın ihbarı acil akıştır — token'sız (guest) gönderim kabul edilir; token
 // varsa ihbar kullanıcıya bağlanır (üye olmadan devam senaryosu, kontrat 9.1).
 // Anahtar multer'dan sonra kontrol edilir: gövde alanları ancak o zaman okunur.
-router.post('/', optionalAuth, fireReportUpload, idempotent({ releaseOn5xx: true }), asyncHandler(controller.create));
+router.post('/', guestOrAuthenticated, fireReportUpload, idempotent({ releaseOn5xx: true }), asyncHandler(controller.create));
 
 module.exports = router;

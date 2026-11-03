@@ -54,6 +54,8 @@ Tüm 4xx/5xx response'ları aşağıdaki şema ile dönecek:
 - `code`: programatik tanımlayıcı (snake_case, ASCII). Frontend `code` üzerinden switch yapacak (örn. `validation_error`, `not_found`).
 - `message`: Türkçe, user-facing. Frontend toast/alert'lerde olduğu gibi gösterir (`getApiErrorMessage` — `src/services/api/client.ts:136-150`).
 - `details` (opsiyonel): validation hata listesi, ek metadata.
+- Tüm `429` yanıtları (`rate_limited`, `sms_daily_limit`) `details.retryAfterSec` taşır: tekrar denemeden önce beklenecek saniye (BUG-028).
+- `503 service_unavailable`: Redis (oturum, kod ve hız sınırı deposu) yanıt vermiyor; SMS koduyla giriş, SMS kodu isteme, telefon değiştirme ve panel girişi en geç ~1 sn içinde bu kodla döner, kısa süre sonra tekrar denenebilir (BUG-024). Bağlantı yoksa istek işlenmez; yanıt gecikmesinde gönderilen komut Redis'te sonradan uygulanabilir (ör. sayaç artar). Kod doğrulandıktan sonraki gecikme isteği bozmaz, giriş ya da telefon değişimi tamamlanır. e-Devlet girişi ve oturum yenileme bu kapsamda değildir.
 
 ### 0.5 Pagination
 **Yok.** Frontend tüm list endpoint'lerini flat `T[]` olarak tüketiyor (`useBlogPosts`, `useFireMissions`, `useCompletedTrainings`, `useMyFireReports` vs.). Pagination'a geçiş ileride backend tarafından tetiklenirse `FRONTEND_CHANGES.md`'ye geçiş notu eklenir.
@@ -954,7 +956,7 @@ edilsin mi?" diye sorar. "Devam" → `POST /auth/restore`; "Vazgeç" → hiçbir
   - `PUT /admin/fire-reports/{id}` — body `{status: 'confirmed' | 'rejected', note?: string}`
   - Mobile app bu admin endpoint'i ÇAĞIRMAZ — yalnızca status değişimini React Query invalidation + push notification ile öğrenir.
 
-- **Error cases:** `400 validation_error` (missing media), `413 file_too_large` (tek dosya sınırı), `413 payload_too_large` (ihbar başına toplam 100 MB aşıldı, K9; `details.limitBytes`, `details.totalBytes`), `429 rate_limited`
+- **Error cases:** `401 unauthorized` (Authorization başlığı var ama token geçersiz ya da süresi dolmuş; ihbar kaydedilmez, oturum yenilenip tekrar gönderilmeli — BUG-027; başlık yoksa misafir ihbarı), `400 validation_error` (missing media), `413 file_too_large` (tek dosya sınırı), `413 payload_too_large` (ihbar başına toplam 100 MB aşıldı, K9; `details.limitBytes`, `details.totalBytes`), `429 rate_limited`
 - **TS tipler:** `FireReportSubmitRequest`, `FireReportSubmitResponse`, `FireReportMedia`, `FireReportNeed`, `FireReportStatus` (`types.ts:508-552`)
 - **Mock:** `mocks.ts:426-447`, auto-promotion delay: 15s (`MOCK_REPORT_APPROVAL_DELAY_MS`)
 

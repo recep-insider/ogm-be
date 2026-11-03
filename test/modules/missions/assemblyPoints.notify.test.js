@@ -46,10 +46,50 @@ describe('notifyLocationChange — silinmiş hesap', () => {
 
     const summary = await notifyLocationChange('m1', POINT);
 
-    expect(summary).toEqual({ yolda: 1, sahada: 0, sms: 1 });
+    expect(summary).toEqual({ yolda: 1, sahada: 0, sms: 1, notifiedCount: 1, unreachableCount: 0 });
     expect(sendPushToUser).toHaveBeenCalledTimes(1);
     expect(sendPushToUser).toHaveBeenCalledWith('u1', expect.anything());
     expect(sendSms).toHaveBeenCalledWith('+905321112233', expect.any(String));
     expect(sendSms).not.toHaveBeenCalledWith('+905329998877', expect.any(String));
+  });
+});
+
+describe('notifyLocationChange — yalnız ulaşan bildirim sayılır (BUG-111)', () => {
+  it.each([
+    ['cihazı yok', { sent: 0, noDevices: true }],
+    ['push hatası', { sent: 0, error: 'timeout' }],
+    ['mock sağlayıcı', { sent: 1, mock: true }],
+  ])('sahadaki gönüllü %s → bildirildi sayılmaz, ulaşılamayan sayılır', async (_label, outcome) => {
+    mockState.participants = [{ status: 'sahada', user_id: 'u1', phone: '+905321112233', deleted_at: null }];
+    sendPushToUser.mockResolvedValueOnce(outcome);
+
+    const summary = await notifyLocationChange('m1', POINT);
+
+    expect(summary).toMatchObject({ sahada: 0, notifiedCount: 0, unreachableCount: 1 });
+  });
+
+  it('yoldaki gönüllüye push ulaşmasa da SMS ulaştıysa ulaşılamayan sayılmaz; test numarası SMS\'i sayılmaz', async () => {
+    mockState.participants = [
+      { status: 'yolda', user_id: 'u1', phone: '+905321112233', deleted_at: null },
+      { status: 'yolda', user_id: 'u2', phone: '+905555555555', deleted_at: null },
+    ];
+    sendPushToUser.mockResolvedValue({ sent: 0, noDevices: true });
+    sendSms.mockResolvedValueOnce({ providerMessageId: 'x' }).mockResolvedValueOnce({ dummy: true });
+
+    const summary = await notifyLocationChange('m1', POINT);
+
+    expect(summary).toEqual({ yolda: 0, sahada: 0, sms: 1, notifiedCount: 0, unreachableCount: 1 });
+    sendPushToUser.mockResolvedValue({ sent: 1 });
+  });
+
+  it('mock sağlayıcıya düşen SMS gönderildi sayılmaz; gönüllü ulaşılamayan sayılır', async () => {
+    mockState.participants = [{ status: 'yolda', user_id: 'u1', phone: '+905321112233', deleted_at: null }];
+    sendPushToUser.mockResolvedValue({ sent: 0, noDevices: true });
+    sendSms.mockResolvedValueOnce({ providerMessageId: 'mock-1', mock: true });
+
+    const summary = await notifyLocationChange('m1', POINT);
+
+    expect(summary).toEqual({ yolda: 0, sahada: 0, sms: 0, notifiedCount: 0, unreachableCount: 1 });
+    sendPushToUser.mockResolvedValue({ sent: 1 });
   });
 });

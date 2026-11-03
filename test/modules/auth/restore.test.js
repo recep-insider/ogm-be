@@ -125,6 +125,24 @@ describe('POST /auth/restore — restoreFlow', () => {
     del.mockRestore();
   });
 
+  it('engel silmenin yanıtı gecikirse (sonradan uygulanabilir) engel geri yazılır, hesap açılmaz', async () => {
+    const { restoreToken } = await verify();
+    jest.useFakeTimers();
+    const del = jest.spyOn(redis, 'del').mockImplementationOnce(() => new Promise(() => {}));
+    const set = jest.spyOn(redis, 'set');
+    try {
+      const assertion = expect(restoreFlow({ restoreToken })).rejects.toMatchObject({ status: 503, code: 'restore_unavailable' });
+      await jest.advanceTimersByTimeAsync(1000);
+      await assertion;
+      expect(set).toHaveBeenCalledWith(userBlockKey('u1'), '1', 'EX', expect.any(Number));
+      expect(db.rows('users')[0]).toMatchObject({ is_active: false, deleted_at: DELETED_AT });
+    } finally {
+      del.mockRestore();
+      set.mockRestore();
+      jest.useRealTimers();
+    }
+  });
+
   it('kontrolden sonra anonimleşen hesap açılmaz, oturum verilmez', async () => {
     const { restoreToken } = await verify();
     const del = jest.spyOn(redis, 'del').mockImplementationOnce(async () => {
@@ -170,5 +188,21 @@ describe('POST /auth/restore — restoreFlow', () => {
   it('restore token access token yerine kullanılamaz', async () => {
     const restoreToken = signRestoreToken({ sub: 'u1' });
     expect(() => verifyAccessToken(restoreToken)).toThrow();
+  });
+});
+
+describe('verify-otp — oturum silmenin yanıtı gecikirse (BUG-024)', () => {
+  it('komut Redis\'e gittiyse giriş tamamlanır, kişi kodu kaybetmez', async () => {
+    db.reset({ users: [pendingUser({ is_active: true, deleted_at: null })], refresh_tokens: [], applications: [] });
+    jest.useFakeTimers();
+    const del = jest.spyOn(redis, 'del').mockImplementationOnce(() => new Promise(() => {}));
+    try {
+      const pending = verify();
+      await jest.advanceTimersByTimeAsync(1000);
+      await expect(pending).resolves.toMatchObject({ ok: true, isExisting: true, accessToken: expect.any(String) });
+    } finally {
+      del.mockRestore();
+      jest.useRealTimers();
+    }
   });
 });

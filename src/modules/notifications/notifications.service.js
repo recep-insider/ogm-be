@@ -16,13 +16,19 @@ async function registerDevice(userId, { token, platform, appVersion }) {
     return { id: existing.id };
   }
   const id = uuidv4();
-  await db('devices').insert({
-    id,
-    user_id: userId,
-    fcm_token: token,
-    platform,
-    app_version: appVersion || null,
-  });
+  try {
+    await db('devices').insert({
+      id,
+      user_id: userId,
+      fcm_token: token,
+      platform,
+      app_version: appVersion || null,
+    });
+  } catch (err) {
+    // Aynı token eş zamanlı iki kez gelirse (BUG-025) ikinci istek mevcut kaydı günceller.
+    if (err.code !== 'ER_DUP_ENTRY') throw err;
+    return registerDevice(userId, { token, platform, appVersion });
+  }
   return { id };
 }
 

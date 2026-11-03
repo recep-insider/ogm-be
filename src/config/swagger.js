@@ -464,7 +464,7 @@ const definition = {
               'report_linked | report_unlinked: {reportId, reportTitle|null}.',
               'notification_sent: {notificationId, category, title, recipients (hedef kitle), pushCount (sağlayıcının kabul ettiği push; mock\'ta 0), smsCount, segments[]}.',
               'mission_called: {recipients, outOfRange, notReady, withoutBaseLocation}.',
-              'assembly_point_changed: {name|null, locationChanged, notified{yolda,sahada,sms}|null}.',
+              'assembly_point_changed: {name|null, locationChanged, notified{yolda,sahada,sms,notifiedCount,unreachableCount}|null}.',
               'mission_closed: {archivedAt}.',
               "first_checkin: {volunteer{id|null, name}, method: qr|tc_manual, recordedBy|null}; silinmiş gönüllü 'Silinmiş gönüllü' olarak döner.",
             ].join(' '),

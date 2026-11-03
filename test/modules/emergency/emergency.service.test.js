@@ -1,7 +1,7 @@
 'use strict';
 
 // Acil bildirim hız sınırı: kullanıcı başına dakikada 5, sayaç atomik ve TTL'li; Redis
-// hatasında bildirim yazılmaz (hata çağırana döner).
+// kesintisinde sınır uygulanmadan bildirim yazılır (K23).
 
 const mockInserted = [];
 
@@ -32,7 +32,7 @@ describe('emergency.service.create — hız sınırı', () => {
     expect(mockInserted).toHaveLength(5);
   });
 
-  test('Redis hatası çağırana döner, bildirim yazılmaz', async () => {
+  test('Redis hatasında bildirim sınır uygulanmadan yazılır (K23)', async () => {
     const down = new Error('Connection is closed.');
     jest.spyOn(redis, 'multi').mockReturnValueOnce({
       incr() { return this; },
@@ -41,7 +41,17 @@ describe('emergency.service.create — hız sınırı', () => {
       exec: async () => { throw down; },
     });
 
-    await expect(send()).rejects.toBe(down);
-    expect(mockInserted).toHaveLength(0);
+    await expect(send()).resolves.toMatchObject({ ok: true });
+    expect(mockInserted).toHaveLength(1);
+  });
+
+  test('Redis yeniden bağlanırken bildirim beklemeden yazılır (K23)', async () => {
+    redis.status = 'reconnecting';
+    try {
+      await expect(send()).resolves.toMatchObject({ ok: true });
+      expect(mockInserted).toHaveLength(1);
+    } finally {
+      redis.status = 'ready';
+    }
   });
 });
