@@ -10,10 +10,12 @@ const { writeAudit } = require('../../shared/audit');
 const DISPATCH_TARGET = 'OGM Yangın Harekat Merkezi';
 
 async function create({ userId, body, ip, userAgent }) {
-  // Kötüye kullanımı sınırla — kullanıcı başına dakikada 5 (kontrat 10.1 → 429).
+  // Kötüye kullanımı sınırla — kullanıcı başına dakikada 5 (kontrat 10.1 → 429). Redis kesintisinde
+  // sınır uygulanmadan işlenir (K23: SOS, ihbar ve acil bildirim kaybolmaz).
   await hitFixedWindow(redis, `rl:emergency:${userId}`, {
     max: 5,
     windowSec: 60,
+    failOpen: true,
     message: 'Çok sık acil bildirim gönderiyorsunuz',
   });
 
