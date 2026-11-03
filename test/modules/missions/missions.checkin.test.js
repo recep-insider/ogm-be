@@ -62,7 +62,7 @@ jest.mock('../../../src/config/db', () => {
         return 1;
       }),
       then: (resolve, reject) =>
-        Promise.resolve(table === 'missions' ? mockState.historyRows : []).then(resolve, reject),
+        Promise.resolve(table === 'missions' ? mockState.historyRows : mockState.listRows?.[table] || []).then(resolve, reject),
     };
     return c;
   };
@@ -99,6 +99,7 @@ const reset = () => {
   mockState.whereInCalls = [];
   mockState.orderCalls = [];
   mockState.dupOnce = {};
+  mockState.listRows = {};
   env.admin.scanHmacSecret = '';
   jest.clearAllMocks();
 };
@@ -308,6 +309,23 @@ describe('history — missions the volunteer actually took part in', () => {
     mockState.participant = { id: 'p1', status: 'sahada' };
     const detail = await service.getHistory('u1', 'm1');
     expect(detail.userStatus).toBe('sahada');
+  });
+
+  it('arşivlenmiş olayın geçmiş detayı aktif detayla aynı medyayı gösterir (BUG-087)', async () => {
+    mockState.mission = { ...mockState.mission, status: 'archived', gallery: JSON.stringify(['missions/eski.jpg']) };
+    mockState.participant = { id: 'p1', status: 'tamamladi' };
+    mockState.listRows = {
+      fire_reports: [{ id: 'r1', photo_paths: JSON.stringify(['reports/ihbar.jpg']) }],
+      mission_photos: [
+        { id: 'p1', file_path: 'missions/onayli.jpg', kind: 'image', submitted_at: new Date() },
+        { id: 'p2', file_path: 'missions/video.mp4', kind: 'video', submitted_at: new Date() },
+      ],
+    };
+
+    const detail = await service.getHistory('u1', 'm1');
+
+    expect(detail.gallery.map((u) => u.split('/').pop())).toEqual(['eski.jpg', 'ihbar.jpg', 'onayli.jpg']);
+    expect(detail.photos.map((p) => p.kind)).toEqual(['image', 'video']);
   });
 });
 

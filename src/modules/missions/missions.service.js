@@ -102,19 +102,27 @@ async function approvedPhotosFor(missionId) {
   return rows.map((p) => ({ id: p.id, url: assetUrl(p.file_path), kind: p.kind, createdAt: toIso(p.submitted_at) }));
 }
 
+// §5: bağlı ihbarların fotoğraf/videoları olayın medya havuzunu besler. Mobil galeri yalnızca
+// görsel çizer; onaylı videolar yalnız `photos` içinde gider. Aktif ve geçmiş detay aynı kaynağı kullanır.
+function galleryOf(m, linkedMedia, photos) {
+  return [
+    ...safeJson(m.gallery, []).map(assetUrl),
+    ...linkedMedia.map((x) => x.url),
+    ...photos.filter((p) => p.kind === 'image').map((p) => p.url),
+  ];
+}
+
+function mediaOf(missionId) {
+  return Promise.all([require('../fireReports/fireReports.service').mediaForMission(missionId), approvedPhotosFor(missionId)]);
+}
+
 function mapActiveDetail(m, userStatus, { onSiteCount, trend, assemblyPoint, userId, linkedMedia = [], photos = [] }) {
   return {
     ...mapActiveSummary(m, userStatus),
     regionLabel: m.region_label || '',
     fullTitle: m.full_title || m.title,
     description: m.description || '',
-    // §5: bağlı ihbarların fotoğraf/videoları olayın medya havuzunu besler.
-    // Mobil galeri yalnızca görsel çizer; onaylı videolar yalnız `photos` içinde gider.
-    gallery: [
-      ...safeJson(m.gallery, []).map(assetUrl),
-      ...linkedMedia.map((x) => x.url),
-      ...photos.filter((p) => p.kind === 'image').map((p) => p.url),
-    ],
+    gallery: galleryOf(m, linkedMedia, photos),
     photos,
     // §12 / mobil §6: tahmini alan, ihtiyaç listesi, kapsama yarıçapı, şiddet, hava
     // durumu ve ekip sayıları KALDIRILDI — merkez operatörünün doğrulayamayacağı saha
@@ -165,11 +173,12 @@ function mapHistorySummary(m, userStatus = m.user_status) {
   };
 }
 
-function mapHistoryDetail(m, volunteers, userStatus) {
+function mapHistoryDetail(m, volunteers, userStatus, { linkedMedia = [], photos = [] } = {}) {
   return {
     ...mapHistorySummary(m, userStatus),
     subtitle: m.subtitle || null,
-    gallery: safeJson(m.gallery, []).map(assetUrl),
+    gallery: galleryOf(m, linkedMedia, photos),
+    photos,
     summary: m.summary || '',
     stats: { volunteers },
   };
@@ -217,12 +226,11 @@ async function getActive(userId, id) {
   if (!m || m.status === 'archived') throw errors.notFound('Görev bulunamadı', 'mission_not_found');
   // §12: "saha güncellemeleri akışı" kaldırıldı — merkez operatörünün doğrulayamayacağı
   // saha verisiydi; duyurular artık Bildirim Merkezi'nden gider.
-  const [onSiteCount, trend, assemblyPoint, linkedMedia, photos] = await Promise.all([
+  const [onSiteCount, trend, assemblyPoint, [linkedMedia, photos]] = await Promise.all([
     sahadakiSayisi(id, m),
     checkInTrend(id),
     assemblyPointFor(id),
-    require('../fireReports/fireReports.service').mediaForMission(id),
-    approvedPhotosFor(id),
+    mediaOf(id),
   ]);
   return mapActiveDetail(m, await statusFor(userId, id), {
     onSiteCount,
@@ -548,8 +556,11 @@ async function getHistory(userId, id) {
   if (!participant || !HISTORY_STATUSES.includes(participant.status)) {
     throw errors.make(403, 'not_participated', 'Bu görevde yer almadınız');
   }
-  const volunteers = await db('check_ins').where({ mission_id: id }).count({ c: '*' }).first();
-  return mapHistoryDetail(m, Number(volunteers?.c || 0), participant.status);
+  const [volunteers, [linkedMedia, photos]] = await Promise.all([
+    db('check_ins').where({ mission_id: id }).count({ c: '*' }).first(),
+    mediaOf(id),
+  ]);
+  return mapHistoryDetail(m, Number(volunteers?.c || 0), participant.status, { linkedMedia, photos });
 }
 
 // Admin (panel) görünümü — tüm alanlar camelCase + cover URL + bekleyen foto sayısı.
