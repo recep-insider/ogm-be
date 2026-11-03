@@ -7,6 +7,7 @@ const { errors } = require('../../shared/errors');
 const { hitFixedWindow } = require('../../shared/fixed-window');
 const { toIso } = require('../../shared/dates');
 const { writeAudit } = require('../../shared/audit');
+const { sendPushToUser } = require('../../shared/push-provider');
 const { reverseGeocode } = require('../../shared/reverse-geocode');
 const { regionForCity, regionLabel } = require('../../shared/regions');
 const logger = require('../../config/logger');
@@ -312,12 +313,6 @@ function mapAdminSos(r, history) {
  * @param {{action?:string, note?:string, by?:string}} body
  */
 async function adminAddHistory(sosId, body, actor = {}) {
-  const row = await db('sos_reports').where({ id: sosId }).first();
-  if (!row) throw errors.notFound('SOS çağrısı bulunamadı', 'sos_not_found');
-  if (row.status === 'cancelled') {
-    throw errors.conflict('Gönüllü çağrıyı iptal etti', undefined, 'sos_cancelled');
-  }
-
   const action = body.action ? OPERATOR_ACTIONS[body.action] : null;
   if (body.action && !action) {
     throw errors.validation('Geçersiz operatör aksiyonu', {
@@ -329,15 +324,42 @@ async function adminAddHistory(sosId, body, actor = {}) {
   if (!event) throw errors.validation('Aksiyon veya not zorunlu', { field: 'action|note' });
 
   const by = body.by || actor.name || 'Operatör';
-  const entry = await addHistory(sosId, { event, by, byKind: 'operator' });
-
   const nextStatus = action?.status;
-  if (nextStatus && row.status !== nextStatus) {
-    await db('sos_reports').where({ id: sosId }).update({
-      status: nextStatus,
-      responded_at: nextStatus === 'responded' ? entry.time : row.responded_at,
-      updated_at: new Date(),
-    });
+
+  // Durum okunup yazılırken satır kilitlenir: aynı anda gelen iki "müdahale edildi" ya da
+  // kapanma ile not yarışında ikinci istek kapanmış çağrıyı görür (BUG-025, K25).
+  const row = await db.transaction(async (trx) => {
+    const current = await trx('sos_reports').where({ id: sosId }).forUpdate().first();
+    if (!current) throw errors.notFound('SOS çağrısı bulunamadı', 'sos_not_found');
+    if (current.status === 'cancelled') {
+      throw errors.conflict('Gönüllü çağrıyı iptal etti', undefined, 'sos_cancelled');
+    }
+    if (current.status !== 'active') {
+      throw errors.conflict('Çağrı zaten kapanmış; not eklenemez.', undefined, 'sos_not_active');
+    }
+    const entry = await addHistory(sosId, { event, by, byKind: 'operator' }, trx);
+    if (nextStatus) {
+      await trx('sos_reports').where({ id: sosId, status: 'active' }).update({
+        status: nextStatus,
+        responded_at: nextStatus === 'responded' ? entry.time : current.responded_at,
+        updated_at: new Date(),
+      });
+    }
+    return current;
+  });
+
+  // K26: gönüllüye yanıt bildirimi kayıt kesinleştikten sonra gider; gönderim hatası yanıtı bozmaz.
+  if (nextStatus === 'responded' && row.user_id) {
+    try {
+      await sendPushToUser(row.user_id, {
+        topic: 'acil',
+        title: 'SOS çağrınız yanıtlandı',
+        body: 'Operasyon merkezi çağrınıza müdahale etti.',
+        data: { type: 'sos_responded', sosId },
+      });
+    } catch (err) {
+      logger.warn('SOS yanıt bildirimi gönderilemedi', { sosId, error: err.message });
+    }
   }
 
   await writeAudit({

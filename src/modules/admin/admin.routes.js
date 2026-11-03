@@ -538,7 +538,8 @@ router.get(
  *     description: >-
  *       Tek hazır aksiyon merkezin KENDİ işlemidir: müdahale edildi. Sahadan gelen
  *       bilgi serbest nota yazılır ve operatörün adına düşer. Operatör çağrıyı İPTAL
- *       EDEMEZ — `cancelled` yalnızca gönüllünün mobilden verdiği sinyaldir.
+ *       EDEMEZ — `cancelled` yalnızca gönüllünün mobilden verdiği sinyaldir. Müdahale edildi
+ *       kaydedilince gönüllüye `sos_responded` push'u gider (K26); kapanmış çağrıya not yazılamaz (K25).
  *     security: [ { panelBearer: [] } ]
  *     parameters:
  *       - { in: path, name: id, required: true, schema: { type: string } }
@@ -555,7 +556,7 @@ router.get(
  *     responses:
  *       200: { description: '{ok, sosId, status, history[], responseSeconds}' }
  *       404: { description: sos_not_found }
- *       409: { description: sos_cancelled }
+ *       409: { description: 'sos_cancelled — gönüllü iptal etti; sos_not_active — çağrı zaten kapanmış (müdahale edildi), not ya da ikinci yanıt yazılmaz' }
  */
 router.post(
   '/sos-reports/:id/history',
