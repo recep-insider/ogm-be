@@ -368,3 +368,72 @@ describe('idempotent() — gönüllü, misafir ve dosyalı istek', () => {
     expect(fs.existsSync(files[1].path)).toBe(false);
   });
 });
+
+describe('idempotent() — panel yüklemesi ve çok dosyalı istek', () => {
+  const fs = require('fs');
+  const os = require('os');
+  const path = require('path');
+
+  const tempFile = (name = 'a.jpg', size = 3) => {
+    const p = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'idem-')), name);
+    fs.writeFileSync(p, 'x'.repeat(size));
+    return { path: p, fieldname: 'media', originalname: name, size };
+  };
+  const unlinked = () => new Promise((done) => setTimeout(done, 50));
+
+  function buildUploadApp({ panel = false, attach }) {
+    const uApp = express();
+    uApp.use(express.json());
+    uApp.use((req, _res, next) => {
+      if (panel) req.panelUser = { id: 'p1' };
+      else req.user = { id: 'v1' };
+      attach(req);
+      next();
+    });
+    uApp.post('/upload', idempotent(), (req, res, next) => handler(req, res, next));
+    uApp.use(errorHandler);
+    return uApp;
+  }
+  const send = (uApp) => request(uApp).post('/upload').set('Idempotency-Key', 'k-1').send({ a: 1 });
+
+  it('Redis erişilemezse panel isteği 503 alır ve yüklenen dosya silinir', async () => {
+    let file;
+    const uApp = buildUploadApp({ panel: true, attach: (req) => { file = tempFile(); req.file = file; } });
+    redis.set.mockRejectedValueOnce(new Error('ECONNREFUSED'));
+    const res = await send(uApp);
+    await unlinked();
+
+    expect(res.status).toBe(503);
+    expect(res.body.error.code).toBe('idempotency_unavailable');
+    expect(handler).not.toHaveBeenCalled();
+    expect(fs.existsSync(file.path)).toBe(false);
+  });
+
+  it.each([
+    ['boyutu', [['a.jpg', 3], ['b.jpg', 5]]],
+    ['adı', [['a.jpg', 3], ['c.jpg', 4]]],
+    ['sayısı', [['a.jpg', 3]]],
+  ])('req.files dizisinde dosya %s değişirse aynı anahtar 422 idempotency_key_reused', async (_label, secondList) => {
+    let list = [['a.jpg', 3], ['b.jpg', 4]];
+    const uApp = buildUploadApp({ attach: (req) => { req.files = list.map(([name, size]) => tempFile(name, size)); } });
+    await send(uApp);
+    await flush();
+    list = secondList;
+    const res = await send(uApp);
+
+    expect(res.status).toBe(422);
+    expect(res.body.error.code).toBe('idempotency_key_reused');
+    expect(handler).toHaveBeenCalledTimes(1);
+  });
+
+  it('req.files dizisi aynıysa istek tekrar oynatılır', async () => {
+    const uApp = buildUploadApp({ attach: (req) => { req.files = [tempFile('a.jpg', 3), tempFile('b.jpg', 4)]; } });
+    const first = await send(uApp);
+    await flush();
+    const second = await send(uApp);
+
+    expect(second.status).toBe(first.status);
+    expect(second.headers['idempotent-replayed']).toBe('true');
+    expect(handler).toHaveBeenCalledTimes(1);
+  });
+});
