@@ -16,6 +16,7 @@ const { hasProtectiveEquipment } = require('../equipment/equipment.service');
 const readinessService = require('./readiness.service');
 const { regionForCity } = require('../../shared/regions');
 const { publishedVersion } = require('../../shared/legal-documents');
+const { ANONYMIZE_AFTER_DAYS } = require('./anonymize.service');
 
 function safeJson(value, fallback) {
   if (value == null) return fallback;
@@ -421,15 +422,15 @@ async function softDelete(userId, audit = {}) {
     entityId: userId,
     ip: audit.ip,
     userAgent: audit.userAgent,
-    payload: { deletedAt: now.toISOString(), purgeAfter: '30 days' },
+    payload: { deletedAt: now.toISOString(), purgeAfter: `${ANONYMIZE_AFTER_DAYS} days` },
   });
 
   return {
     ok: true,
     deletedAt: now.toISOString(),
-    purgeAfterDays: 30,
+    purgeAfterDays: ANONYMIZE_AFTER_DAYS,
     note:
-      'Hesabınız devre dışı bırakıldı. KVKK gereği kişisel verileriniz 30 gün sonra anonimleştirilecek/silinecektir.',
+      `Hesabınız devre dışı bırakıldı. KVKK gereği kişisel verileriniz ${ANONYMIZE_AFTER_DAYS} gün sonra anonimleştirilecek/silinecektir.`,
   };
 }
 

@@ -3,6 +3,11 @@
 jest.mock('../../../src/config/db', () => ({ db: require('../admin/panel-fakes').createFakeDb() }));
 jest.mock('../../../src/config/redis', () => ({ redis: require('../admin/panel-fakes').createFakeRedis() }));
 jest.mock('../../../src/shared/audit', () => ({ writeAudit: jest.fn() }));
+// A55: bildirimdeki süre anonimleştirme sabitinden gelir; sabitten farklı bir değerle doğrulanır.
+jest.mock('../../../src/modules/users/anonymize.service', () => ({
+  ...jest.requireActual('../../../src/modules/users/anonymize.service'),
+  ANONYMIZE_AFTER_DAYS: 45,
+}));
 
 const { db } = require('../../../src/config/db');
 const { redis } = require('../../../src/config/redis');
@@ -30,6 +35,14 @@ describe('users.service softDelete', () => {
     expect(await redis.ttl(userBlockKey('u1'))).toBe(accessTokenSeconds());
     expect(db.rows('refresh_tokens')[0].revoked_at).toBeInstanceOf(Date);
     expect(db.rows('devices')).toHaveLength(0);
+  });
+
+  it('silme süresi ve KVKK notu anonimleştirme süresinden türetilir', async () => {
+    seed();
+    const res = await softDelete('u1');
+
+    expect(res.purgeAfterDays).toBe(45);
+    expect(res.note).toContain('45 gün sonra');
   });
 
   it('Redis yazılamazsa silme yine tamamlanır ve uyarı loglanır', async () => {
