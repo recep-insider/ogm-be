@@ -177,6 +177,10 @@ router.post('/me/avatar', avatarUpload, asyncHandler(controller.setAvatar));
  *   post:
  *     tags: [Users]
  *     summary: KVKK / aydınlatma / açık rıza onayı kaydet
+ *     description: >-
+ *       version, kişiye gösterilen metnin GET /legal/{belge} yanıtındaki version alanıdır
+ *       (kvkk → kvkk, aydinlatma → aydinlatma-metni, acik_riza → acik-riza). Yayımlanan sürümle
+ *       eşleşmezse 400 consent_version_mismatch döner, kayıt yazılmaz (BUG-041).
  *     security: [ { bearerAuth: [] } ]
  *     requestBody:
  *       required: true
@@ -191,10 +195,12 @@ router.post('/me/avatar', avatarUpload, asyncHandler(controller.setAvatar));
  *                 enum: [kvkk, aydinlatma, acik_riza]
  *               version:
  *                 type: string
- *                 example: 'v1'
+ *                 example: 'v1.0'
  *     responses:
  *       201:
  *         description: Onay kaydedildi
+ *       400:
+ *         description: 'consent_version_mismatch — details.expectedVersion yayımlanan sürüm'
  */
 router.post('/me/consents', validate({ body: consentSchema }), asyncHandler(controller.recordConsent));
 
