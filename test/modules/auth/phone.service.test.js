@@ -96,6 +96,21 @@ describe('phone.service — sendOtpFlow limitleri', () => {
     expect(Number(await redis.get(`rl:otp:phone:${PHONE}`))).toBe(7);
   });
 
+  test('yanlış kodda saatlik sayaç tutulamazsa (Redis hatası) 503 döner, invalid_otp ile gizlenmez', async () => {
+    redis.store.set('otp:phone:s1', { value: JSON.stringify({ phone: PHONE, codeHash: 'x', attempts: 0 }), expiresAt: null });
+    const multi = jest.spyOn(redis, 'multi').mockImplementationOnce(() => ({
+      incr() { return this; },
+      expire() { return this; },
+      ttl() { return this; },
+      exec: async () => { throw new Error('Connection is closed.'); },
+    }));
+    try {
+      await expect(svc.verifyOtpFlow({ sessionId: 's1', code: '000000' })).rejects.toMatchObject({ status: 503, code: 'service_unavailable' });
+    } finally {
+      multi.mockRestore();
+    }
+  });
+
   test('günlük sınır numara + IP çiftine göredir: başka IP aynı numaraya yine kod gönderebilir (K10)', async () => {
     env.sms.dailyLimitPerUser = 2;
     await svc.sendOtpFlow({ phone: PHONE, ip: '1.1.1.1' });
