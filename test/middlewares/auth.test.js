@@ -47,6 +47,30 @@ describe('middlewares/auth — silinen hesabın token engeli', () => {
     get.mockRestore();
   });
 
+  it('Redis yanıt vermezse (takılı bağlantı) kontrol beklemeden atlanır', async () => {
+    const get = jest.spyOn(redis, 'get').mockImplementation(() => new Promise(() => {}));
+    const started = Date.now();
+    const { err, req } = await run(requireAuth, token());
+    expect(Date.now() - started).toBeLessThan(1000);
+    expect(err).toBeUndefined();
+    expect(req.user.id).toBe('u1');
+    get.mockRestore();
+  });
+
+  it('Redis hazır değilse GET gönderilmez, istek geçer', async () => {
+    await redis.set(userBlockKey('u1'), '1', 'EX', 900);
+    const get = jest.spyOn(redis, 'get');
+    redis.status = 'reconnecting';
+    try {
+      const { err } = await run(requireAuth, token());
+      expect(err).toBeUndefined();
+      expect(get).not.toHaveBeenCalled();
+    } finally {
+      redis.status = 'ready';
+      get.mockRestore();
+    }
+  });
+
   it('kayıt token\'ı requireAuthOrRegistration\'dan geçer', async () => {
     const { err, req } = await run(requireAuthOrRegistration, signRegistrationToken({ sub: null, phone: '+905551112233' }));
     expect(err).toBeUndefined();

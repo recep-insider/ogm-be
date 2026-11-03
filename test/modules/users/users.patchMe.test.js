@@ -22,6 +22,8 @@ jest.mock('../../../src/config/db', () => {
         return undefined;
       }),
       update: jest.fn(async (row) => {
+        // Silinmiş (is_active=false) hesapta koşullu güncelleme satır bulamaz.
+        if (table === 'users' && !mockState.userRow) return 0;
         mockUpdates.push(row);
         return 1;
       }),

@@ -473,7 +473,8 @@ WGS84 datum. Frontend `react-native-maps` ile uyumlu.
 ```
 - **`giysiBedeni` / `ayakkabiNumarasi`** (2026-08-04): `null` gönderilerek temizlenebilir. Cevap her zaman **tam ve birleşmiş `UserProfile`** döner (frontend cache'i komple değiştirir — alan eksik dönerse ekranda "silinmiş" görünür).
 - **Success Response (200):** Güncel `UserProfile` (3.1 ile aynı şema).
-- **Error cases:** `400 validation_error`, `409 phone_taken`, `409 email_taken`
+- **`phone`** (2026-11-03): bu uçla değişmez. Mevcut numarayla aynıysa yok sayılır; farklıysa `400 use_phone_change`. Telefon yalnız SMS kodlu `POST /users/me/phone-change/init` + `/commit` akışıyla değişir.
+- **Error cases:** `400 validation_error`, `400 use_phone_change`, `409 email_taken`
 - **TS tipi:** `UpdateProfileRequest` (`types.ts:286-296`)
 - **Mock:** `mocks.ts:mockApi.updateProfile`
 

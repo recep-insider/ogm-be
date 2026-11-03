@@ -13,15 +13,26 @@ function extractBearer(req) {
   return token;
 }
 
+// Takılan bir Redis bağlantısında GET hiç sonuçlanmayabilir; kontrol en fazla bu kadar bekler.
+const BLOCK_CHECK_TIMEOUT_MS = 200;
+
 /**
  * Hesabı silinen gönüllünün henüz süresi dolmamış access token'ları (users.service softDelete yazar).
- * Redis'e ulaşılamazsa engel yok sayılır: gönüllünün SOS ve ihbar istekleri kesintide de işlenmeli.
+ * Redis hazır değilse, hata verirse ya da zamanında yanıt vermezse engel yok sayılır: gönüllünün SOS ve
+ * ihbar istekleri kesintide de beklemeden işlenmeli.
  */
 async function isUserBlocked(userId) {
+  if (redis.status !== 'ready') return false;
+  let timer;
+  const timeout = new Promise((resolve) => {
+    timer = setTimeout(() => resolve(null), BLOCK_CHECK_TIMEOUT_MS);
+  });
   try {
-    return (await redis.get(userBlockKey(userId))) !== null;
+    return (await Promise.race([redis.get(userBlockKey(userId)), timeout])) !== null;
   } catch {
     return false;
+  } finally {
+    clearTimeout(timer);
   }
 }
 
@@ -89,22 +100,16 @@ function requireAuthOrRegistration(req, _res, next) {
   const token = extractBearer(req);
   if (!token) return next(errors.unauthorized('Token gerekli'));
 
-  let access = null;
   try {
-    access = verifyAccessToken(token);
+    req.registration = verifyRegistrationToken(token);
+    req.token = token;
+    return next();
   } catch {
-    try {
-      const payload = verifyRegistrationToken(token);
-      req.registration = payload;
-      req.token = token;
-      return next();
-    } catch {
-      return next(errors.unauthorized('Geçersiz token'));
-    }
+    // kayıt token'ı değil; access token olarak denenir
   }
-  return isUserBlocked(access.sub).then((blocked) => {
-    if (blocked) return next(errors.unauthorized('Geçersiz token'));
-    req.user = { id: access.sub, ...access };
+  return verifyActiveAccessToken(token).then((payload) => {
+    if (!payload) return next(errors.unauthorized('Geçersiz token'));
+    req.user = { id: payload.sub, ...payload };
     req.token = token;
     return next();
   });

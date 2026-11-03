@@ -142,6 +142,7 @@ function createFakeRedis() {
   };
   const fake = {
     store,
+    status: 'ready',
     async get(key) {
       const entry = alive(key);
       return entry ? String(entry.value) : null;

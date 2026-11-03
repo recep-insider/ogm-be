@@ -145,10 +145,12 @@ async function patchMe(userId, body, audit = {}) {
 
   // Telefon yalnız SMS kodlu /users/me/phone-change akışıyla değişir. Mevcut mobil sürüm formdaki
   // numarayı her kayıtta gönderdiği için aynı numara yok sayılır, farklısı reddedilir.
-  const current = await db('users').where({ id: userId, is_active: true }).first('phone');
-  if (!current) throw errors.notFound('Kullanıcı bulunamadı');
-  if (body.phone !== undefined && body.phone !== current.phone) {
-    throw errors.make(400, 'use_phone_change', 'Telefon numarası yalnız SMS doğrulamasıyla değiştirilebilir.');
+  if (body.phone !== undefined) {
+    const current = await db('users').where({ id: userId, is_active: true }).first('phone');
+    if (!current) throw errors.notFound('Kullanıcı bulunamadı');
+    if (body.phone !== current.phone) {
+      throw errors.make(400, 'use_phone_change', 'Telefon numarası yalnız SMS doğrulamasıyla değiştirilebilir.');
+    }
   }
 
   // E-posta benzersizlik kontrolü (kontrat 4.1 → 409 email_taken).

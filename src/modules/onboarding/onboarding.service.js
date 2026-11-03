@@ -213,7 +213,11 @@ async function complete({ user, registration, registrationToken, data, files, ip
   } catch (err) {
     await Promise.all([unlinkSafe(saglik), unlinkSafe(sabika)]);
     // Kayıt yazılamadıysa aynı token'la yeniden denenebilsin.
-    if (claimKey) await redis.del(claimKey).catch(() => {});
+    if (claimKey) {
+      await redis.del(claimKey).catch((delErr) => {
+        logger.warn('Kayıt token işareti geri alınamadı; aynı token yeniden denenemez', { error: delErr.message });
+      });
+    }
     throw err;
   }
 
