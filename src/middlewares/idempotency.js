@@ -9,23 +9,26 @@ const { discardUploads } = require('../shared/discard-uploads');
 const MAX_KEY_LENGTH = 200;
 const PENDING_TTL_SEC = 60;
 const HEARTBEAT_MS = 20000;
+// Hiçbir istek bu kadar sürmez (Node ve nginx zaman aşımları çok daha kısa); aşan işleyici asılı sayılır.
+const MAX_PENDING_MS = 30 * 60 * 1000;
 const DONE_TTL_SEC = 86400;
 
 function logRedisError(err) {
   logger.warn('Idempotency: Redis hatası, anahtarsız devam ediliyor', { error: err.message });
 }
 
-// İşleyici yanıt verene kadar pending anahtar uzatılır, süre sınırı yoktur: uzun işlem kilidini
-// kaybedip ikinci kez çalışmasın. Süreç çökerse anahtar PENDING_TTL_SEC içinde düşer.
-// ponytail: hiç yanıt vermeyen işleyici anahtarı süreç yeniden başlayana kadar tutar (tekrar
-// deneme 409 alır); asılı işlem sorun olursa işleyiciye zaman aşımı eklenmeli, buraya değil.
+// İşleyici yanıt verene kadar (en çok MAX_PENDING_MS) pending anahtar uzatılır: uzun işlem kilidini
+// kaybedip ikinci kez çalışmasın. Süreç çökerse ya da işleyici asılı kalırsa anahtar son uzatmadan
+// PENDING_TTL_SEC sonra düşer ve tekrar deneme işlenir.
 // İstemci bağlantıyı kopardığında anahtar silinmez: işleyici sürerken aynı anahtarla ikinci kayıt açılmasın.
 // 5xx'te de silinmez (hangi yöntemle gönderilirse gönderilsin): yan etki (push/SMS) kısmen gitmiş
 // olabilir; anahtar son uzatmadan kalan 40–60 sn içinde düşer.
 // res.json gövdeyi saklar; json dışı yanıtlar (send/sendStatus/end) res.end'de sonuçlanır.
 function track(res, redisKey, hash, releaseOn5xx) {
   let settled = false;
+  const startedAt = Date.now();
   const heartbeat = setInterval(() => {
+    if (Date.now() - startedAt >= MAX_PENDING_MS) return clearInterval(heartbeat);
     redis.expire(redisKey, PENDING_TTL_SEC).catch(logRedisError);
   }, HEARTBEAT_MS);
   heartbeat.unref();

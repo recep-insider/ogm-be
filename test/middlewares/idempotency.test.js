@@ -226,6 +226,24 @@ describe('idempotent()', () => {
     }
   });
 
+  it('30 dakikayı aşan işleyicinin anahtarı artık uzatılmaz; düşünce tekrar deneme işlenir (KALAN_ISLER §2.3)', async () => {
+    jest.useFakeTimers({ doNotFake: ['setImmediate', 'nextTick'] });
+    try {
+      let finish;
+      handler.mockImplementationOnce((_req, res) => { finish = () => res.json({ ok: true }); });
+      const pending = post({ a: 1 }).then((r) => r);
+      while (!finish) await flush();
+
+      jest.advanceTimersByTime(40 * 60 * 1000);
+      expect(redis.expire).toHaveBeenCalledTimes(89);
+
+      finish();
+      await pending;
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
   it('done kaydı ilk denemede yazılamazsa bir kez daha denenir', async () => {
     redis.set
       .mockImplementationOnce(async (key, value, ...args) => {

@@ -1400,7 +1400,7 @@ const assemblyPointUpsertSchema = Joi.object({
  *         schema: { type: string, maxLength: 200 }
  *         description: >-
  *           Aynı anahtar ve aynı gövdeyle tekrar gelen istek yeniden işlenmez; 24 saat içinde ilk
- *           başarılı yanıt `Idempotent-Replayed: true` başlığıyla döner. İlk istek sürerken (süre sınırı yok) aynı anahtar 409 idempotency_in_flight alır. 4xx yanıt anahtarı serbest bırakır; 5xx'te anahtar işlem bittikten 40–60 sn sonra düşer, bu sürede tekrar deneme 409 alır.
+ *           başarılı yanıt `Idempotent-Replayed: true` başlığıyla döner. İlk istek sürerken (en çok 30 dk) aynı anahtar 409 idempotency_in_flight alır. 4xx yanıt anahtarı serbest bırakır; 5xx'te anahtar işlem bittikten 40–60 sn sonra düşer, bu sürede tekrar deneme 409 alır.
  *     responses:
  *       200: { description: '{ok, missionId, refNo, status: active, called}. linkedReportIds ihbarları "Doğrulandı" olur, sahiplerine bildirim gider; başka olaya bağlı ihbar taşınır ve eski olayda ayrılma kaydı kalır.' }
  *       400: { description: idempotency_key_invalid }
@@ -1841,7 +1841,7 @@ const notificationSendSchema = Joi.object({
  *         schema: { type: string, maxLength: 200 }
  *         description: >-
  *           Aynı anahtar ve aynı gövdeyle tekrar gelen istek yeniden işlenmez; 24 saat içinde ilk
- *           başarılı yanıt `Idempotent-Replayed: true` başlığıyla döner. İlk istek sürerken (süre sınırı yok) aynı anahtar 409 idempotency_in_flight alır. 4xx yanıt anahtarı serbest bırakır; 5xx'te anahtar işlem bittikten 40–60 sn sonra düşer, bu sürede tekrar deneme 409 alır.
+ *           başarılı yanıt `Idempotent-Replayed: true` başlığıyla döner. İlk istek sürerken (en çok 30 dk) aynı anahtar 409 idempotency_in_flight alır. 4xx yanıt anahtarı serbest bırakır; 5xx'te anahtar işlem bittikten 40–60 sn sonra düşer, bu sürede tekrar deneme 409 alır.
  *     responses:
  *       200: { description: '{ok, notificationId, channel, recipients, pushCount, smsCount}' }
  *       400: { description: 'idempotency_key_invalid; validation_error — segments yalnız missionId ile (BUG-062)' }
