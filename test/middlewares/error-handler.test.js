@@ -110,4 +110,11 @@ describe('errorHandler — gövde ayrıştırma hataları (BUG-043)', () => {
     const res = run(Object.assign(new Error('x'), { status: 400 }));
     expect(res.status).toHaveBeenCalledWith(500);
   });
+
+  it('desteklenmeyen karakter kümesi 415 bad_request, ayrıntısız', async () => {
+    const res = await request(app).post('/x').set('Content-Type', 'application/json; charset=koi8-r').send('{"a":1}');
+    expect(res.status).toBe(415);
+    expect(res.body).toEqual({ error: { code: 'bad_request', message: 'Geçersiz istek' } });
+    expect(logger.error).not.toHaveBeenCalled();
+  });
 });
