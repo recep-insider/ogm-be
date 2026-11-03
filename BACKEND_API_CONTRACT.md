@@ -954,7 +954,7 @@ edilsin mi?" diye sorar. "Devam" → `POST /auth/restore`; "Vazgeç" → hiçbir
   - `PUT /admin/fire-reports/{id}` — body `{status: 'confirmed' | 'rejected', note?: string}`
   - Mobile app bu admin endpoint'i ÇAĞIRMAZ — yalnızca status değişimini React Query invalidation + push notification ile öğrenir.
 
-- **Error cases:** `400 validation_error` (missing media), `413 file_too_large` (tek dosya sınırı), `413 payload_too_large` (ihbar başına toplam 100 MB aşıldı, K9; `details.limitBytes`, `details.totalBytes`), `429 rate_limited`
+- **Error cases:** `401 unauthorized` (Authorization başlığı var ama token geçersiz ya da süresi dolmuş; ihbar kaydedilmez, oturum yenilenip tekrar gönderilmeli — BUG-027; başlık yoksa misafir ihbarı), `400 validation_error` (missing media), `413 file_too_large` (tek dosya sınırı), `413 payload_too_large` (ihbar başına toplam 100 MB aşıldı, K9; `details.limitBytes`, `details.totalBytes`), `429 rate_limited`
 - **TS tipler:** `FireReportSubmitRequest`, `FireReportSubmitResponse`, `FireReportMedia`, `FireReportNeed`, `FireReportStatus` (`types.ts:508-552`)
 - **Mock:** `mocks.ts:426-447`, auto-promotion delay: 15s (`MOCK_REPORT_APPROVAL_DELAY_MS`)
 

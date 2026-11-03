@@ -3,7 +3,7 @@
 // Misafir ihbarı Idempotency-Key ile tekrar edilirse ikinci kez kaydedilmez; 5xx sonrası aynı anahtarla tekrar işlenir.
 
 jest.mock('../../../src/middlewares/auth', () => ({
-  optionalAuth: (_req, _res, next) => next(),
+  requireAuth: (_req, _res, next) => next(),
 }));
 jest.mock('../../../src/config/logger', () => ({ warn: jest.fn(), info: jest.fn(), error: jest.fn() }));
 jest.mock('../../../src/config/redis', () => {
