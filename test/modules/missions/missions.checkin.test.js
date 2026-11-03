@@ -332,3 +332,33 @@ describe('adminArchive — arşiv terminaldir', () => {
     ]);
   });
 });
+
+describe('scan — giriş zamanı (BUG-050)', () => {
+  beforeEach(reset);
+
+  it('tekrar okutmada ilk giriş zamanı korunur, yeni kayıt yazılmaz', async () => {
+    const first = new Date('2026-08-01T09:00:00Z');
+    mockState.checkIn = { id: 'c1', checked_in_at: first };
+    mockState.participant = { id: 'p1', status: 'sahada' };
+
+    const result = await service.scan('m1', { qr: 'OGM:VOL:u1', scannedAt: new Date() }, {});
+
+    expect(result.checkedInAt).toBe(first.toISOString());
+    expect(mockState.inserts.check_ins).toBeUndefined();
+  });
+
+  describe('scanSchema.scannedAt', () => {
+    const { scanSchema } = require('../../../src/modules/missions/missions.validators');
+    const check = (scannedAt) => scanSchema.validate({ qr: 'OGM:VOL:u1', scannedAt }).error;
+
+    it('gelecek tarih reddedilir; birkaç saniyelik saat kayması kabul', () => {
+      expect(check(new Date(Date.now() + 2 * 86400 * 1000).toISOString()).message).toMatch(/gelecekte/);
+      expect(check(new Date(Date.now() + 30 * 1000).toISOString())).toBeUndefined();
+    });
+
+    it('çok eski tarih reddedilir; çevrimdışı kuyruktan gelen yakın geçmiş kabul', () => {
+      expect(check(new Date(Date.now() - 30 * 86400 * 1000).toISOString()).message).toMatch(/7 günden eski/);
+      expect(check(new Date(Date.now() - 3600 * 1000).toISOString())).toBeUndefined();
+    });
+  });
+});

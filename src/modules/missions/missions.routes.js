@@ -143,7 +143,7 @@ router.post(
  *               qr: { type: string, example: 'OGM:VOL:8f3c...' }
  *               userId: { type: string }
  *               tcKimlik: { type: string, description: 'QR okutulamazsa yedek yöntem' }
- *               scannedAt: { type: string, format: date-time }
+ *               scannedAt: { type: string, format: date-time, description: 'En çok 5 dk ileri, en çok 7 gün geri. Gönüllü daha önce okutulduysa yanıt ilk giriş zamanını döner.' }
  *               token: { type: string, description: 'HMAC imzası — yalnızca userId formatında, SCAN_HMAC_SECRET doluysa' }
  *     responses:
  *       200:

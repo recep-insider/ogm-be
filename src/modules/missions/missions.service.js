@@ -382,8 +382,9 @@ async function scan(missionId, body, actor = {}) {
     });
   }
 
-  const checkedInAt = body.scannedAt ? new Date(body.scannedAt) : new Date();
   const existing = await db('check_ins').where({ mission_id: missionId, user_id: userId }).first();
+  // Tekrar okutma ilk giriş zamanını değiştirmez.
+  const checkedInAt = existing ? existing.checked_in_at : body.scannedAt ? new Date(body.scannedAt) : new Date();
   if (!existing) {
     try {
       await db('check_ins').insert({
