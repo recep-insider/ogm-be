@@ -204,8 +204,10 @@ router.post('/me/consents', validate({ body: consentSchema }), asyncHandler(cont
  *     tags: [Users]
  *     summary: Tüm kullanıcı verilerini JSON olarak indir (KVKK Madde 11)
  *     description: |
- *       Kullanıcı kendi user kaydı, başvuruları, onayları, cihaz kayıtları ve yangın
- *       bildirimlerini içeren bir JSON dosya indirir.
+ *       Kullanıcı kendi user kaydı, başvuruları, onayları, cihaz kayıtları, yangın
+ *       bildirimleri, SOS çağrıları, acil bildirimleri, görev katılımları, check-in'leri ve
+ *       saha eğitimi başvurularını içeren bir JSON dosya indirir. K22 ile eklenen bölümler
+ *       okunur (camelCase) alan adlarıyla gelir.
  *     security: [ { bearerAuth: [] } ]
  *     responses:
  *       200:
@@ -222,6 +224,21 @@ router.post('/me/consents', validate({ body: consentSchema }), asyncHandler(cont
  *                 consents: { type: array, items: { type: object, additionalProperties: true } }
  *                 devices: { type: array, items: { type: object, additionalProperties: true } }
  *                 fireReports: { type: array, items: { type: object, additionalProperties: true } }
+ *                 sosCalls:
+ *                   type: array
+ *                   items: { type: object, properties: { id: { type: string }, status: { type: string }, createdAt: { type: string, format: date-time }, respondedAt: { type: string, nullable: true }, latitude: { type: number, nullable: true }, longitude: { type: number, nullable: true }, il: { type: string, nullable: true }, ilce: { type: string, nullable: true }, message: { type: string, nullable: true } } }
+ *                 emergencyReports:
+ *                   type: array
+ *                   items: { type: object, properties: { id: { type: string }, missionId: { type: string, nullable: true }, createdAt: { type: string }, latitude: { type: number, nullable: true }, longitude: { type: number, nullable: true }, message: { type: string, nullable: true } } }
+ *                 missionParticipation:
+ *                   type: array
+ *                   items: { type: object, properties: { missionId: { type: string }, refNo: { type: string, nullable: true }, missionTitle: { type: string, nullable: true }, status: { type: string }, calledAt: { type: string, nullable: true }, respondedAt: { type: string, nullable: true }, joinedAt: { type: string, nullable: true } } }
+ *                 checkIns:
+ *                   type: array
+ *                   items: { type: object, properties: { missionId: { type: string }, checkedInAt: { type: string }, method: { type: string, enum: [qr, tc_manual] } } }
+ *                 sahaTrainingApplications:
+ *                   type: array
+ *                   items: { type: object, properties: { trainingId: { type: string }, trainingTitle: { type: string, nullable: true }, status: { type: string }, attendance: { type: string, nullable: true }, appliedAt: { type: string, nullable: true } } }
  */
 router.get('/me/data-export', asyncHandler(controller.dataExport));
 
