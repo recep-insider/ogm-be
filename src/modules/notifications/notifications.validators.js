@@ -12,7 +12,7 @@ const registerSchema = Joi.object({
     .required()
     .messages({ 'string.pattern.invert.name': 'Geçersiz cihaz token\'ı' }),
   platform: Joi.string().valid('ios', 'android', 'web').required(),
-  appVersion: Joi.string().max(32).optional(),
+  appVersion: Joi.string().trim().max(32).optional(),
 });
 
 module.exports = { registerSchema };

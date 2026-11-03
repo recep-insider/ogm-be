@@ -45,7 +45,7 @@ router.use(requireAdmin);
 
 const applicationStatusSchema = Joi.object({
   status: Joi.string().valid(...adminService.APPLICATION_STATUSES).required(),
-  note: Joi.string().max(1000).allow('', null).optional(),
+  note: Joi.string().trim().max(1000).allow('', null).optional(),
 });
 
 /**
@@ -187,7 +187,7 @@ const pageQueryKeys = {
 
 const volunteersQuerySchema = Joi.object({
   status: Joi.string().valid(...adminService.APPLICATION_STATUSES).optional(),
-  q: Joi.string().max(100).optional(),
+  q: Joi.string().trim().max(100).optional(),
   pendingDeletion: Joi.boolean().optional(),
   ...pageQueryKeys,
 });
@@ -463,7 +463,7 @@ router.get(
 );
 
 const emergencyQuerySchema = Joi.object({
-  missionId: Joi.string().max(36).optional(),
+  missionId: Joi.string().trim().max(36).optional(),
   ...pageQueryKeys,
 });
 
@@ -497,8 +497,8 @@ const sosQuerySchema = Joi.object({
 
 const sosHistorySchema = Joi.object({
   action: Joi.string().valid('responded').optional(),
-  note: Joi.string().max(300).optional(),
-  by: Joi.string().max(120).optional(),
+  note: Joi.string().trim().max(300).optional(),
+  by: Joi.string().trim().max(120).optional(),
 }).or('action', 'note');
 
 /**
@@ -663,26 +663,26 @@ router.get(
 // İçerik yolu alanları: KVKK belgelerinin (onboarding/) ve yükleme kökü dışının yolu yazılamaz (BUG-010).
 const publicAssetCheck = (value, helpers) => (isPublicAssetPath(value) ? value : helpers.error('any.invalid'));
 const ASSET_PATH_MESSAGES = { 'any.invalid': 'Bu dosya yolu içerik alanında kullanılamaz' };
-const assetPath = Joi.string().max(512).custom(publicAssetCheck).messages(ASSET_PATH_MESSAGES);
+const assetPath = Joi.string().trim().max(512).custom(publicAssetCheck).messages(ASSET_PATH_MESSAGES);
 
 const contentBlockSchema = Joi.object({
   type: Joi.string().valid('paragraph', 'heading', 'image', 'video').required(),
-  text: Joi.string().allow('').max(5000).optional(),
+  text: Joi.string().trim().allow('').max(5000).optional(),
   source: assetPath.optional(),
-  caption: Joi.string().allow('').max(300).optional(),
+  caption: Joi.string().trim().allow('').max(300).optional(),
 });
 
 const blogBaseKeys = {
-  title: Joi.string().max(250),
-  description: Joi.string().allow('').max(2000),
+  title: Joi.string().trim().max(250),
+  description: Joi.string().trim().allow('').max(2000),
   coverPath: assetPath.allow('', null),
   publishedAt: Joi.date().iso(),
   readTimeMin: Joi.number().integer().min(1).max(120),
-  themes: Joi.array().items(Joi.string().max(60)).max(2),
+  themes: Joi.array().items(Joi.string().trim().max(60)).max(2),
   // mobil §9: kategoriler panelle birebir — Haber · Teknik · Eğitim ("duyuru" kaldırıldı).
   category: Joi.string().valid('haber', 'teknik', 'egitim'),
-  authorName: Joi.string().allow('').max(120),
-  authorRole: Joi.string().allow('').max(120),
+  authorName: Joi.string().trim().allow('').max(120),
+  authorRole: Joi.string().trim().allow('').max(120),
   content: Joi.array().items(contentBlockSchema).max(100),
   isActive: Joi.boolean(),
 };
@@ -855,8 +855,8 @@ const trainingContentSchema = Joi.array()
   .max(100);
 
 const onlineBaseKeys = {
-  title: Joi.string().max(200),
-  description: Joi.string().allow('').max(2000),
+  title: Joi.string().trim().max(200),
+  description: Joi.string().trim().allow('').max(2000),
   durationMin: Joi.number().integer().min(0).max(10000),
   iconTone: Joi.string().valid('primary', 'tertiary'),
   // backend §1/§7: teorik eğitim kapısı yalnızca YAYINDA + ZORUNLU eğitimlerden oluşur.
@@ -882,14 +882,14 @@ const onlineUpdateSchema = Joi.object(onlineBaseKeys).min(1);
 
 const HHMM = /^([01]\d|2[0-3]):[0-5]\d$/;
 const sahaBaseKeys = {
-  title: Joi.string().max(200),
-  description: Joi.string().allow('').max(2000),
+  title: Joi.string().trim().max(200),
+  description: Joi.string().trim().allow('').max(2000),
   content: trainingContentSchema,
-  location: Joi.string().max(200),
+  location: Joi.string().trim().max(200),
   startDate: Joi.date().iso(),
   startTime: Joi.string().pattern(HHMM),
   endTime: Joi.string().pattern(HHMM),
-  instructorName: Joi.string().max(120),
+  instructorName: Joi.string().trim().max(120),
   instructorAvatarPath: assetPath.allow('', null),
   coverPath: assetPath.allow('', null),
   // K4: kontenjan kesin sınırdır (applySaha dolu eğitime 410 döner) — 0 koltuklu eğitim
@@ -1140,9 +1140,9 @@ router.put(
 const commissionSchema = Joi.object({
   decision: Joi.string().valid('approved', 'rejected').required(),
   expectedDecision: Joi.string().valid('approved', 'rejected', 'pending').allow(null).optional(),
-  decidedBy: Joi.string().max(120).allow('', null).optional(),
-  decisionNo: Joi.string().max(64).allow('', null).optional(),
-  note: Joi.string().max(1000).allow('', null).optional(),
+  decidedBy: Joi.string().trim().max(120).allow('', null).optional(),
+  decisionNo: Joi.string().trim().max(64).allow('', null).optional(),
+  note: Joi.string().trim().max(1000).allow('', null).optional(),
 });
 
 /**
@@ -1189,7 +1189,7 @@ router.post(
 
 const kkdDeliverSchema = Joi.object({
   // Operatör YALNIZCA seri numarası girer; beden profilden, ömür sonu kalem tipinden türer.
-  serials: Joi.object().pattern(Joi.string().valid(...KKD_ITEM_KEYS), Joi.string().max(64).allow('', null)).optional(),
+  serials: Joi.object().pattern(Joi.string().valid(...KKD_ITEM_KEYS), Joi.string().trim().max(64).allow('', null)).optional(),
   itemKeys: Joi.array().items(Joi.string().valid(...KKD_ITEM_KEYS)).min(1).optional(),
   assignedAt: Joi.date().iso().optional(),
 });
@@ -1258,7 +1258,7 @@ const attendanceSchema = Joi.object({
   entries: Joi.array()
     .items(
       Joi.object({
-        userId: Joi.string().max(36).required(),
+        userId: Joi.string().trim().max(36).required(),
         attended: Joi.boolean().required(),
         kkdDelivered: Joi.boolean().optional(),
       }),
@@ -1313,27 +1313,27 @@ router.put(
 // ── Olay kaydı yaşam döngüsü ve toplanma noktası (§2, §4) ───────────────────
 
 const assemblyPointKeys = {
-  name: Joi.string().max(200).required(),
-  address: Joi.string().max(300).allow('', null).optional(),
+  name: Joi.string().trim().max(200).required(),
+  address: Joi.string().trim().max(300).allow('', null).optional(),
   coordinates: Joi.object({
     lat: Joi.number().min(-90).max(90).required(),
     lng: Joi.number().min(-180).max(180).required(),
   }).required(),
-  officerName: Joi.string().max(120).allow('', null).optional(),
+  officerName: Joi.string().trim().max(120).allow('', null).optional(),
   officerPhone: Joi.string().max(20).pattern(/^[+0-9 ()-]*$/).allow('', null).optional(),
 };
 
 const missionCreateSchema = Joi.object({
-  title: Joi.string().max(200).required(),
-  fullTitle: Joi.string().max(200).optional(),
-  shortLocation: Joi.string().max(120).required(),
+  title: Joi.string().trim().max(200).required(),
+  fullTitle: Joi.string().trim().max(200).optional(),
+  shortLocation: Joi.string().trim().max(120).required(),
   // §11: bölge kapsamı il alanından eşleşir.
-  il: Joi.string().max(60).optional(),
-  ilce: Joi.string().max(60).optional(),
-  regionLabel: Joi.string().max(120).optional(),
-  locationLabel: Joi.string().max(200).optional(),
-  description: Joi.string().max(4000).allow('', null).optional(),
-  iconName: Joi.string().max(32).optional(),
+  il: Joi.string().trim().max(60).optional(),
+  ilce: Joi.string().trim().max(60).optional(),
+  regionLabel: Joi.string().trim().max(120).optional(),
+  locationLabel: Joi.string().trim().max(200).optional(),
+  description: Joi.string().trim().max(4000).allow('', null).optional(),
+  iconName: Joi.string().trim().max(32).optional(),
   coordinates: Joi.object({
     lat: Joi.number().min(-90).max(90).required(),
     lng: Joi.number().min(-180).max(180).required(),
@@ -1344,20 +1344,20 @@ const missionCreateSchema = Joi.object({
   assemblyPoint: Joi.object(assemblyPointKeys).required(),
   // Yalnızca bildirimin hemen gidip gitmeyeceğini belirler; durumu etkilemez (§2).
   callVolunteers: Joi.boolean().default(false),
-  linkedReportIds: Joi.array().items(Joi.string().max(36)).optional(),
+  linkedReportIds: Joi.array().items(Joi.string().trim().max(36)).optional(),
 });
 // §12: şiddet, tip, tahmini alan, ekip sayıları, hava durumu, ihtiyaç listesi ve
 // kapsama yarıçapı BİLİNÇLİ olarak yoktur — panel bu alanlara yazma ucu sunmuyor.
 
 const missionUpdateSchema = Joi.object({
-  title: Joi.string().max(200).optional(),
-  fullTitle: Joi.string().max(200).allow('', null).optional(),
-  shortLocation: Joi.string().max(120).optional(),
-  il: Joi.string().max(60).allow('', null).optional(),
-  ilce: Joi.string().max(60).allow('', null).optional(),
-  regionLabel: Joi.string().max(120).allow('', null).optional(),
-  locationLabel: Joi.string().max(200).allow('', null).optional(),
-  description: Joi.string().max(4000).allow('', null).optional(),
+  title: Joi.string().trim().max(200).optional(),
+  fullTitle: Joi.string().trim().max(200).allow('', null).optional(),
+  shortLocation: Joi.string().trim().max(120).optional(),
+  il: Joi.string().trim().max(60).allow('', null).optional(),
+  ilce: Joi.string().trim().max(60).allow('', null).optional(),
+  regionLabel: Joi.string().trim().max(120).allow('', null).optional(),
+  locationLabel: Joi.string().trim().max(200).allow('', null).optional(),
+  description: Joi.string().trim().max(4000).allow('', null).optional(),
   coordinates: Joi.object({
     lat: Joi.number().min(-90).max(90).required(),
     lng: Joi.number().min(-180).max(180).required(),
@@ -1781,10 +1781,10 @@ router.get(
 
 const notificationSendSchema = Joi.object({
   category: Joi.string().valid('acil', 'gorev', 'egitim', 'bilgi').required(),
-  title: Joi.string().max(200).required(),
-  body: Joi.string().max(500).required(),
+  title: Joi.string().trim().max(200).required(),
+  body: Joi.string().trim().max(500).required(),
   // Olay bazlı gönderim: segment seçimi Hazır/Çağrıldı/Yolda/Sahada.
-  missionId: Joi.string().max(36).optional(),
+  missionId: Joi.string().trim().max(36).optional(),
   segments: Joi.array()
     .items(Joi.string().valid('hazir', 'cagrildi', 'yolda', 'sahada'))
     .min(1)
@@ -1856,7 +1856,7 @@ router.get(
 );
 
 const linkReportsSchema = Joi.object({
-  reportIds: Joi.array().items(Joi.string().max(36)).min(1).required(),
+  reportIds: Joi.array().items(Joi.string().trim().max(36)).min(1).required(),
 });
 
 /**
