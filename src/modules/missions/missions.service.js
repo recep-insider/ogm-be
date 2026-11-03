@@ -379,6 +379,7 @@ async function scan(missionId, body, actor = {}) {
   if (readiness.engeller.length) {
     throw errors.make(403, 'readiness_incomplete', 'Hazırlık zincirinde eksik adım var', {
       engeller: readiness.engeller,
+      volunteerName: [user.ad, user.soyad].filter(Boolean).join(' ') || null,
     });
   }
 

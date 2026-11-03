@@ -192,6 +192,8 @@ describe('scan — yangın sahası giriş kaydı', () => {
     await expect(service.scan('m1', { qr: 'OGM:VOL:u1' }, {})).rejects.toMatchObject({
       status: 403,
       code: 'readiness_incomplete',
+      // BUG-065: panel reddedilen kartta adı gösterir.
+      details: { engeller: mockState.engeller, volunteerName: 'Ali Yılmaz' },
     });
     expect(mockState.inserts.check_ins).toBeUndefined();
     expect(mockState.inserts.mission_participants).toBeUndefined();

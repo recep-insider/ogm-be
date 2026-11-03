@@ -149,7 +149,7 @@ router.post(
  *       200:
  *         description: 'Giriş kaydedildi — künye (ad, soyad, maskeli TC, kişi/KKD/eğitim durumu, STK) döner'
  *       400: { description: 'invalid_qr — userId formatında imza eksik/geçersiz' }
- *       403: { description: 'readiness_incomplete — katılım engeli, kayıt OLUŞMAZ' }
+ *       403: { description: 'readiness_incomplete — katılım engeli, kayıt OLUŞMAZ; details.engeller ve details.volunteerName (ad soyad)' }
  *       404: { description: 'volunteer_not_found | mission_not_found' }
  *       409: { description: 'mission_archived' }
  */

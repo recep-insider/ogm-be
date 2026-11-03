@@ -825,6 +825,10 @@ edilsin mi?" diye sorar. "Devam" → `POST /auth/restore`; "Vazgeç" → hiçbir
 { "ok": true, "userStatus": "on_site" }
 ```
 - **Frontend sync:** Push notification (taskCalls topic) + React Query invalidation ile sync. Bu endpoint mobile app'ten doğrudan çağrılmaz — push tetiklenir, frontend `/missions/active/{id}` yeniden fetch eder.
+- **Error cases:** `403 readiness_incomplete` (kayıt oluşmaz; `details.engeller` eksik adımlar, `details.volunteerName`
+  gönüllünün ad soyadı — BUG-065), `404 volunteer_not_found`, `409 mission_archived`, `400 validation_error`
+  (`scannedAt` 5 dk'dan ileri ya da 7 günden eski — BUG-050). Daha önce okutulmuş gönüllüde `checkedInAt` ilk giriş
+  zamanıdır.
 - **Notlar (Ek B):** Backend QR validation şeması (HMAC? signed token?) ve admin/officer auth modeli backend kararıdır.
 - **Güncel karar (2026-09-21 sözleşmesi):** Mobil QR `OGM:VOL:{userId}` taşır ve **imzasızdır**. Güven sınırı saha amirinin kimlik doğrulamasıdır (`OFFICER_API_KEY` / `role=officer`) ve seçtiği olaydır. `SCAN_HMAC_SECRET` yalnızca çıplak `userId` gövdesine uygulanır; aynı gönüllü `qr: "OGM:VOL:{id}"` veya `tcKimlik` ile imzasız okutulabildiği için secret'ı açmak QR/TC okutmalarına koruma **eklemez** — fiilen emekliye ayrılmıştır.
 
