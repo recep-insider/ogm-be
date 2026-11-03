@@ -8,6 +8,10 @@ const { toDateOnly, toLocalDateOnly, toIso } = require('../../shared/dates');
 const { writeAudit } = require('../../shared/audit');
 const { deliverKkdSet, assertCommissionApproved } = require('../equipment/equipment.service');
 const { safeJson, mapContentBlock, mapAdminContentBlock } = require('../blog/blog.service');
+const { latestCommissionDecisions } = require('../users/readiness.service');
+const { komisyonKarari } = require('../../shared/derive');
+const { sendPushToUser } = require('../../shared/push-provider');
+const logger = require('../../config/logger');
 
 const LAST_SEATS_THRESHOLD = 5;
 
@@ -107,8 +111,8 @@ async function listSaha(userId) {
     .where({ is_active: true })
     .where('start_date', '>=', todayLocal())
     .orderBy('start_date', 'asc');
-  const myApps = await db('saha_training_applications').where({ user_id: userId }).pluck('training_id');
-  const appliedSet = new Set(myApps);
+  const myApps = await db('saha_training_applications').where({ user_id: userId }).select('training_id', 'status');
+  const myStatus = new Map(myApps.map((a) => [a.training_id, a.status]));
 
   const out = [];
   for (const t of trainings) {
@@ -131,7 +135,9 @@ async function listSaha(userId) {
       cover: assetUrl(t.cover_path),
       availableSeats,
       seatStatus,
-      applied: appliedSet.has(t.id),
+      applied: myStatus.has(t.id),
+      // K27: reddedilen ya da eğitimden çıkarılan gönüllü "Başvurunuz kabul edilmedi" görür.
+      applicationStatus: myStatus.get(t.id) || null,
     });
   }
   return out;
@@ -147,6 +153,12 @@ async function listSaha(userId) {
 async function applySaha(userId, trainingId, audit = {}) {
   const id = uuidv4();
   await db.transaction(async (trx) => {
+    // K16: onay bekleyen gönüllü eğitimleri görür ama komisyon onayından önce başvuramaz.
+    const decisions = await latestCommissionDecisions([userId], trx);
+    if (komisyonKarari(decisions.get(userId)) !== 'approved') {
+      throw errors.forbidden('Saha eğitimine komisyon onayından sonra başvurabilirsiniz.', 'commission_pending');
+    }
+
     const t = await trx('saha_trainings').where({ id: trainingId }).forUpdate().first();
     if (!t) throw errors.notFound('Eğitim bulunamadı', 'not_found');
     if (!t.is_active) throw errors.gone('Eğitim başvuruya kapalı', undefined, 'training_closed');
@@ -625,7 +637,10 @@ async function adminListAllSahaApplications({ status, page = 1, pageSize = 20 } 
   return { items: rows.map(mapAdminSahaApplication), total: Number(total), page, pageSize };
 }
 
-/** Admin — saha başvurusu onay/red. Bildirim göndermez (application status ucuyla aynı ilke). */
+/**
+ * Admin — saha başvurusu onay/red. Panelin "Eğitimden Çıkar"ı da ret yazar. Ret kesinleşince
+ * gönüllüye bildirim gider ve aynı eğitime yeniden başvuramaz (K27).
+ */
 async function adminSetSahaApplicationStatus(applicationId, { status }, actor = {}) {
   const application = await db('saha_training_applications').where({ id: applicationId }).first();
   if (!application) throw errors.notFound('Başvuru bulunamadı', 'application_not_found');
@@ -634,6 +649,22 @@ async function adminSetSahaApplicationStatus(applicationId, { status }, actor = 
     status,
     updated_at: new Date(),
   });
+
+  if (status === 'rejected' && application.status !== 'rejected' && application.user_id) {
+    try {
+      const training = await db('saha_trainings').where({ id: application.training_id }).first('title');
+      await sendPushToUser(application.user_id, {
+        topic: 'trainings',
+        title: 'Saha eğitimi başvurunuz kabul edilmedi',
+        body: training?.title
+          ? `"${training.title}" eğitimine katılımınız onaylanmadı.`
+          : 'Saha eğitimine katılımınız onaylanmadı.',
+        data: { type: 'saha_application_rejected', trainingId: application.training_id },
+      });
+    } catch (err) {
+      logger.warn('Saha başvurusu ret bildirimi gönderilemedi', { applicationId, error: err.message });
+    }
+  }
 
   await writeAudit({
     userId: actor.userId || null,

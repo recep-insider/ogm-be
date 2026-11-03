@@ -545,6 +545,12 @@ const definition = {
           },
           seatStatus: { type: 'string', enum: ['available', 'last_seats'] },
           applied: { type: 'boolean' },
+          applicationStatus: {
+            type: 'string',
+            enum: ['approved', 'rejected'],
+            nullable: true,
+            description: 'K27: rejected → başvuru kabul edilmedi ya da eğitimden çıkarıldı; yeniden başvuru kapalı',
+          },
         },
       },
       CompletedTraining: {

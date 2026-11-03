@@ -599,10 +599,12 @@ edilsin mi?" diye sorar. "Devam" → `POST /auth/restore`; "Vazgeç" → hiçbir
     "cover": "https://cdn.example.com/saha/yangin.jpg",
     "availableSeats": 12,
     "seatStatus": "available",
-    "applied": false
+    "applied": false,
+    "applicationStatus": null
   }
 ]
 ```
+- **`applicationStatus`** (K27): `approved` | `rejected` | `null` (başvuru yok). `rejected` → "Başvurunuz kabul edilmedi"; başvuru reddedildiğinde ya da gönüllü eğitimden çıkarıldığında gönüllüye `saha_application_rejected` push'u gider, aynı eğitime yeniden başvuru `409 already_applied` alır.
 - **TS tipleri:** `SahaTraining`, `SahaSeatStatus` (`types.ts:206-231`)
 - **Mock:** `mocks.ts:593-650` (`MOCK_SAHA_TRAININGS`)
 - **Notlar:**
@@ -624,7 +626,7 @@ edilsin mi?" diye sorar. "Devam" → `POST /auth/restore`; "Vazgeç" → hiçbir
 ```json
 { "applicationId": "app_t_1", "status": "pending" }
 ```
-- **Error cases:** `409 already_applied`, `410 training_full`, `410 training_closed`, `410 training_past` (training day is before today, Europe/Istanbul)
+- **Error cases:** `403 commission_pending` (komisyon onayı yok; onay bekleyen gönüllü eğitimleri görür ama başvuramaz, K16), `409 already_applied`, `410 training_full`, `410 training_closed`, `410 training_past` (training day is before today, Europe/Istanbul)
 - **TS tipi:** `TrainingApplyResponse` (`types.ts:233-236`)
 - **Mock:** `mocks.ts:mockApi.applyTraining`
 

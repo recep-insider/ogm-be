@@ -4,7 +4,7 @@
 // trainings expose their session (startsAt, location, instructor) on GET /trainings/online.
 // Past field trainings (day before today, Europe/Istanbul) are neither listed nor applicable.
 
-const mockState = { training: null, existing: null, enrolled: 0, rejected: 0, inserts: [], online: [], progress: [], saha: [], whereCalls: [], ops: [] };
+const mockState = { training: null, existing: null, enrolled: 0, rejected: 0, inserts: [], online: [], progress: [], saha: [], myApps: [], decisions: [], whereCalls: [], ops: [] };
 
 jest.mock('../../../src/config/db', () => {
   // `via` tells a transaction-bound query (trx) apart from one on the bare pool (db).
@@ -23,6 +23,7 @@ jest.mock('../../../src/config/db', () => {
         if (cond && cond.status === 'rejected') excludesRejected = true;
         return c;
       }),
+      whereIn: jest.fn(() => c),
       pluck: jest.fn(async () => []),
       select: jest.fn(() => c),
       groupBy: jest.fn(async () => (heldSeats() ? [{ attendance: 'kayitli', c: heldSeats() }] : [])),
@@ -54,6 +55,8 @@ jest.mock('../../../src/config/db', () => {
           online_trainings: mockState.online,
           online_training_progress: mockState.progress,
           saha_trainings: mockState.saha,
+          saha_training_applications: mockState.myApps,
+          commission_decisions: mockState.decisions,
         }[table] || [];
         return Promise.resolve(rows).then(resolve, reject);
       },
@@ -84,6 +87,8 @@ beforeEach(() => {
   mockState.online = [];
   mockState.progress = [];
   mockState.saha = [];
+  mockState.myApps = [];
+  mockState.decisions = [{ user_id: 'u1', decision: 'approved', decided_at: new Date() }];
   mockState.whereCalls = [];
   mockState.ops = [];
 });
@@ -131,6 +136,36 @@ describe('applySaha — hard capacity (K4)', () => {
     mockState.enrolled = 0;
     await expect(applySaha('u1', 's1')).rejects.toMatchObject({ status: 410, code: 'training_full' });
     expect(mockState.inserts).toHaveLength(0);
+  });
+});
+
+describe('applySaha — komisyon onayı (K16)', () => {
+  it.each([
+    ['kararı olmayan', []],
+    ['reddedilen', [{ user_id: 'u1', decision: 'rejected', decided_at: new Date() }]],
+  ])('%s gönüllü başvuramaz: 403 commission_pending, kayıt yok', async (_label, decisions) => {
+    mockState.decisions = decisions;
+    await expect(applySaha('u1', 's1')).rejects.toMatchObject({ status: 403, code: 'commission_pending' });
+    expect(mockState.inserts).toHaveLength(0);
+  });
+});
+
+describe('listSaha — başvuru durumu (K27, BUG-037)', () => {
+  it('başvurunun durumunu döner; reddedilen başvuru approved görünmez', async () => {
+    mockState.saha = [
+      { id: 's1', title: 'A', start_date: FUTURE_DAY, total_seats: 10 },
+      { id: 's2', title: 'B', start_date: FUTURE_DAY, total_seats: 10 },
+      { id: 's3', title: 'C', start_date: FUTURE_DAY, total_seats: 10 },
+    ];
+    mockState.myApps = [{ training_id: 's1', status: 'approved' }, { training_id: 's2', status: 'rejected' }];
+
+    const list = await listSaha('u1');
+
+    expect(list.map((t) => [t.id, t.applied, t.applicationStatus])).toEqual([
+      ['s1', true, 'approved'],
+      ['s2', true, 'rejected'],
+      ['s3', false, null],
+    ]);
   });
 });
 
