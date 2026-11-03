@@ -1,9 +1,11 @@
 'use strict';
 
+const crypto = require('crypto');
 const fs = require('fs/promises');
 const path = require('path');
 const { v4: uuidv4 } = require('uuid');
 const { db } = require('../../config/db');
+const { redis } = require('../../config/redis');
 const env = require('../../config/env');
 const logger = require('../../config/logger');
 const { errors } = require('../../shared/errors');
@@ -11,6 +13,7 @@ const {
   signAccessToken,
   signRefreshToken,
   accessTokenSeconds,
+  registrationTokenSeconds,
 } = require('../../shared/jwt');
 const { toIso, toDateOnly } = require('../../shared/dates');
 const { sendTransactional } = require('../../shared/sms-provider');
@@ -24,7 +27,19 @@ async function unlinkSafe(file) {
   }
 }
 
-async function complete({ user, registration, data, files, ip, userAgent }) {
+// Kayıt token'ı tek kullanımlıktır. Redis'e ulaşılamazsa kayıt engellenmez (kontrol yapılamadı, token kullanılmış sayılmaz).
+async function claimRegistrationToken(token) {
+  const key = `used:reg:${crypto.createHash('sha256').update(token).digest('hex')}`;
+  try {
+    const ok = await redis.set(key, '1', 'EX', registrationTokenSeconds(), 'NX');
+    return ok === null ? { used: true, key: null } : { used: false, key };
+  } catch (err) {
+    logger.warn('Kayıt token kullanım kaydı yazılamadı', { error: err.message });
+    return { used: false, key: null };
+  }
+}
+
+async function complete({ user, registration, registrationToken, data, files, ip, userAgent }) {
   if (!files || !files.saglikRaporu || !files.sabikaKaydi) {
     throw errors.validation('Sağlık raporu ve sabıka kaydı zorunludur', {
       missing: ['saglikRaporu', 'sabikaKaydi'].filter((k) => !files || !files[k]),
@@ -81,9 +96,19 @@ async function complete({ user, registration, data, files, ip, userAgent }) {
     }
   }
 
+  // Telefon doğrulanmış kaynaktan gelir: SMS akışında kayıt token'ı, oturumlu kullanıcıda mevcut kayıt.
+  // e-Devlet token'ında telefon yok; o akış gerçek e-Devlet gelene kadar bekliyor.
+  const current = userId ? await db('users').where({ id: userId }).first('phone') : null;
+  const verifiedPhone = registration?.phone || current?.phone || null;
+  const bodyPhone = data.iletisim.telefon || null;
+  if (verifiedPhone && bodyPhone && bodyPhone !== verifiedPhone) {
+    await Promise.all([unlinkSafe(saglik), unlinkSafe(sabika)]);
+    throw errors.validation('Telefon numarası doğrulanan numarayla aynı olmalı.', undefined, 'phone_mismatch');
+  }
+
   // backend-gereksinimleri.md §7.2: tek telefon = tek başvuru. DB'de unique kısıt var,
   // ama mobilin ekranda gösterebileceği anlamlı hatayı (409 phone_in_use) burada üretiyoruz.
-  const phoneToUse = data.iletisim.telefon || registration?.phone || null;
+  const phoneToUse = verifiedPhone || bodyPhone;
   if (phoneToUse) {
     const existsByPhone = await db('users')
       .where({ phone: phoneToUse })
@@ -105,6 +130,16 @@ async function complete({ user, registration, data, files, ip, userAgent }) {
   }
 
   const now = new Date();
+
+  let claimKey = null;
+  if (registration && !user && registrationToken) {
+    const claim = await claimRegistrationToken(registrationToken);
+    if (claim.used) {
+      await Promise.all([unlinkSafe(saglik), unlinkSafe(sabika)]);
+      throw errors.unauthorized('Bu kayıt bağlantısı zaten kullanıldı. Tekrar giriş yapın.', 'registration_used');
+    }
+    claimKey = claim.key;
+  }
 
   try {
     await db.transaction(async (trx) => {
@@ -177,6 +212,8 @@ async function complete({ user, registration, data, files, ip, userAgent }) {
     });
   } catch (err) {
     await Promise.all([unlinkSafe(saglik), unlinkSafe(sabika)]);
+    // Kayıt yazılamadıysa aynı token'la yeniden denenebilsin.
+    if (claimKey) await redis.del(claimKey).catch(() => {});
     throw err;
   }
 
