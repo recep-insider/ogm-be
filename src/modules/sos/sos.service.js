@@ -70,11 +70,21 @@ async function create({ userId, body, ip, userAgent }) {
   const id = uuidv4();
   const now = new Date();
   // Gönüllü başına tek açık çağrı (BUG-023): kullanıcı satırı kilitlenir; açık çağrı varsa yenisi
-  // açılmaz, mevcut çağrı döner. Eş zamanlı iki istek de tek çağrı açar.
+  // açılmaz, mevcut çağrı döner. Eş zamanlı iki istek de tek çağrı açar. Tekrar basış geçmişe düşer;
+  // çağrı konumsuz açıldıysa yeni gelen konum çağrıya eklenir.
+  const coords = body.coordinates;
   const open = await db.transaction(async (trx) => {
     await trx('users').where({ id: userId }).forUpdate().first('id');
     const active = await trx('sos_reports').where({ user_id: userId, status: 'active' }).orderBy('created_at', 'desc').first();
-    if (active) return active;
+    if (active) {
+      const locationAdded = coords != null && active.lat == null;
+      if (locationAdded) {
+        await trx('sos_reports').where({ id: active.id }).update({ lat: coords.lat, lng: coords.lng, updated_at: now });
+      }
+      const event = locationAdded ? 'SOS tekrar gönderildi, konum eklendi' : 'SOS tekrar gönderildi';
+      await addHistory(active.id, { event, by: 'Mobil', byKind: 'mobil' }, trx);
+      return { row: active, locationAdded };
+    }
     await trx('sos_reports').insert({
       id,
       user_id: userId,
@@ -103,12 +113,23 @@ async function create({ userId, body, ip, userAgent }) {
   });
 
   if (open) {
+    const { row, locationAdded } = open;
+    if (locationAdded) fillLocation(row.id, coords.lat, coords.lng);
+    await writeAudit({
+      userId,
+      action: 'sos.repeat',
+      entity: 'sos_report',
+      entityId: row.id,
+      ip,
+      userAgent,
+      payload: { hasCoordinates: coords != null, locationAdded },
+    });
     return {
       ok: true,
-      sosId: open.id,
+      sosId: row.id,
       status: 'active',
-      createdAt: toIso(open.created_at),
-      dispatchedTo: open.dispatched_to || DISPATCH_TARGET,
+      createdAt: toIso(row.created_at),
+      dispatchedTo: row.dispatched_to || DISPATCH_TARGET,
       alreadyActive: true,
     };
   }

@@ -22,8 +22,16 @@ describe('recordConsent', () => {
     },
   );
 
-  it('yayımlanan sürümle eşleşmeyen sürüm (mobilin sabit v1\'i) 400 consent_version_mismatch, kayıt yok', async () => {
-    await expect(recordConsent('u1', { document: 'kvkk', version: 'v1' })).rejects.toMatchObject({
+  it.each(['kvkk', 'aydinlatma', 'acik_riza'])(
+    'yayındaki mobilin sabit v1\'i (%s) geçiş döneminde reddedilmez, gönderildiği gibi kaydedilir',
+    async (document) => {
+      await recordConsent('u1', { document, version: 'v1' });
+      expect(db.rows('consents')).toEqual([expect.objectContaining({ document, version: 'v1' })]);
+    },
+  );
+
+  it('yayımlanan sürümle eşleşmeyen sürüm 400 consent_version_mismatch, kayıt yok', async () => {
+    await expect(recordConsent('u1', { document: 'kvkk', version: 'v0.9' })).rejects.toMatchObject({
       status: 400,
       code: 'consent_version_mismatch',
       details: { expectedVersion: publishedVersion('kvkk') },

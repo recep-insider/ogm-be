@@ -89,6 +89,20 @@ describe('phone-change.commit — hata kodları (BUG-038)', () => {
     await expect(commit('123456')).resolves.toBeTruthy();
     expect(db.rows('users')[0].phone).toBe(NEW_PHONE);
   });
+
+  it('deneme hakkı tükenince 429 retryAfterSec döner, oturum silinir, telefon değişmez', async () => {
+    redis.store.set('otp:phone-change:s1', {
+      value: JSON.stringify({ userId: 'u1', newPhone: NEW_PHONE, codeHash: 'hash:123456', attempts: env.sms.otpMaxAttempts }),
+      expiresAt: null,
+    });
+
+    await expect(commit('123456')).rejects.toMatchObject({
+      status: 429,
+      details: { retryAfterSec: env.sms.resendCooldown },
+    });
+    expect(redis.store.has('otp:phone-change:s1')).toBe(false);
+    expect(db.rows('users')[0].phone).toBe('+905320000000');
+  });
 });
 
 describe('phone-change — numara başkasına geçtiyse (BUG-048)', () => {

@@ -22,6 +22,17 @@ describe('rateLimitHandler', () => {
     expect(res.body.error.details.retryAfterSec).toBeLessThanOrEqual(60);
   });
 
+  it('resetTime yoksa retryAfterSec 60 saniyedir', () => {
+    const res = { status: jest.fn(() => res), json: jest.fn() };
+
+    rateLimitHandler('Çok sık')({ rateLimit: {} }, res);
+
+    expect(res.status).toHaveBeenCalledWith(429);
+    expect(res.json).toHaveBeenCalledWith({
+      error: { code: 'rate_limited', message: 'Çok sık', details: { retryAfterSec: 60 } },
+    });
+  });
+
   it('OTP, telefon değiştirme ve e-Devlet sınırları aynı gövdeyi kullanır', () => {
     for (const file of ['auth/phone.routes', 'auth/edevlet.routes', 'users/users.routes']) {
       const src = require('fs').readFileSync(require.resolve(`../../src/modules/${file}`), 'utf8');

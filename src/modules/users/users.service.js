@@ -276,10 +276,15 @@ async function setAvatar(userId, file, audit = {}) {
   return getMe(userId);
 }
 
+// Yayındaki mobil sürüm kayıtta üç belge için de sabit 'v1' gönderir ve hatayı yutar; reddedilirse onay
+// kaydı hiç yazılmaz. Sürümü /legal'dan okuyan mobil zorunlu olana kadar eskisi gibi kabul edilir.
+// ponytail: geçiş dönemi istisnası; o mobil sürüm zorunlu olunca kaldırılır.
+const LEGACY_MOBILE_CONSENT_VERSION = 'v1';
+
 async function recordConsent(userId, { document, version, ip, userAgent }) {
   // Rıza kaydı kişiye gösterilen metnin sürümüyle eşleşmeli (BUG-041); mobil sürümü /legal'dan okur.
   const expected = publishedVersion(document);
-  if (version !== expected) {
+  if (version !== expected && version !== LEGACY_MOBILE_CONSENT_VERSION) {
     throw errors.validation(
       'Onay verilen metnin sürümü yayımlanan sürümle eşleşmiyor. Metni yeniden açıp onaylayın.',
       { document, version, expectedVersion: expected },

@@ -271,4 +271,21 @@ describe('phone.service — 429 bekleme süresi (BUG-028)', () => {
     const err = await svc.resendOtpFlow({ sessionId: 's1', ip: '1.2.3.4' }).catch((e) => e);
     expect(err).toMatchObject({ status: 429, details: { retryAfterSec: 40 } });
   });
+
+  it('süresiz yazılmış kilitte bekleme süresi kilit süresinin tamamıdır', async () => {
+    env.sms.otpLockoutDuration = 1800;
+    redis.store.set('ban:phone:+905321112233', { value: '1', expiresAt: null });
+    const err = await svc.sendOtpFlow({ phone: '+905321112233', ip: '1.2.3.4' }).catch((e) => e);
+    expect(err).toMatchObject({ status: 429, code: 'rate_limited', details: { retryAfterSec: 1800 } });
+  });
+
+  it('deneme hakkı biten kod numarayı kilitler ve kilit süresini döner', async () => {
+    env.sms.otpMaxAttempts = 5;
+    env.sms.otpLockoutDuration = 1800;
+    redis.store.set('otp:phone:s1', { value: JSON.stringify({ phone: '+905321112233', codeHash: 'h', attempts: 5 }), expiresAt: null });
+    const err = await svc.verifyOtpFlow({ sessionId: 's1', code: '123456', ip: '1.2.3.4' }).catch((e) => e);
+    expect(err).toMatchObject({ status: 429, code: 'rate_limited', details: { retryAfterSec: 1800 } });
+    expect(redis.store.has('otp:phone:s1')).toBe(false);
+    expect(redis.set).toHaveBeenCalledWith('ban:phone:+905321112233', '1', 'EX', 1800);
+  });
 });

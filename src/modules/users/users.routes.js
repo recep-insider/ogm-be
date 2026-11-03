@@ -180,7 +180,8 @@ router.post('/me/avatar', avatarUpload, asyncHandler(controller.setAvatar));
  *     description: >-
  *       version, kişiye gösterilen metnin GET /legal/{belge} yanıtındaki version alanıdır
  *       (kvkk → kvkk, aydinlatma → aydinlatma-metni, acik_riza → acik-riza). Yayımlanan sürümle
- *       eşleşmezse 400 consent_version_mismatch döner, kayıt yazılmaz (BUG-041).
+ *       eşleşmezse 400 consent_version_mismatch döner, kayıt yazılmaz (BUG-041). Geçiş dönemi: yayındaki
+ *       mobilin sabit gönderdiği 'v1' sürümü /legal'dan okuyan mobil zorunlu olana kadar kabul edilir.
  *     security: [ { bearerAuth: [] } ]
  *     requestBody:
  *       required: true
