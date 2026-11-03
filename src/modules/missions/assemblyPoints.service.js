@@ -73,7 +73,7 @@ async function notifyLocationChange(missionId, point) {
       try {
         // eslint-disable-next-line no-await-in-loop
         const sms = await sendSms(row.phone, `${title}. ${body}`);
-        texted = !sms?.dummy;
+        texted = !sms?.dummy && !sms?.mock;
         if (texted) summary.sms += 1;
       } catch (err) {
         logger.error('Toplanma noktası SMS gönderilemedi', { userId: row.user_id, error: err.message });

@@ -54,6 +54,8 @@ describe('sendOtp — dummy phone bypass', () => {
 
     expect(res.dummy).toBeUndefined();
     expect(res.providerMessageId).toMatch(/^mock-/);
+    // Kimseye gitmeyen SMS işaretlenir; sayımlar onu "gönderildi" saymaz.
+    expect(res.mock).toBe(true);
   });
 });
 

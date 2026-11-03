@@ -81,4 +81,15 @@ describe('notifyLocationChange — yalnız ulaşan bildirim sayılır (BUG-111)'
     expect(summary).toEqual({ yolda: 0, sahada: 0, sms: 1, notifiedCount: 0, unreachableCount: 1 });
     sendPushToUser.mockResolvedValue({ sent: 1 });
   });
+
+  it('mock sağlayıcıya düşen SMS gönderildi sayılmaz; gönüllü ulaşılamayan sayılır', async () => {
+    mockState.participants = [{ status: 'yolda', user_id: 'u1', phone: '+905321112233', deleted_at: null }];
+    sendPushToUser.mockResolvedValue({ sent: 0, noDevices: true });
+    sendSms.mockResolvedValueOnce({ providerMessageId: 'mock-1', mock: true });
+
+    const summary = await notifyLocationChange('m1', POINT);
+
+    expect(summary).toEqual({ yolda: 0, sahada: 0, sms: 0, notifiedCount: 0, unreachableCount: 1 });
+    sendPushToUser.mockResolvedValue({ sent: 1 });
+  });
 });

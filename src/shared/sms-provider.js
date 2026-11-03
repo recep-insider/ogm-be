@@ -33,9 +33,10 @@ function maskPhone(phone) {
   return phone ? `***${String(phone).slice(-4)}` : phone;
 }
 
+// mock: true — SMS kimseye gitmedi; sayımlarda "gönderildi" sayılmaz (push'taki mock işaretiyle aynı).
 async function sendMock(phone) {
   logger.info('SMS [MOCK] gönderildi', { phone: maskPhone(phone) });
-  return { providerMessageId: `mock-${Date.now()}` };
+  return { providerMessageId: `mock-${Date.now()}`, mock: true };
 }
 
 async function sendNetgsm(phone, message) {
