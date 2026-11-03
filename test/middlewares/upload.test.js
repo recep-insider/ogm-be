@@ -217,3 +217,46 @@ describe('olay medyası yükleme limitleri (operatör vs gönüllü)', () => {
     expect((await send('/volunteer-photo', 1 * KB, 'v.mp4', 'video/mp4')).status).toBe(200);
   });
 });
+
+describe('wrapMulter — sınır ve multer hataları (BUG-043, BUG-049)', () => {
+  const express = require('express');
+  const multer = require('multer');
+  const request = require('supertest');
+  const { errorHandler } = require('../../src/middlewares/error-handler');
+  const { wrapMulter, sizeLimit } = __testables;
+
+  const app = express();
+  const upload = multer({ storage: multer.memoryStorage(), limits: { ...sizeLimit(10), fieldSize: 5 } }).single('file');
+  app.post('/u', wrapMulter(upload, 10), (req, res) => res.json({ size: req.file && req.file.size }));
+  app.use(errorHandler);
+
+  it('tam sınırdaki dosya kabul edilir', async () => {
+    const res = await request(app).post('/u').attach('file', Buffer.alloc(10, 'a'), 'a.png');
+    expect(res.status).toBe(200);
+    expect(res.body.size).toBe(10);
+  });
+
+  it('sınırı bir bayt aşan dosya 413, sınır yanıtta', async () => {
+    const res = await request(app).post('/u').attach('file', Buffer.alloc(11, 'a'), 'a.png');
+    expect(res.status).toBe(413);
+    expect(res.body.error).toMatchObject({ code: 'file_too_large', details: { limitBytes: 10 } });
+  });
+
+  it.each([
+    ['sınırı aşan alan değeri', (r) => r.field('x', 'abcdefghij')],
+    ['boundary olmayan multipart', (r) => r.set('Content-Type', 'multipart/form-data').send('abc')],
+    ['yarıda kesilen multipart', (r) => r.set('Content-Type', 'multipart/form-data; boundary=xx')
+      .send('--xx\r\nContent-Disposition: form-data; name="file"; filename="a"\r\n\r\nabc')],
+  ])('%s 400', async (_name, build) => {
+    const res = await build(request(app).post('/u'));
+    expect(res.status).toBe(400);
+    expect(res.body.error.code).toBe('validation_error');
+  });
+
+  it('dosya sistemi hatası 500 kalır', async () => {
+    const failing = (_req, _res, cb) => cb(Object.assign(new Error('ENOSPC'), { code: 'ENOSPC', syscall: 'write' }));
+    const next = jest.fn();
+    wrapMulter(failing, 10)({}, {}, next);
+    expect(next.mock.calls[0][0].syscall).toBe('write');
+  });
+});

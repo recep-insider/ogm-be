@@ -1,7 +1,7 @@
 'use strict';
 
 const logger = require('../config/logger');
-const { AppError } = require('../shared/errors');
+const { AppError, errors } = require('../shared/errors');
 const { discardUploads } = require('../shared/discard-uploads');
 
 function notFoundHandler(req, res, _next) {
@@ -13,7 +13,20 @@ function notFoundHandler(req, res, _next) {
   });
 }
 
-function errorHandler(err, req, res, _next) {
+const BODY_ERRORS = {
+  'entity.parse.failed': ['invalid_json', 'İstek gövdesi geçerli JSON değil'],
+  'entity.too.large': ['payload_too_large', 'İstek gövdesi çok büyük'],
+};
+
+// body-parser hataları (bozuk JSON, büyük gövde) istemci kaynaklıdır; http-errors olarak status ve expose taşır.
+function fromBodyParser(err) {
+  if (!(err.expose && err.status >= 400 && err.status < 500)) return err;
+  const [code, message] = BODY_ERRORS[err.type] || ['bad_request', 'Geçersiz istek'];
+  return errors.make(err.status, code, message, err.type === 'entity.too.large' ? { limitBytes: err.limit } : undefined);
+}
+
+function errorHandler(rawErr, req, res, _next) {
+  const err = rawErr instanceof AppError ? rawErr : fromBodyParser(rawErr);
   const isAppError = err instanceof AppError;
   const status = isAppError ? err.status : 500;
   const code = isAppError ? err.code : 'internal_error';

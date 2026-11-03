@@ -5,7 +5,7 @@ const path = require('path');
 const multer = require('multer');
 const { v4: uuidv4 } = require('uuid');
 const env = require('../config/env');
-const { errors } = require('../shared/errors');
+const { AppError, errors } = require('../shared/errors');
 const { discardUploads } = require('../shared/discard-uploads');
 
 function ensureDir(dir) {
@@ -46,6 +46,9 @@ function diskStorage(subdir) {
   });
 }
 
+// busboy dosya tam sınıra ulaştığında da keser; sınırdaki dosya kabul edilsin diye bir bayt fazlası verilir.
+const sizeLimit = (bytes) => ({ fileSize: bytes + 1 });
+
 function mimeFilter(allowed) {
   return (_req, file, cb) => {
     if (allowed.includes(file.mimetype)) return cb(null, true);
@@ -57,7 +60,7 @@ function mimeFilter(allowed) {
 
 const onboardingUpload = multer({
   storage: diskStorage('onboarding'),
-  limits: { fileSize: env.upload.maxDocBytes },
+  limits: sizeLimit(env.upload.maxDocBytes),
   fileFilter: mimeFilter(ALLOWED_DOC_MIME),
 }).fields([
   { name: 'saglikRaporu', maxCount: 1 },
@@ -66,7 +69,7 @@ const onboardingUpload = multer({
 
 const avatarUpload = multer({
   storage: diskStorage('avatars'),
-  limits: { fileSize: env.upload.maxAvatarBytes },
+  limits: sizeLimit(env.upload.maxAvatarBytes),
   fileFilter: mimeFilter(ALLOWED_AVATAR_MIME),
 }).single('avatar');
 
@@ -75,7 +78,7 @@ const avatarUpload = multer({
 // görseller için maxDocBytes kontrolü upload sonrası imageSizeGuard'da yapılır.
 const fireReportUpload = multer({
   storage: diskStorage('reports'),
-  limits: { fileSize: env.upload.maxVideoBytes },
+  limits: sizeLimit(env.upload.maxVideoBytes),
   fileFilter: mimeFilter(ALLOWED_MEDIA_MIME),
 }).array('media', env.upload.maxReportPhotos);
 
@@ -117,7 +120,7 @@ function totalSizeGuard(maxBytes) {
 // Aktif görev fotoğrafı — tek `file` (kontrat 7.5).
 const missionPhotoUpload = multer({
   storage: diskStorage('missions'),
-  limits: { fileSize: env.upload.maxDocBytes },
+  limits: sizeLimit(env.upload.maxDocBytes),
   fileFilter: mimeFilter(ALLOWED_MEDIA_MIME),
 }).single('file');
 
@@ -125,24 +128,27 @@ const missionPhotoUpload = multer({
 // video limiti. Görsel sınırı (maxDocBytes) upload sonrası imageSizeGuard'da uygulanır.
 const missionMediaUpload = multer({
   storage: diskStorage('missions'),
-  limits: { fileSize: env.upload.maxVideoBytes },
+  limits: sizeLimit(env.upload.maxVideoBytes),
   fileFilter: mimeFilter(ALLOWED_MEDIA_MIME),
 }).single('file');
 
 /** Multer hatalarını AppError'a çevirip pipeline'da sürdürür. */
-function wrapMulter(handler) {
+function wrapMulter(handler, limitBytes) {
   return (req, res, next) => {
     handler(req, res, (err) => {
-      if (!err) return next();
+      if (!err || err instanceof AppError) return next(err);
       if (err.code === 'LIMIT_FILE_SIZE') {
         return next(
-          errors.make(413, 'file_too_large', 'Dosya boyutu sınırı aşıldı', {
-            limitBytes: err.limit,
-          }),
+          errors.make(413, 'file_too_large', 'Dosya boyutu sınırı aşıldı', { limitBytes }),
         );
       }
       if (err.code === 'LIMIT_UNEXPECTED_FILE') {
         return next(errors.validation('Beklenmeyen dosya alanı', { field: err.field }));
+      }
+      // Diğer multer sınırları ve busboy'un bozuk gövde hataları istemci kaynaklıdır; dosya sistemi
+      // hataları (syscall taşır) 500 kalır.
+      if (err instanceof multer.MulterError || !err.syscall) {
+        return next(errors.validation('Dosya yüklemesi geçersiz', { reason: err.code || err.message, field: err.field }));
       }
       return next(err);
     });
@@ -153,21 +159,21 @@ function wrapMulter(handler) {
 const ALLOWED_CONTENT_MIME = ['image/jpeg', 'image/png', 'image/webp', 'video/mp4'];
 const contentUpload = multer({
   storage: diskStorage('content'),
-  limits: { fileSize: env.upload.maxDocBytes },
+  limits: sizeLimit(env.upload.maxDocBytes),
   fileFilter: mimeFilter(ALLOWED_CONTENT_MIME),
 }).single('file');
 
 module.exports = {
-  onboardingUpload: wrapMulter(onboardingUpload),
-  avatarUpload: wrapMulter(avatarUpload),
+  onboardingUpload: wrapMulter(onboardingUpload, env.upload.maxDocBytes),
+  avatarUpload: wrapMulter(avatarUpload, env.upload.maxAvatarBytes),
   fireReportUpload: [
-    wrapMulter(fireReportUpload),
+    wrapMulter(fireReportUpload, env.upload.maxVideoBytes),
     imageSizeGuard(env.upload.maxDocBytes),
     totalSizeGuard(FIRE_REPORT_TOTAL_BYTES),
   ],
-  missionPhotoUpload: wrapMulter(missionPhotoUpload),
-  missionMediaUpload: [wrapMulter(missionMediaUpload), imageSizeGuard(env.upload.maxDocBytes)],
-  contentUpload: wrapMulter(contentUpload),
+  missionPhotoUpload: wrapMulter(missionPhotoUpload, env.upload.maxDocBytes),
+  missionMediaUpload: [wrapMulter(missionMediaUpload, env.upload.maxVideoBytes), imageSizeGuard(env.upload.maxDocBytes)],
+  contentUpload: wrapMulter(contentUpload, env.upload.maxDocBytes),
   // Test-only: exposes mimeFilter and the allowlist constants for unit tests.
-  __testables: { mimeFilter, imageSizeGuard, totalSizeGuard, FIRE_REPORT_TOTAL_BYTES, MIME_TO_EXT, ALLOWED_DOC_MIME, ALLOWED_AVATAR_MIME, ALLOWED_MEDIA_MIME },
+  __testables: { wrapMulter, sizeLimit, mimeFilter, imageSizeGuard, totalSizeGuard, FIRE_REPORT_TOTAL_BYTES, MIME_TO_EXT, ALLOWED_DOC_MIME, ALLOWED_AVATAR_MIME, ALLOWED_MEDIA_MIME },
 };

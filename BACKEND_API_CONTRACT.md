@@ -56,6 +56,9 @@ Tüm 4xx/5xx response'ları aşağıdaki şema ile dönecek:
 - `details` (opsiyonel): validation hata listesi, ek metadata.
 - Tüm `429` yanıtları (`rate_limited`, `sms_daily_limit`) `details.retryAfterSec` taşır: tekrar denemeden önce beklenecek saniye (BUG-028).
 - `503 service_unavailable`: Redis (oturum, kod ve hız sınırı deposu) yanıt vermiyor; giriş, SMS kodu, telefon değiştirme ve panel girişi en geç ~1 sn içinde bu kodla döner, istek işlenmez, kısa süre sonra tekrar denenebilir (BUG-024).
+- Bozuk JSON gövde `400 invalid_json`; 1 MB'ı aşan JSON gövde `413 payload_too_large` (`details.limitBytes`). Bozuk
+  multipart ve diğer yükleme sınırları `400 validation_error` (`details.reason`). `413 file_too_large` her zaman
+  `details.limitBytes` taşır; tam sınırdaki dosya kabul edilir (BUG-043, BUG-049).
 
 ### 0.5 Pagination
 **Yok.** Frontend tüm list endpoint'lerini flat `T[]` olarak tüketiyor (`useBlogPosts`, `useFireMissions`, `useCompletedTrainings`, `useMyFireReports` vs.). Pagination'a geçiş ileride backend tarafından tetiklenirse `FRONTEND_CHANGES.md`'ye geçiş notu eklenir.
