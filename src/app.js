@@ -43,7 +43,15 @@ const app = express();
 app.disable('x-powered-by');
 app.set('trust proxy', 1);
 
-app.use(helmet({ contentSecurityPolicy: false }));
+// HSTS, X-Frame-Options, nosniff ve Referrer-Policy nginx'te (docker/nginx/nginx.conf) verilir; burada da
+// verilirse yanıt aynı başlığı iki farklı değerle taşır.
+app.use(helmet({
+  contentSecurityPolicy: false,
+  strictTransportSecurity: false,
+  xFrameOptions: false,
+  xContentTypeOptions: false,
+  referrerPolicy: false,
+}));
 app.use(cors({ origin: true, credentials: true }));
 app.use(compression());
 app.use(express.json({ limit: '1mb' }));
