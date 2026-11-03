@@ -13,6 +13,7 @@ const readinessService = require('../users/readiness.service');
 const { applyRegionFilter } = require('../../shared/regions');
 const { profileFields } = require('../users/users.service');
 const { foldSearch } = require('../../shared/fold-search');
+const { ANONYMIZE_AFTER_DAYS } = require('../users/anonymize.service');
 
 // applications.status enum'u ile aynı (migrations/20260427120200_create_applications.js).
 const APPLICATION_STATUSES = ['pending', 'approved', 'rejected', 'requires_revision'];
@@ -151,6 +152,18 @@ async function setCommissionDecision(userId, body, actor = {}) {
   };
 }
 
+function deletionFields(row) {
+  if (!row.deleted_at) return {};
+  const deletedAt = new Date(row.deleted_at);
+  const dueAt = new Date(deletedAt.getTime() + ANONYMIZE_AFTER_DAYS * 86400 * 1000);
+  return {
+    pendingDeletion: true,
+    deletedAt: deletedAt.toISOString(),
+    deletionDueAt: dueAt.toISOString(),
+    deletionDaysLeft: Math.max(0, Math.ceil((dueAt.getTime() - Date.now()) / (86400 * 1000))),
+  };
+}
+
 function mapVolunteerListItem(row, readiness) {
   return {
     userId: row.id,
@@ -171,6 +184,7 @@ function mapVolunteerListItem(row, readiness) {
     eksikAdimlar: readiness.zincir.eksikAdimlar,
     siradakiAdim: readiness.zincir.siradakiAdim,
     komisyon: readiness.komisyon,
+    ...deletionFields(row),
   };
 }
 
@@ -180,9 +194,11 @@ function mapVolunteerListItem(row, readiness) {
  * her kullanıcı EN GÜNCEL başvurusuyla eşlenir. PII gözetimi: tc_kimlik
  * listede DÖNMEZ (yalnızca getVolunteer detayında).
  *
- * @param {{status?:string, q?:string, page?:number, pageSize?:number}} params
+ * `pendingDeletion` ile yalnız silinme sürecindekiler (silinmiş, henüz anonimleşmemiş) döner (K3).
+ *
+ * @param {{status?:string, q?:string, page?:number, pageSize?:number, pendingDeletion?:boolean}} params
  */
-async function listVolunteers({ status, q, page = 1, pageSize = 20 } = {}) {
+async function listVolunteers({ status, q, page = 1, pageSize = 20, pendingDeletion = false } = {}) {
   const base = db('users as u')
     .leftJoin('applications as a', function joinLatestApplication() {
       this.on('a.user_id', '=', 'u.id').andOn(
@@ -191,8 +207,9 @@ async function listVolunteers({ status, q, page = 1, pageSize = 20 } = {}) {
         db.raw('(select a2.id from applications a2 where a2.user_id = u.id order by a2.submitted_at desc limit 1)'),
       );
     })
-    .where('u.is_guest', false)
-    .whereNull('u.deleted_at');
+    .where('u.is_guest', false);
+  if (pendingDeletion) base.whereNotNull('u.deleted_at').whereNull('u.anonymized_at');
+  else base.whereNull('u.deleted_at');
 
   if (status) base.where('a.status', status);
   // whereLike KULLANMA: knex'in MySQL dialekti 'COLLATE utf8_bin' ekler ve
@@ -214,7 +231,7 @@ async function listVolunteers({ status, q, page = 1, pageSize = 20 } = {}) {
     .select(
       'u.id', 'u.ad', 'u.soyad', 'u.phone', 'u.eposta', 'u.profile_complete', 'u.is_active',
       'u.il', 'u.ilce', 'u.ogrenim', 'u.meslek', 'u.meslek_diger', 'u.giysi_bedeni',
-      'u.ayakkabi_numarasi', 'u.stk_text',
+      'u.ayakkabi_numarasi', 'u.stk_text', 'u.deleted_at',
       'a.status as application_status', 'a.submitted_at',
       // mobil §15: tamamlanan eğitim sayısı elle doldurulan bir tablodan değil,
       // gerçek kaynaklardan gelir — teorik tamamlama + saha yoklaması.

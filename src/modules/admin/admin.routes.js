@@ -188,6 +188,7 @@ const pageQueryKeys = {
 const volunteersQuerySchema = Joi.object({
   status: Joi.string().valid(...adminService.APPLICATION_STATUSES).optional(),
   q: Joi.string().max(100).optional(),
+  pendingDeletion: Joi.boolean().optional(),
   ...pageQueryKeys,
 });
 
@@ -200,10 +201,13 @@ const volunteersQuerySchema = Joi.object({
  *     description: >-
  *       Mobil uygulamadan ÇAĞRILMAZ. Panel oturumu (Bearer) gerektirir.
  *       Misafir/silinmiş kullanıcılar hariç; her kullanıcı en güncel başvurusuyla döner.
+ *       pendingDeletion=true ile yalnız silinme sürecindekiler (hesabını silmiş, 30 günü dolmamış,
+ *       henüz anonimleşmemiş) döner; bu satırlarda deletedAt, deletionDueAt ve deletionDaysLeft vardır.
  *       PII gözetimi: tcKimlik bu listede dönmez (detay ucunda döner).
  *     security: [ { panelBearer: [] } ]
  *     parameters:
  *       - { in: query, name: status, schema: { type: string, enum: [pending, approved, rejected, requires_revision] } }
+ *       - { in: query, name: pendingDeletion, schema: { type: boolean }, description: 'true → yalnız silinme sürecindeki hesaplar (K3)' }
  *       - { in: query, name: q, schema: { type: string }, description: 'ad/soyad/telefon/eposta/TC/il/ilçe/STK araması; boşlukla ayrılan her kelime eşleşmeli, Türkçe büyük/küçük harf duyarsız' }
  *       - { in: query, name: page, schema: { type: integer, default: 1 } }
  *       - { in: query, name: pageSize, schema: { type: integer, default: 20, maximum: 100 } }
@@ -252,6 +256,10 @@ const volunteersQuerySchema = Joi.object({
  *                           decidedAt: { type: string, format: date-time, nullable: true }
  *                           decidedBy: { type: string, nullable: true }
  *                           decisionNo: { type: string, nullable: true }
+ *                       pendingDeletion: { type: boolean, description: 'Yalnız pendingDeletion=true listesinde' }
+ *                       deletedAt: { type: string, format: date-time, description: 'Yalnız pendingDeletion=true listesinde' }
+ *                       deletionDueAt: { type: string, format: date-time, description: 'Anonimleştirme zamanı (silme + 30 gün)' }
+ *                       deletionDaysLeft: { type: integer, minimum: 0 }
  *                 total: { type: integer }
  *                 page: { type: integer }
  *                 pageSize: { type: integer }
