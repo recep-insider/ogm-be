@@ -141,12 +141,26 @@ describe('applySaha — hard capacity (K4)', () => {
 
 describe('applySaha — komisyon onayı (K16)', () => {
   it.each([
-    ['kararı olmayan', []],
-    ['reddedilen', [{ user_id: 'u1', decision: 'rejected', decided_at: new Date() }]],
-  ])('%s gönüllü başvuramaz: 403 commission_pending, kayıt yok', async (_label, decisions) => {
+    ['kararı olmayan', [], 'commission_pending'],
+    ['reddedilen', [{ user_id: 'u1', decision: 'rejected', decided_at: new Date() }], 'commission_rejected'],
+  ])('%s gönüllü başvuramaz: 403 %s, kayıt yok', async (_label, decisions, code) => {
     mockState.decisions = decisions;
-    await expect(applySaha('u1', 's1')).rejects.toMatchObject({ status: 403, code: 'commission_pending' });
+    await expect(applySaha('u1', 's1')).rejects.toMatchObject({ status: 403, code });
     expect(mockState.inserts).toHaveLength(0);
+  });
+});
+
+describe('applySaha — hata önceliği', () => {
+  it('kararı olmayan ama zaten başvurmuş gönüllü 409 already_applied alır', async () => {
+    mockState.decisions = [];
+    mockState.existing = { id: 'a1' };
+    await expect(applySaha('u1', 's1')).rejects.toMatchObject({ status: 409, code: 'already_applied' });
+  });
+
+  it('kararı olmayan gönüllü olmayan eğitimde 404 not_found alır', async () => {
+    mockState.decisions = [];
+    mockState.training = null;
+    await expect(applySaha('u1', 'missing')).rejects.toMatchObject({ status: 404, code: 'not_found' });
   });
 });
 
@@ -166,6 +180,15 @@ describe('listSaha — başvuru durumu (K27, BUG-037)', () => {
       ['s2', true, 'rejected'],
       ['s3', false, null],
     ]);
+  });
+
+  it('eski varsayılan pending satırı sözleşmedeki değerlerden birine (approved) çevrilir', async () => {
+    mockState.saha = [{ id: 's1', title: 'A', start_date: FUTURE_DAY, total_seats: 10 }];
+    mockState.myApps = [{ training_id: 's1', status: 'pending' }];
+
+    const [item] = await listSaha('u1');
+
+    expect(item).toMatchObject({ applied: true, applicationStatus: 'approved' });
   });
 });
 

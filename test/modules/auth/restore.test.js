@@ -57,6 +57,25 @@ describe('verify-otp — silinme sürecindeki hesap', () => {
     expect(result.pendingDeletion).toBeUndefined();
     expect(result.registrationToken).toEqual(expect.any(String));
   });
+
+  it('silmeden 30 gün geçmiş (anonimleştirme sırasındaki) hesap geri alma teklifi almaz', async () => {
+    db.reset({ users: [pendingUser({ deleted_at: new Date(Date.now() - 31 * 86400 * 1000) })], refresh_tokens: [] });
+    const result = await verify();
+    expect(result.pendingDeletion).toBeUndefined();
+    expect(result.restoreToken).toBeUndefined();
+  });
+});
+
+describe('POST /auth/restore — 30 günlük sınır', () => {
+  it('silmeden 30 gün geçmiş hesabı açmaz; erişim engeli kalır', async () => {
+    const restoreToken = signRestoreToken({ sub: 'u1' });
+    db.reset({ users: [pendingUser({ deleted_at: new Date(Date.now() - 31 * 86400 * 1000) })], refresh_tokens: [] });
+    await redis.set(userBlockKey('u1'), '1', 'EX', 900);
+
+    await expect(restoreFlow({ restoreToken })).rejects.toMatchObject({ status: 401, code: 'restore_invalid' });
+    expect(db.rows('users')[0].is_active).toBe(false);
+    expect(await redis.get(userBlockKey('u1'))).toBe('1');
+  });
 });
 
 describe('POST /auth/restore — restoreFlow', () => {
@@ -103,6 +122,48 @@ describe('POST /auth/restore — restoreFlow', () => {
 
     await expect(restoreFlow({ restoreToken })).rejects.toMatchObject({ status: 503, code: 'restore_unavailable' });
     expect(db.rows('users')[0]).toMatchObject({ is_active: false, deleted_at: DELETED_AT });
+    del.mockRestore();
+  });
+
+  it('kontrolden sonra anonimleşen hesap açılmaz, oturum verilmez', async () => {
+    const { restoreToken } = await verify();
+    const del = jest.spyOn(redis, 'del').mockImplementationOnce(async () => {
+      db.rows('users')[0].anonymized_at = new Date();
+      return 1;
+    });
+
+    await expect(restoreFlow({ restoreToken })).rejects.toMatchObject({ status: 401, code: 'restore_invalid' });
+    expect(db.rows('users')[0]).toMatchObject({ is_active: false, deleted_at: DELETED_AT });
+    expect(db.rows('refresh_tokens')).toHaveLength(0);
+    expect(await redis.get(userBlockKey('u1'))).toBe('1');
+    del.mockRestore();
+  });
+
+  it('aynı anda iki geri alma isteği: biri açar, öteki 401 alır ve açılan hesabı engellemez', async () => {
+    const { restoreToken } = await verify();
+    await redis.set(userBlockKey('u1'), '1', 'EX', 900);
+
+    const results = await Promise.allSettled([restoreFlow({ restoreToken }), restoreFlow({ restoreToken })]);
+
+    expect(results.filter((r) => r.status === 'fulfilled')).toHaveLength(1);
+    expect(results.find((r) => r.status === 'rejected').reason).toMatchObject({ status: 401, code: 'restore_invalid' });
+    expect(db.rows('users')[0]).toMatchObject({ is_active: true, deleted_at: null });
+    expect(await redis.get(userBlockKey('u1'))).toBeNull();
+  });
+
+  it('hesap güncellemesi hata verirse kaldırılan erişim engeli geri yazılır', async () => {
+    const { restoreToken } = await verify();
+    await redis.set(userBlockKey('u1'), '1', 'EX', 900);
+    const realDel = redis.del.bind(redis);
+    const del = jest.spyOn(redis, 'del').mockImplementationOnce(async (key) => {
+      const out = await realDel(key);
+      // Engel kalktıktan sonra DB yazımı düşer.
+      Object.defineProperty(db.rows('users')[0], 'deleted_at', { get() { throw new Error('db down'); } });
+      return out;
+    });
+
+    await expect(restoreFlow({ restoreToken })).rejects.toThrow('db down');
+    expect(await redis.get(userBlockKey('u1'))).toBe('1');
     del.mockRestore();
   });
 

@@ -22,6 +22,13 @@ const STEP_LABEL = {
  * @param {{decision?:string}|null|undefined} decisionRow En güncel komisyon kararı satırı
  * @returns {'approved'|'rejected'|'pending'}
  */
+// En güncel komisyon kararı: aynı saniyeye düşmüş eski kayıtlar da tek bir sıraya otursun.
+const LATEST_DECISION_ORDER = [
+  { column: 'decided_at', order: 'desc' },
+  { column: 'created_at', order: 'desc' },
+  { column: 'id', order: 'desc' },
+];
+
 function komisyonKarari(decisionRow) {
   if (!decisionRow) return 'pending';
   return decisionRow.decision === 'approved' ? 'approved' : 'rejected';
@@ -109,6 +116,7 @@ function katilimEngelleri(zincir) {
 }
 
 module.exports = {
+  LATEST_DECISION_ORDER,
   CHAIN_STEPS,
   STEP_LABEL,
   komisyonKarari,

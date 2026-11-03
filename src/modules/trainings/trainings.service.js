@@ -97,6 +97,11 @@ function isPastTraining(t) {
  * as applicable would only produce a 410 `training_past` on tap. Attended trainings
  * remain visible under GET /users/me/trainings/completed.
  */
+function applicationStatusOf(status) {
+  if (!status) return null;
+  return status === 'rejected' ? 'rejected' : 'approved';
+}
+
 async function listSaha(userId) {
   const trainings = await db('saha_trainings')
     .where({ is_active: true })
@@ -127,8 +132,9 @@ async function listSaha(userId) {
       availableSeats,
       seatStatus,
       applied: myStatus.has(t.id),
-      // K27: reddedilen ya da eğitimden çıkarılan gönüllü "Başvurunuz kabul edilmedi" görür.
-      applicationStatus: myStatus.get(t.id) || null,
+      // K27: reddedilen ya da eğitimden çıkarılan gönüllü "Başvurunuz kabul edilmedi" görür. Başvuru
+      // onayı otomatik olduğundan (§8) eski varsayılan 'pending' satırı da kabul edilmiş başvurudur.
+      applicationStatus: applicationStatusOf(myStatus.get(t.id)),
     });
   }
   return out;
@@ -144,12 +150,6 @@ async function listSaha(userId) {
 async function applySaha(userId, trainingId, audit = {}) {
   const id = uuidv4();
   await db.transaction(async (trx) => {
-    // K16: onay bekleyen gönüllü eğitimleri görür ama komisyon onayından önce başvuramaz.
-    const decisions = await latestCommissionDecisions([userId], trx);
-    if (komisyonKarari(decisions.get(userId)) !== 'approved') {
-      throw errors.forbidden('Saha eğitimine komisyon onayından sonra başvurabilirsiniz.', 'commission_pending');
-    }
-
     const t = await trx('saha_trainings').where({ id: trainingId }).forUpdate().first();
     if (!t) throw errors.notFound('Eğitim bulunamadı', 'not_found');
     if (!t.is_active) throw errors.gone('Eğitim başvuruya kapalı', undefined, 'training_closed');
@@ -160,6 +160,16 @@ async function applySaha(userId, trainingId, audit = {}) {
       .where({ user_id: userId, training_id: trainingId })
       .first();
     if (existing) throw errors.conflict('Bu eğitime zaten başvurdunuz', undefined, 'already_applied');
+
+    // K16: onay bekleyen gönüllü eğitimleri görür ama komisyon onayından önce başvuramaz.
+    const decisions = await latestCommissionDecisions([userId], trx);
+    const karar = komisyonKarari(decisions.get(userId));
+    if (karar === 'rejected') {
+      throw errors.forbidden('Komisyon başvurunuzu onaylamadığı için saha eğitimine başvuramazsınız.', 'commission_rejected');
+    }
+    if (karar !== 'approved') {
+      throw errors.forbidden('Saha eğitimine komisyon onayından sonra başvurabilirsiniz.', 'commission_pending');
+    }
 
     const counted = await trx('saha_training_applications')
       .where({ training_id: trainingId })
@@ -654,12 +664,13 @@ async function adminSetSahaApplicationStatus(applicationId, { status }, actor = 
   const application = await db('saha_training_applications').where({ id: applicationId }).first();
   if (!application) throw errors.notFound('Başvuru bulunamadı', 'application_not_found');
 
-  await db('saha_training_applications').where({ id: applicationId }).update({
-    status,
-    updated_at: new Date(),
-  });
+  // Koşullu yazım: aynı ret iki kez gelirse (çift tıklama, iki görevli) bildirim bir kez gider.
+  const changed = await db('saha_training_applications')
+    .where({ id: applicationId })
+    .whereNot({ status })
+    .update({ status, updated_at: new Date() });
 
-  if (status === 'rejected' && application.status !== 'rejected' && application.user_id) {
+  if (status === 'rejected' && changed && application.user_id) {
     try {
       const training = await db('saha_trainings').where({ id: application.training_id }).first('title');
       await sendPushToUser(application.user_id, {

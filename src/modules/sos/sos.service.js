@@ -149,7 +149,8 @@ async function cancel(sosId, { userId, ip, userAgent }) {
   }
 
   const now = new Date();
-  // Eş zamanlı iki iptalde yalnız biri yazar; diğeri kapanmış çağrıyı görür (BUG-025).
+  // Koşullu yazım (BUG-025): eş zamanlı iki iptalden yalnız biri yazar; arada operatör "müdahale edildi"
+  // dediyse iptal onun kaydını ezmez.
   const cancelled = await db('sos_reports').where({ id: sosId, status: 'active' }).update({
     status: 'cancelled',
     cancelled_at: now,

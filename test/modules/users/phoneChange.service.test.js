@@ -50,6 +50,15 @@ describe('phone-change.init', () => {
     expect(writeAudit).not.toHaveBeenCalled();
   });
 
+  it('günlük sınır numara + IP başınadır: bir IP dolunca başka IP kod alabilir', async () => {
+    env.sms.dailyLimitPerUser = 1;
+    const initFrom = (ip) => service.init({ userId: 'u1', newPhone: NEW_PHONE, ip, userAgent: 'jest' });
+
+    await initFrom('1.1.1.1');
+    await expect(initFrom('1.1.1.1')).rejects.toMatchObject({ status: 429, code: 'sms_daily_limit' });
+    await expect(initFrom('2.2.2.2')).resolves.toMatchObject({ sessionId: expect.any(String) });
+  });
+
   it('üretimde mock sağlayıcı: 503 sms_unavailable, oturum ve sayaç oluşmaz', async () => {
     env.nodeEnv = 'production';
 

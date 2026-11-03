@@ -86,6 +86,18 @@ describe('phone.service — sendOtpFlow limitleri', () => {
     await expect(svc.sendOtpFlow({ phone: PHONE, ip: '1.2.3.4' })).rejects.toMatchObject({ status: 429, code: 'rate_limited' });
   });
 
+  test('günlük sınır numara + IP çiftine göredir: başka IP aynı numaraya yine kod gönderebilir (K10)', async () => {
+    env.sms.dailyLimitPerUser = 2;
+    await svc.sendOtpFlow({ phone: PHONE, ip: '1.1.1.1' });
+    await svc.sendOtpFlow({ phone: PHONE, ip: '1.1.1.1' });
+    await expect(svc.sendOtpFlow({ phone: PHONE, ip: '1.1.1.1' })).rejects.toMatchObject({
+      status: 429, code: 'sms_daily_limit',
+    });
+
+    await expect(svc.sendOtpFlow({ phone: PHONE, ip: '2.2.2.2' })).resolves.toMatchObject({ sessionId: expect.any(String) });
+    expect(await redis.get(`rl:sms:otp:daily:${PHONE}:2.2.2.2`)).toBe('1');
+  });
+
   test('günlük SMS limiti 500e dönüşmeden 429 sms_daily_limit olarak döner, oturum açılmaz', async () => {
     env.sms.dailyLimitPerUser = 0;
 
@@ -160,6 +172,13 @@ describe('phone.service — resendOtpFlow hataları', () => {
 
   const storedSession = () => redis.store.get(`otp:phone:${SESSION_ID}`).value;
   const ORIGINAL = JSON.stringify({ phone: PHONE, codeHash: 'h', attempts: 0, createdAt: 0 });
+
+  test('yeniden gönderim günlük sayacı çağıranın IP\'siyle artırır (K10)', async () => {
+    await svc.resendOtpFlow({ sessionId: SESSION_ID, ip: '5.6.7.8' });
+
+    expect(await redis.get(`rl:sms:otp:daily:${PHONE}:5.6.7.8`)).toBe('1');
+    expect(await redis.get(`rl:sms:otp:daily:${PHONE}:bilinmiyor`)).toBeNull();
+  });
 
   test('günlük SMS limiti 500e dönüşmeden 429 sms_daily_limit döner; telefondaki kod geçerli kalır', async () => {
     env.sms.dailyLimitPerUser = 0;

@@ -44,8 +44,15 @@ jest.mock('../../../src/config/db', () => {
         return q;
       },
       orderBy(c, dir = 'asc') {
-        const sign = dir === 'desc' ? -1 : 1;
-        rows = [...rows].sort((a, b) => (a[col(c)] > b[col(c)] ? sign : a[col(c)] < b[col(c)] ? -sign : 0));
+        const keys = Array.isArray(c) ? c.map((k) => [k.column, k.order || 'asc']) : [[c, dir]];
+        rows = [...rows].sort((a, b) => {
+          for (const [k, d] of keys) {
+            const sign = d === 'desc' ? -1 : 1;
+            if (a[col(k)] > b[col(k)]) return sign;
+            if (a[col(k)] < b[col(k)]) return -sign;
+          }
+          return 0;
+        });
         return q;
       },
       select(...cols) {

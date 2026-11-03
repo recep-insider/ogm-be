@@ -10,10 +10,11 @@ const { v4: uuidv4 } = require('uuid');
 const { hasProtectiveEquipment, PROTECTIVE_TYPE } = require('../equipment/equipment.service');
 const { sendTransactional } = require('../../shared/sms-provider');
 const readinessService = require('../users/readiness.service');
+const { LATEST_DECISION_ORDER } = require('../../shared/derive');
 const { applyRegionFilter } = require('../../shared/regions');
 const { profileFields } = require('../users/users.service');
 const { foldSearch } = require('../../shared/fold-search');
-const { ANONYMIZE_AFTER_DAYS } = require('../users/anonymize.service');
+const { ANONYMIZE_AFTER_DAYS, restorableSince } = require('../users/anonymize.service');
 
 // applications.status enum'u ile aynı (migrations/20260427120200_create_applications.js).
 const APPLICATION_STATUSES = ['pending', 'approved', 'rejected', 'requires_revision'];
@@ -78,7 +79,8 @@ async function setApplicationStatus(userId, { status, note }, actor = {}) {
  *
  * Panel ekranda gördüğü kararı `expectedDecision` ile gönderirse (K20) karar arada başka bir
  * görevlice değiştiyse 409 decision_conflict döner; kayıt ve SMS yoktur. Aynı karar tekrar gelirse
- * yeni kayıt ve SMS olmaz. Kararlar kullanıcı satırı kilitlenerek sırayla yazılır; aynı saniyedeki
+ * yeni kayıt olmaz; başvuru aynası güncel ve SMS gitmişse hiçbir şey yapılmaz, değilse ayna
+ * güncellenir ve SMS bir kez daha gönderilir. Kararlar kullanıcı satırı kilitlenerek sırayla yazılır; aynı saniyedeki
  * ikinci karar bir saniye sonrasına yazılır ki en güncel karar belirsiz kalmasın (BUG-021).
  *
  * @param {string} userId
@@ -90,17 +92,65 @@ async function setCommissionDecision(userId, body, actor = {}) {
     throw errors.validation('Geçersiz komisyon kararı', { decision: body.decision });
   }
 
-  const user = await db('users').where({ id: userId }).whereNull('deleted_at').first();
-  if (!user) throw errors.notFound('Kullanıcı bulunamadı', 'user_not_found');
-
   const id = uuidv4();
-  let decidedAt = new Date();
+  // decided_at saniye hassasiyetinde saklanır (TIMESTAMP(0)); karşılaştırma da saniyede yapılır.
+  let decidedAt = new Date(Math.floor(Date.now() / 1000) * 1000);
+  let decisionId = id;
+  let repeated = false;
   let unchanged = null;
+  let phone = null;
+  // SMS hakkı kilitli işlemde alınır (sms_sent_at yazılır), gönderim commit'ten sonra yapılır:
+  // eşzamanlı ikinci istek hakkı alınmış görür ve SMS göndermez.
+  let claimedSms = false;
 
   await db.transaction(async (trx) => {
-    await trx('users').where({ id: userId }).forUpdate().first();
-    const latest = await trx('commission_decisions').where({ user_id: userId }).orderBy('decided_at', 'desc').first();
+    // Silinme ve telefon kilitli satırdan okunur: kilitten önce okunan satır arada eskiyebilir.
+    const user = await trx('users').where({ id: userId }).forUpdate().first();
+    if (!user || user.anonymized_at) throw errors.notFound('Kullanıcı bulunamadı', 'user_not_found');
+    if (user.deleted_at) {
+      throw errors.conflict('Hesap silinme sürecinde; işlem yapılamaz.', undefined, 'account_pending_deletion');
+    }
+    phone = user.phone;
+
+    const latest = await trx('commission_decisions')
+      .where({ user_id: userId })
+      .orderBy(LATEST_DECISION_ORDER)
+      .first();
     const current = latest ? latest.decision : null;
+    // applications.status komisyon kararından TÜREYEN bir ayna alandır (mobilin
+    // accessLevel'i hâlâ bunu okuyor); kararın kendisi commission_decisions'tadır.
+    const application = await trx('applications')
+      .where({ user_id: userId })
+      .orderBy('submitted_at', 'desc')
+      .first();
+    const mirrorTo = async (reviewedAt) => {
+      if (!application || application.status === body.decision) return;
+      await trx('applications').where({ id: application.id }).update({
+        status: body.decision,
+        reviewed_at: reviewedAt,
+        reviewed_by: actor.userId || null,
+        updated_at: reviewedAt,
+      });
+    };
+
+    if (current === body.decision) {
+      // Aynı karar tekrar: yeni kayıt yok. Yeniden başvuran gönüllünün başvurusu aynalanır; SMS
+      // yalnız daha önce gönderilmemiş ya da denenmemişse bir kez daha denenir.
+      const mirrored = !application || application.status === body.decision;
+      if (mirrored && latest.sms_sent_at) {
+        unchanged = latest;
+        return;
+      }
+      repeated = true;
+      decisionId = latest.id;
+      decidedAt = new Date(latest.decided_at);
+      await mirrorTo(new Date());
+      if (!latest.sms_sent_at) {
+        await trx('commission_decisions').where({ id: latest.id }).update({ sms_sent_at: new Date(), updated_at: new Date() });
+        claimedSms = true;
+      }
+      return;
+    }
     const expected = body.expectedDecision === 'pending' ? null : body.expectedDecision;
     if (expected !== undefined && expected !== current) {
       throw errors.conflict(
@@ -108,10 +158,6 @@ async function setCommissionDecision(userId, body, actor = {}) {
         { currentDecision: current || 'pending' },
         'decision_conflict',
       );
-    }
-    if (current === body.decision) {
-      unchanged = latest;
-      return;
     }
     if (latest && new Date(latest.decided_at) >= decidedAt) {
       decidedAt = new Date(new Date(latest.decided_at).getTime() + 1000);
@@ -125,24 +171,12 @@ async function setCommissionDecision(userId, body, actor = {}) {
       decided_by: body.decidedBy || null,
       decision_no: body.decisionNo || null,
       note: body.note || null,
+      sms_sent_at: new Date(),
       created_at: decidedAt,
       updated_at: decidedAt,
     });
-
-    // applications.status komisyon kararından TÜREYEN bir ayna alandır (mobilin
-    // accessLevel'i hâlâ bunu okuyor); kararın kendisi commission_decisions'tadır.
-    const application = await trx('applications')
-      .where({ user_id: userId })
-      .orderBy('submitted_at', 'desc')
-      .first();
-    if (application) {
-      await trx('applications').where({ id: application.id }).update({
-        status: body.decision,
-        reviewed_at: decidedAt,
-        reviewed_by: actor.userId || null,
-        updated_at: decidedAt,
-      });
-    }
+    claimedSms = true;
+    await mirrorTo(decidedAt);
   });
 
   if (unchanged) {
@@ -159,29 +193,36 @@ async function setCommissionDecision(userId, body, actor = {}) {
     };
   }
 
-  const sms = await sendTransactional(
-    user.phone,
-    body.decision === 'approved' ? 'commissionApproved' : 'commissionRejected',
-  );
-  if (sms.sent) {
-    await db('commission_decisions')
-      .where({ id })
-      .update({ sms_sent_at: sms.sentAt, sms_phone: user.phone, updated_at: new Date() });
+  let sms = { sent: false, reason: 'already_sent' };
+  if (claimedSms) {
+    sms = await sendTransactional(
+      phone,
+      body.decision === 'approved' ? 'commissionApproved' : 'commissionRejected',
+    );
+    if (sms.sent) {
+      await db('commission_decisions')
+        .where({ id: decisionId })
+        .update({ sms_sent_at: sms.sentAt, sms_phone: phone, updated_at: new Date() });
+    } else if (sms.reason !== 'timeout') {
+      // Kesin ret: hak bırakılır, aynı kararın tekrarı yeniden dener. Zaman aşımında SMS gitmiş
+      // olabilir; hak tutulur, ikinci SMS gönderilmez.
+      await db('commission_decisions').where({ id: decisionId }).update({ sms_sent_at: null, updated_at: new Date() });
+    }
   }
 
   await writeAudit({
     userId: actor.userId || null,
     action: 'admin.commission.decision',
     entity: 'commission_decision',
-    entityId: id,
+    entityId: decisionId,
     ip: actor.ip,
     userAgent: actor.userAgent,
-    payload: { targetUserId: userId, decision: body.decision, smsSent: sms.sent },
+    payload: { targetUserId: userId, decision: body.decision, smsSent: sms.sent, ...(repeated ? { repeated } : {}) },
   });
 
   const readiness = await readinessService.getReadiness(userId);
   return {
-    decisionId: id,
+    decisionId,
     userId,
     decision: body.decision,
     decidedAt: decidedAt.toISOString(),
@@ -233,7 +274,7 @@ function mapVolunteerListItem(row, readiness) {
  * her kullanıcı EN GÜNCEL başvurusuyla eşlenir. PII gözetimi: tc_kimlik
  * listede DÖNMEZ (yalnızca getVolunteer detayında).
  *
- * `pendingDeletion` ile yalnız silinme sürecindekiler (silinmiş, henüz anonimleşmemiş) döner (K3).
+ * `pendingDeletion` ile yalnız silinme sürecindekiler (silinmiş, 30 günü dolmamış, anonimleşmemiş) döner (K3).
  *
  * @param {{status?:string, q?:string, page?:number, pageSize?:number, pendingDeletion?:boolean}} params
  */
@@ -247,7 +288,9 @@ async function listVolunteers({ status, q, page = 1, pageSize = 20, pendingDelet
       );
     })
     .where('u.is_guest', false);
-  if (pendingDeletion) base.whereNotNull('u.deleted_at').whereNull('u.anonymized_at');
+  if (pendingDeletion) {
+    base.whereNotNull('u.deleted_at').where('u.deleted_at', '>', restorableSince()).whereNull('u.anonymized_at');
+  }
   else base.whereNull('u.deleted_at');
 
   if (status) base.where('a.status', status);

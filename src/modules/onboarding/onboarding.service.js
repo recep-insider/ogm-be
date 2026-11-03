@@ -17,6 +17,7 @@ const {
 } = require('../../shared/jwt');
 const { toIso, toDateOnly } = require('../../shared/dates');
 const { sendTransactional } = require('../../shared/sms-provider');
+const { isPendingDeletion } = require('../users/anonymize.service');
 
 async function unlinkSafe(file) {
   if (!file) return;
@@ -27,11 +28,22 @@ async function unlinkSafe(file) {
   }
 }
 
-function pendingDeletionConflict() {
+// Silinmiş hesap 30 gün içindeyse kişi giriş yapıp silmeyi iptal edebilir (K28); süre dolup
+// anonimleştirme bekliyorsa iptal artık mümkün değildir, kısa süre sonra yeniden kayıt olunabilir.
+// TC eşleşmesinde kişi numarasını değiştirmiş olabilir: geri alma yalnız eski numarayla girişte sunulur.
+const PENDING_DELETION_MESSAGE = {
+  phone: 'Bu bilgilerle silinme sürecinde bir hesap var. Telefon numaranızla giriş yaparak silme talebini iptal edebilirsiniz.',
+  tc: 'Bu TC kimlik numarasıyla silinme sürecinde bir hesap var; eski telefon numaranızla giriş yaparak iptal edebilir ya da 30 gün sonra yeniden kayıt olabilirsiniz.',
+};
+
+function deletedAccountConflict(row, matchedBy) {
+  if (isPendingDeletion(row)) {
+    return errors.conflict(PENDING_DELETION_MESSAGE[matchedBy], undefined, 'account_pending_deletion');
+  }
   return errors.conflict(
-    'Bu bilgilerle silinme sürecinde bir hesap var. Telefon numaranızla giriş yaparak silme talebini iptal edebilirsiniz.',
+    'Hesabınız siliniyor; kısa süre sonra yeniden kayıt olabilirsiniz.',
     undefined,
-    'account_pending_deletion',
+    'account_deletion_finalizing',
   );
 }
 
@@ -99,7 +111,7 @@ async function complete({ user, registration, registrationToken, data, files, ip
     .first();
   if (existsByTc?.deleted_at && existsByTc.id !== userId) {
     await Promise.all([unlinkSafe(saglik), unlinkSafe(sabika)]);
-    throw pendingDeletionConflict();
+    throw deletedAccountConflict(existsByTc, 'tc');
   }
   if (existsByTc && existsByTc.id !== userId) {
     if (!userId) {
@@ -128,7 +140,7 @@ async function complete({ user, registration, registrationToken, data, files, ip
       .first();
     if (existsByPhone?.deleted_at && existsByPhone.id !== userId) {
       await Promise.all([unlinkSafe(saglik), unlinkSafe(sabika)]);
-      throw pendingDeletionConflict();
+      throw deletedAccountConflict(existsByPhone, 'phone');
     }
     if (existsByPhone && existsByPhone.id !== userId) {
       await Promise.all([unlinkSafe(saglik), unlinkSafe(sabika)]);
