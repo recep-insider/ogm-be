@@ -20,3 +20,13 @@ describe('deploy.sh — yerel node_modules', () => {
     expect(script).toMatch(/run_rsync -az --delete "\$BUILD_DIR\/node_modules\/" "\$TARGET:\$DEPLOY_DIR\/node_modules\/"/);
   });
 });
+
+describe('.env.example — yükleme sınırları (SG-11)', () => {
+  it('config/env.js okuduğu her UPLOAD_MAX_* anahtarı örnek dosyada var', () => {
+    const example = fs.readFileSync(path.join(__dirname, '../../.env.example'), 'utf8');
+    const config = fs.readFileSync(path.join(__dirname, '../../src/config/env.js'), 'utf8');
+    for (const key of config.match(/UPLOAD_MAX_[A-Z_]+/g)) {
+      expect(example).toMatch(new RegExp(`^${key}=`, 'm'));
+    }
+  });
+});
