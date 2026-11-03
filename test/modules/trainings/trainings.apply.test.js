@@ -150,6 +150,20 @@ describe('applySaha — komisyon onayı (K16)', () => {
   });
 });
 
+describe('applySaha — hata önceliği', () => {
+  it('kararı olmayan ama zaten başvurmuş gönüllü 409 already_applied alır', async () => {
+    mockState.decisions = [];
+    mockState.existing = { id: 'a1' };
+    await expect(applySaha('u1', 's1')).rejects.toMatchObject({ status: 409, code: 'already_applied' });
+  });
+
+  it('kararı olmayan gönüllü olmayan eğitimde 404 not_found alır', async () => {
+    mockState.decisions = [];
+    mockState.training = null;
+    await expect(applySaha('u1', 'missing')).rejects.toMatchObject({ status: 404, code: 'not_found' });
+  });
+});
+
 describe('listSaha — başvuru durumu (K27, BUG-037)', () => {
   it('başvurunun durumunu döner; reddedilen başvuru approved görünmez', async () => {
     mockState.saha = [

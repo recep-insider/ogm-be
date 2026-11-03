@@ -159,16 +159,6 @@ async function listSaha(userId) {
 async function applySaha(userId, trainingId, audit = {}) {
   const id = uuidv4();
   await db.transaction(async (trx) => {
-    // K16: onay bekleyen gönüllü eğitimleri görür ama komisyon onayından önce başvuramaz.
-    const decisions = await latestCommissionDecisions([userId], trx);
-    const karar = komisyonKarari(decisions.get(userId));
-    if (karar === 'rejected') {
-      throw errors.forbidden('Komisyon başvurunuzu onaylamadığı için saha eğitimine başvuramazsınız.', 'commission_rejected');
-    }
-    if (karar !== 'approved') {
-      throw errors.forbidden('Saha eğitimine komisyon onayından sonra başvurabilirsiniz.', 'commission_pending');
-    }
-
     const t = await trx('saha_trainings').where({ id: trainingId }).forUpdate().first();
     if (!t) throw errors.notFound('Eğitim bulunamadı', 'not_found');
     if (!t.is_active) throw errors.gone('Eğitim başvuruya kapalı', undefined, 'training_closed');
@@ -179,6 +169,16 @@ async function applySaha(userId, trainingId, audit = {}) {
       .where({ user_id: userId, training_id: trainingId })
       .first();
     if (existing) throw errors.conflict('Bu eğitime zaten başvurdunuz', undefined, 'already_applied');
+
+    // K16: onay bekleyen gönüllü eğitimleri görür ama komisyon onayından önce başvuramaz.
+    const decisions = await latestCommissionDecisions([userId], trx);
+    const karar = komisyonKarari(decisions.get(userId));
+    if (karar === 'rejected') {
+      throw errors.forbidden('Komisyon başvurunuzu onaylamadığı için saha eğitimine başvuramazsınız.', 'commission_rejected');
+    }
+    if (karar !== 'approved') {
+      throw errors.forbidden('Saha eğitimine komisyon onayından sonra başvurabilirsiniz.', 'commission_pending');
+    }
 
     const counted = await trx('saha_training_applications')
       .where({ training_id: trainingId })

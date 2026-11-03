@@ -196,27 +196,31 @@ async function send(input, actor = {}) {
     completed = true;
   } finally {
     // Gönderim yarıda kesilse de giden sayılar ve denetim izi yazılır: aksi halde kayıt 0 gösterir,
-    // görevli bildirimi tekrar gönderir.
-    await db('notification_log')
-      .where({ id })
-      .update({ push_count: pushCount, sms_count: smsCount, updated_at: new Date() });
+    // görevli bildirimi tekrar gönderir. Bu kayıt düşerse asıl hatayı gizlemez, loglanır.
+    try {
+      await db('notification_log')
+        .where({ id })
+        .update({ push_count: pushCount, sms_count: smsCount, updated_at: new Date() });
 
-    await writeAudit({
-      userId: actor.userId || null,
-      action: 'notifications.send',
-      entity: 'notification',
-      entityId: id,
-      ip: actor.ip,
-      userAgent: actor.userAgent,
-      payload: {
-        category: input.category,
-        target: targetDoc,
-        recipients: targets.length,
-        pushCount,
-        smsCount,
-        ...(completed ? {} : { incomplete: true }),
-      },
-    });
+      await writeAudit({
+        userId: actor.userId || null,
+        action: 'notifications.send',
+        entity: 'notification',
+        entityId: id,
+        ip: actor.ip,
+        userAgent: actor.userAgent,
+        payload: {
+          category: input.category,
+          target: targetDoc,
+          recipients: targets.length,
+          pushCount,
+          smsCount,
+          ...(completed ? {} : { incomplete: true }),
+        },
+      });
+    } catch (err) {
+      logger.error('Bildirim sayıları kaydedilemedi', { notificationId: id, pushCount, smsCount, error: err.message });
+    }
   }
 
   return {

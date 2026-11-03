@@ -208,6 +208,19 @@ describe('hedef kitle', () => {
     }));
   });
 
+  it('sayı kaydı da düşerse asıl gönderim hatası gizlenmez, kayıt hatası loglanır', async () => {
+    const logger = require('../../../src/config/logger');
+    const error = jest.spyOn(logger, 'error').mockImplementation(() => {});
+    mockState.users = [{ id: 'u1' }, { id: 'u2' }];
+    sendPushToUser.mockResolvedValueOnce({ sent: 1, failed: 0 }).mockRejectedValueOnce(new Error('fcm down'));
+    writeAudit.mockRejectedValueOnce(new Error('audit down'));
+
+    await expect(service.send({ category: 'bilgi', title: 'Duyuru', body: 'x', audience: 'tumu' }, {}))
+      .rejects.toThrow('fcm down');
+    expect(error).toHaveBeenCalledWith('Bildirim sayıları kaydedilemedi', expect.objectContaining({ pushCount: 1, error: 'audit down' }));
+    error.mockRestore();
+  });
+
   it('kayıt gönderimden önce yazılır; push verisi notificationId taşır (K5)', async () => {
     await service.send({ category: 'bilgi', title: 'Duyuru', body: 'x', audience: 'tumu' }, {});
 
