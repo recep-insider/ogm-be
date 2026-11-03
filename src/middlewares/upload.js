@@ -98,6 +98,22 @@ function imageSizeGuard(maxBytes) {
   };
 }
 
+// K9: ihbar başına toplam dosya sınırı — nginx'in 110 MB gövde sınırının altında kalır ki
+// aşım nginx'in HTML 413'ü yerine anlaşılır bir JSON hatayla dönsün.
+const FIRE_REPORT_TOTAL_BYTES = 100 * 1024 * 1024;
+
+function totalSizeGuard(maxBytes) {
+  return (req, _res, next) => {
+    const files = req.files || (req.file ? [req.file] : []);
+    const total = files.reduce((sum, f) => sum + (f.size || 0), 0);
+    if (total <= maxBytes) return next();
+    discardUploads(req);
+    return next(
+      errors.make(413, 'payload_too_large', 'Dosyaların toplam boyutu sınırı aşıyor', { limitBytes: maxBytes, totalBytes: total }),
+    );
+  };
+}
+
 // Aktif görev fotoğrafı — tek `file` (kontrat 7.5).
 const missionPhotoUpload = multer({
   storage: diskStorage('missions'),
@@ -144,10 +160,14 @@ const contentUpload = multer({
 module.exports = {
   onboardingUpload: wrapMulter(onboardingUpload),
   avatarUpload: wrapMulter(avatarUpload),
-  fireReportUpload: [wrapMulter(fireReportUpload), imageSizeGuard(env.upload.maxDocBytes)],
+  fireReportUpload: [
+    wrapMulter(fireReportUpload),
+    imageSizeGuard(env.upload.maxDocBytes),
+    totalSizeGuard(FIRE_REPORT_TOTAL_BYTES),
+  ],
   missionPhotoUpload: wrapMulter(missionPhotoUpload),
   missionMediaUpload: [wrapMulter(missionMediaUpload), imageSizeGuard(env.upload.maxDocBytes)],
   contentUpload: wrapMulter(contentUpload),
   // Test-only: exposes mimeFilter and the allowlist constants for unit tests.
-  __testables: { mimeFilter, imageSizeGuard, MIME_TO_EXT, ALLOWED_DOC_MIME, ALLOWED_AVATAR_MIME, ALLOWED_MEDIA_MIME },
+  __testables: { mimeFilter, imageSizeGuard, totalSizeGuard, FIRE_REPORT_TOTAL_BYTES, MIME_TO_EXT, ALLOWED_DOC_MIME, ALLOWED_AVATAR_MIME, ALLOWED_MEDIA_MIME },
 };
