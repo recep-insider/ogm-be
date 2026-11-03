@@ -76,8 +76,13 @@ async function setApplicationStatus(userId, { status, note }, actor = {}) {
  * Kanal kategorisi `acil` değildir; §4'ün "SMS yalnızca Acil sınıfına gider" kuralına
  * bilinçli istisnadır — bu SMS kategori bazlı değil, işlemsel (tek seferlik) bir bildirimdir.
  *
+ * Panel ekranda gördüğü kararı `expectedDecision` ile gönderirse (K20) karar arada başka bir
+ * görevlice değiştiyse 409 decision_conflict döner; kayıt ve SMS yoktur. Aynı karar tekrar gelirse
+ * yeni kayıt ve SMS olmaz. Kararlar kullanıcı satırı kilitlenerek sırayla yazılır; aynı saniyedeki
+ * ikinci karar bir saniye sonrasına yazılır ki en güncel karar belirsiz kalmasın (BUG-021).
+ *
  * @param {string} userId
- * @param {{decision:'approved'|'rejected', decidedBy?:string, decisionNo?:string, note?:string}} body
+ * @param {{decision:'approved'|'rejected', expectedDecision?:string|null, decidedBy?:string, decisionNo?:string, note?:string}} body
  * @param {{userId?:string|null, ip?:string, userAgent?:string}} actor
  */
 async function setCommissionDecision(userId, body, actor = {}) {
@@ -89,9 +94,29 @@ async function setCommissionDecision(userId, body, actor = {}) {
   if (!user) throw errors.notFound('Kullanıcı bulunamadı', 'user_not_found');
 
   const id = uuidv4();
-  const decidedAt = new Date();
+  let decidedAt = new Date();
+  let unchanged = null;
 
   await db.transaction(async (trx) => {
+    await trx('users').where({ id: userId }).forUpdate().first();
+    const latest = await trx('commission_decisions').where({ user_id: userId }).orderBy('decided_at', 'desc').first();
+    const current = latest ? latest.decision : null;
+    const expected = body.expectedDecision === 'pending' ? null : body.expectedDecision;
+    if (expected !== undefined && expected !== current) {
+      throw errors.conflict(
+        'Bu gönüllü için karar başka bir görevlice verildi. Ekran yenilendi; kararı kontrol edin.',
+        { currentDecision: current || 'pending' },
+        'decision_conflict',
+      );
+    }
+    if (current === body.decision) {
+      unchanged = latest;
+      return;
+    }
+    if (latest && new Date(latest.decided_at) >= decidedAt) {
+      decidedAt = new Date(new Date(latest.decided_at).getTime() + 1000);
+    }
+
     await trx('commission_decisions').insert({
       id,
       user_id: userId,
@@ -119,6 +144,20 @@ async function setCommissionDecision(userId, body, actor = {}) {
       });
     }
   });
+
+  if (unchanged) {
+    const readiness = await readinessService.getReadiness(userId);
+    return {
+      decisionId: unchanged.id,
+      userId,
+      decision: unchanged.decision,
+      decidedAt: toIso(unchanged.decided_at),
+      smsSent: false,
+      unchanged: true,
+      kisiDurumu: readiness.kisiDurumu,
+      eksikAdimlar: readiness.zincir.eksikAdimlar,
+    };
+  }
 
   const sms = await sendTransactional(
     user.phone,

@@ -1136,6 +1136,7 @@ router.put(
 
 const commissionSchema = Joi.object({
   decision: Joi.string().valid('approved', 'rejected').required(),
+  expectedDecision: Joi.string().valid('approved', 'rejected', 'pending').allow(null).optional(),
   decidedBy: Joi.string().max(120).allow('', null).optional(),
   decisionNo: Joi.string().max(64).allow('', null).optional(),
   note: Joi.string().max(1000).allow('', null).optional(),
@@ -1151,6 +1152,9 @@ const commissionSchema = Joi.object({
  *       Bölge Müdürlüğü Komisyonunun kararını AYRI bir kayıt olarak yazar (red kararı da
  *       saklanır) ve kararla birlikte gönüllüye sabit şablonlu bilgilendirme SMS'i gönderir.
  *       Karar ve SMS tek işlemdir; ret gerekçesi SMS metnine girmez.
+ *       expectedDecision (ekranda görülen son karar; kararsızsa pending ya da null) gönderilirse ve
+ *       karar arada başka bir görevlice değiştiyse 409 decision_conflict döner, kayıt ve SMS yoktur (K20).
+ *       Aynı karar tekrar gelirse yeni kayıt ve SMS olmaz; yanıtta unchanged true döner.
  *     security: [ { panelBearer: [] } ]
  *     parameters:
  *       - { in: path, name: userId, required: true, schema: { type: string } }
@@ -1163,12 +1167,14 @@ const commissionSchema = Joi.object({
  *             required: [decision]
  *             properties:
  *               decision: { type: string, enum: [approved, rejected] }
+ *               expectedDecision: { type: string, enum: [approved, rejected, pending], nullable: true, description: 'Ekranda görülen son karar' }
  *               decidedBy: { type: string, nullable: true }
  *               decisionNo: { type: string, nullable: true }
  *               note: { type: string, nullable: true }
  *     responses:
- *       200: { description: '{decisionId, decision, decidedAt, smsSent, kisiDurumu, eksikAdimlar}' }
+ *       200: { description: '{decisionId, decision, decidedAt, smsSent, unchanged?, kisiDurumu, eksikAdimlar}' }
  *       404: { description: user_not_found }
+ *       409: { description: 'decision_conflict — karar arada değişti; details.currentDecision' }
  */
 router.post(
   '/volunteers/:userId/commission',
