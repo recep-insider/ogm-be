@@ -62,7 +62,6 @@ router.get('/live', controller.liveness);
  *                       name: { type: string }
  *                       status: { type: string, enum: [up, down] }
  *                       latencyMs: { type: integer }
- *                       error: { type: string, nullable: true }
  *       503:
  *         description: Bağımlılıklar arasında down olan var
  */
