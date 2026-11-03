@@ -1363,6 +1363,7 @@ const assemblyPointUpsertSchema = Joi.object({
  *       400: { description: idempotency_key_invalid }
  *       409: { description: idempotency_in_flight }
  *       422: { description: idempotency_key_reused }
+ *       503: { description: 'idempotency_unavailable — Redis yok; istek işlenmedi, tekrar denenebilir' }
  */
 router.post(
   '/missions',
@@ -1629,6 +1630,11 @@ router.get(
  *     security: [ { panelBearer: [] } ]
  *     parameters:
  *       - { in: path, name: id, required: true, schema: { type: string } }
+ *       - in: header
+ *         name: Idempotency-Key
+ *         required: false
+ *         schema: { type: string, maxLength: 200 }
+ *         description: Aynı anahtar ve gövdeyle tekrar gelen istek yeniden işlenmez; ilk başarılı yanıt `Idempotent-Replayed: true` ile döner (ayrıntı POST /admin/missions).
  *     requestBody:
  *       required: true
  *       content:
@@ -1652,6 +1658,7 @@ router.get(
 router.post(
   '/missions/:id/media',
   missionMediaUpload,
+  idempotent(),
   asyncHandler(async (req, res) => {
     res.status(201).json(await missionsService.adminAddMedia(req.params.id, req.file, actorFrom(req)));
   }),
@@ -1785,6 +1792,7 @@ const notificationSendSchema = Joi.object({
  *       400: { description: idempotency_key_invalid }
  *       409: { description: idempotency_in_flight }
  *       422: { description: idempotency_key_reused }
+ *       503: { description: 'idempotency_unavailable — Redis yok; istek işlenmedi, tekrar denenebilir' }
  *   get:
  *     tags: [Admin]
  *     summary: Bildirim gönderim geçmişi (panel)

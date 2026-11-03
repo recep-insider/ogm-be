@@ -259,12 +259,13 @@ describe('idempotent()', () => {
     expect(handler).toHaveBeenCalledTimes(1);
   });
 
-  it('Redis erişilemezse isteği engellemez', async () => {
+  it('Redis erişilemezse panel isteği işlenmez: 503 idempotency_unavailable (K23)', async () => {
     redis.set.mockRejectedValueOnce(new Error('ECONNREFUSED'));
     const res = await post({ a: 1 });
 
-    expect(res.status).toBe(200);
-    expect(handler).toHaveBeenCalledTimes(1);
+    expect(res.status).toBe(503);
+    expect(res.body.error.code).toBe('idempotency_unavailable');
+    expect(handler).not.toHaveBeenCalled();
     expect(logger.warn).toHaveBeenCalled();
   });
 
@@ -277,5 +278,81 @@ describe('idempotent()', () => {
     expect(res.status).toBe(400);
     expect(res.body.error.code).toBe('idempotency_key_invalid');
     expect(handler).not.toHaveBeenCalled();
+  });
+});
+
+describe('idempotent() — gönüllü, misafir ve dosyalı istek', () => {
+  const fs = require('fs');
+  const os = require('os');
+  const path = require('path');
+
+  function buildVolunteerApp({ user = null, file = null } = {}) {
+    const vApp = express();
+    vApp.use(express.json());
+    vApp.use((req, _res, next) => {
+      if (user) req.user = user;
+      if (file) req.file = file();
+      next();
+    });
+    vApp.post('/sos', idempotent(), (req, res, next) => handler(req, res, next));
+    vApp.use(errorHandler);
+    return vApp;
+  }
+  const tempFile = (size = 3) => {
+    const p = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'idem-')), 'a.jpg');
+    fs.writeFileSync(p, 'x'.repeat(size));
+    return { path: p, fieldname: 'file', originalname: 'a.jpg', size };
+  };
+
+  it('gönüllü anahtarı kullanıcıya bağlıdır; aynı anahtarla ikinci istek tek kayıt açar', async () => {
+    const vApp = buildVolunteerApp({ user: { id: 'v1' } });
+    const first = await request(vApp).post('/sos').set('Idempotency-Key', 'k-1').send({ a: 1 });
+    await flush();
+    const second = await request(vApp).post('/sos').set('Idempotency-Key', 'k-1').send({ a: 1 });
+
+    expect(redis.set).toHaveBeenNthCalledWith(1, 'idem:v1:POST:/sos:k-1', expect.any(String), 'EX', 60, 'NX');
+    expect(first.status).toBe(200);
+    expect(second.headers['idempotent-replayed']).toBe('true');
+    expect(handler).toHaveBeenCalledTimes(1);
+  });
+
+  it('misafir anahtarı IP\'ye bağlıdır', async () => {
+    await request(buildVolunteerApp()).post('/sos').set('Idempotency-Key', 'k-1').send({ a: 1 });
+    expect(redis.set.mock.calls[0][0]).toMatch(/^idem:ip:.+:POST:\/sos:k-1$/);
+  });
+
+  it('Redis erişilemezse gönüllü isteği işlenir (K23)', async () => {
+    redis.set.mockRejectedValueOnce(new Error('ECONNREFUSED'));
+    const res = await request(buildVolunteerApp({ user: { id: 'v1' } })).post('/sos').set('Idempotency-Key', 'k-1').send({ a: 1 });
+
+    expect(res.status).toBe(200);
+    expect(handler).toHaveBeenCalledTimes(1);
+  });
+
+  it('tekrar oynatılan istekle yüklenen dosya silinir, ilk isteğinki kalır', async () => {
+    const files = [];
+    const vApp = buildVolunteerApp({ user: { id: 'v1' }, file: () => { const f = tempFile(); files.push(f); return f; } });
+    await request(vApp).post('/sos').set('Idempotency-Key', 'k-1').send({ a: 1 });
+    await flush();
+    const replay = await request(vApp).post('/sos').set('Idempotency-Key', 'k-1').send({ a: 1 });
+    await new Promise((done) => setTimeout(done, 50));
+
+    expect(replay.headers['idempotent-replayed']).toBe('true');
+    expect(fs.existsSync(files[0].path)).toBe(true);
+    expect(fs.existsSync(files[1].path)).toBe(false);
+  });
+
+  it('aynı anahtar farklı dosyayla gelirse 422 ve yeni dosya silinir', async () => {
+    const files = [];
+    let size = 3;
+    const vApp = buildVolunteerApp({ user: { id: 'v1' }, file: () => { const f = tempFile(size); files.push(f); return f; } });
+    await request(vApp).post('/sos').set('Idempotency-Key', 'k-1').send({ a: 1 });
+    await flush();
+    size = 5;
+    const res = await request(vApp).post('/sos').set('Idempotency-Key', 'k-1').send({ a: 1 });
+    await new Promise((done) => setTimeout(done, 50));
+
+    expect(res.status).toBe(422);
+    expect(fs.existsSync(files[1].path)).toBe(false);
   });
 });

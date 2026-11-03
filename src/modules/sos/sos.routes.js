@@ -4,6 +4,7 @@ const { Router } = require('express');
 const asyncHandler = require('../../shared/async-handler');
 const validate = require('../../middlewares/validate');
 const { requireAuth } = require('../../middlewares/auth');
+const { idempotent } = require('../../middlewares/idempotency');
 const service = require('./sos.service');
 const { sosSchema } = require('./sos.validators');
 
@@ -21,6 +22,12 @@ const router = Router();
  *       kabul edilir. Sebep alanı YOKTUR (backend §12). Çağrı `active` durumunda açılır ve
  *       geçmişine "SOS çağrısı gönderildi" satırı düşer.
  *     security: [ { bearerAuth: [] } ]
+ *     parameters:
+ *       - in: header
+ *         name: Idempotency-Key
+ *         required: false
+ *         schema: { type: string, maxLength: 200 }
+ *         description: Aynı anahtar ve gövdeyle tekrar gelen istek yeniden işlenmez; ilk başarılı yanıt `Idempotent-Replayed: true` ile döner (ayrıntı POST /admin/missions).
  *     requestBody:
  *       required: false
  *       content:
@@ -50,7 +57,7 @@ const router = Router();
  *       401: { $ref: '#/components/responses/Unauthorized' }
  *       429: { $ref: '#/components/responses/RateLimited' }
  */
-router.post('/', requireAuth, validate({ body: sosSchema }), asyncHandler(async (req, res) => {
+router.post('/', requireAuth, validate({ body: sosSchema }), idempotent(), asyncHandler(async (req, res) => {
   const result = await service.create({
     userId: req.user.id,
     body: req.body,

@@ -4,6 +4,7 @@ const crypto = require('crypto');
 const { redis } = require('../config/redis');
 const logger = require('../config/logger');
 const { errors } = require('../shared/errors');
+const { discardUploads } = require('../shared/discard-uploads');
 
 const MAX_KEY_LENGTH = 200;
 const PENDING_TTL_SEC = 60;
@@ -56,9 +57,20 @@ function track(res, redisKey, hash) {
   };
 }
 
+// Çok parçalı istekte dosya içeriği okunmaz; alan, ad ve boyut gövdeyle birlikte özetlenir.
+function requestHash(req) {
+  const files = [req.file, ...(Array.isArray(req.files) ? req.files : [])]
+    .filter(Boolean)
+    .map((f) => [f.fieldname, f.originalname, f.size]);
+  const subject = files.length ? { body: req.body, files } : req.body;
+  return crypto.createHash('sha256').update(JSON.stringify(subject)).digest('hex');
+}
+
 async function resolve(req, res, key) {
-  const redisKey = `idem:${req.panelUser.id}:${req.method}:${req.baseUrl}${req.route.path}:${key}`;
-  const hash = crypto.createHash('sha256').update(JSON.stringify(req.body)).digest('hex');
+  // Panel kullanıcısı, gönüllü ya da misafir (IP) — anahtar sahibine ve rotaya bağlıdır.
+  const owner = req.panelUser?.id ?? req.user?.id ?? `ip:${req.ip}`;
+  const redisKey = `idem:${owner}:${req.method}:${req.baseUrl}${req.route.path}:${key}`;
+  const hash = requestHash(req);
   for (let attempt = 0; attempt < 2; attempt += 1) {
     const claimed = await redis.set(redisKey, JSON.stringify({ state: 'pending', hash }), 'EX', PENDING_TTL_SEC, 'NX');
     if (claimed) {
@@ -96,10 +108,19 @@ function idempotent() {
     try {
       outcome = await resolve(req, res, key);
     } catch (err) {
+      // K23: panel isteği korumasız işlenmez (çift olay ve çift çağrı açılmasın); gönüllünün SOS ve
+      // ihbarı ise kesintide de işlenir, çift kayıt kaybolan çağrıdan iyidir.
+      if (req.panelUser) {
+        logger.warn('Idempotency: Redis hatası, panel isteği reddedildi', { error: err.message });
+        discardUploads(req);
+        return next(errors.make(503, 'idempotency_unavailable', 'İşlem şu an güvenle yapılamıyor; birkaç saniye sonra tekrar deneyin.'));
+      }
       logRedisError(err);
     }
     if (outcome?.error) return next(outcome.error);
     if (outcome?.replay) {
+      // Tekrar oynatılan istek kayıt açmaz; bu istekle yüklenen kopya silinir.
+      discardUploads(req);
       res.set('Idempotent-Replayed', 'true');
       return res.status(outcome.replay.status).json(outcome.replay.body);
     }
