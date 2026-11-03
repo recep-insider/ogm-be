@@ -30,3 +30,19 @@ describe('dates', () => {
     expect(toLocalDateOnly('not-a-date')).toBe('not-a-date');
   });
 });
+
+describe('todayLocal / startOfLocalDay (BUG-063)', () => {
+  const { todayLocal, startOfLocalDay } = require('../../src/shared/dates');
+
+  it('UTC 22:30 Türkiye\'de ertesi gündür; gün başı UTC 21:00', () => {
+    const at = new Date('2026-11-02T22:30:00Z');
+    expect(todayLocal(at)).toBe('2026-11-03');
+    expect(startOfLocalDay(at).toISOString()).toBe('2026-11-02T21:00:00.000Z');
+  });
+
+  it('öğlen aynı gün', () => {
+    const at = new Date('2026-11-03T09:00:00Z');
+    expect(todayLocal(at)).toBe('2026-11-03');
+    expect(startOfLocalDay(at).toISOString()).toBe('2026-11-02T21:00:00.000Z');
+  });
+});

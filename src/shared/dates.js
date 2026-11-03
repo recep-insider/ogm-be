@@ -34,4 +34,11 @@ function toLocalDateOnly(value) {
   return LOCAL_DATE_FORMAT.format(d);
 }
 
-module.exports = { toDateOnly, toLocalDateOnly, toIso };
+/** Bugünün Türkiye takvim günü 'YYYY-MM-DD'. */
+const todayLocal = (now = new Date()) => toLocalDateOnly(now);
+
+// ponytail: Türkiye 2016'dan beri sabit UTC+3 (yaz saati yok); kural değişirse Intl ile ofset hesaplanmalı.
+/** Bugünün Türkiye'de başladığı an — UTC tutulan TIMESTAMP sütunlarında "bugün" süzmesi için. */
+const startOfLocalDay = (now = new Date()) => new Date(`${toLocalDateOnly(now)}T00:00:00+03:00`);
+
+module.exports = { toDateOnly, toLocalDateOnly, toIso, todayLocal, startOfLocalDay };

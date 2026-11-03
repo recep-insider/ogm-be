@@ -246,6 +246,17 @@ describe('adminListAllSahaApplications', () => {
     expect(rowsQuery.calls).toContainEqual(['where', 'a.status', 'rejected']);
   });
 
+  it('eğitim günü Türkiye saatiyle 00:00–03:00 arasında da yoklama modunda açılır (BUG-063)', async () => {
+    jest.useFakeTimers({ now: new Date('2026-11-02T22:30:00Z'), doNotFake: ['nextTick', 'setImmediate'] });
+    try {
+      mockDb.first.saha_trainings = { id: 's1', title: 'S', start_date: '2026-11-03' };
+      mockDb.rows['saha_training_applications as a'] = [];
+      expect((await service.adminListSahaApplications('s1')).mode).toBe('yoklama');
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
   it('the per-training list returns the same item shape', async () => {
     mockDb.first.saha_trainings = { id: 's1', title: 'S', start_date: '2030-01-01' };
     mockDb.rows['saha_training_applications as a'] = [appRow];

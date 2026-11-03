@@ -27,6 +27,7 @@ const { REGIONS, REGION_KEYS } = require('../../shared/regions');
 const equipmentService = require('../equipment/equipment.service');
 const readinessService = require('../users/readiness.service');
 const { KKD_ITEM_KEYS } = require('../../shared/kkd');
+const { toLocalDateOnly, todayLocal } = require('../../shared/dates');
 
 // İşlemi yapan panel kullanıcısının audit bağlamı; userId panel_users.id'dir.
 // SOS geçmişi ve bildirim kaydı ad'ı "by" olarak saklar.
@@ -1196,7 +1197,10 @@ const kkdDeliverSchema = Joi.object({
     .prefs({ stripUnknown: false })
     .optional(),
   itemKeys: Joi.array().items(Joi.string().valid(...KKD_ITEM_KEYS)).min(1).optional(),
-  assignedAt: Joi.date().iso().max('now').optional(),
+  // Türkiye gününe göre bugün dahil; tarih-only değer UTC gece yarısı olarak çözülür.
+  assignedAt: Joi.date().iso()
+    .custom((v, h) => (toLocalDateOnly(v) > todayLocal() ? h.message('Teslim tarihi gelecekte olamaz') : v))
+    .optional(),
 });
 
 /**

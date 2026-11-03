@@ -5,7 +5,7 @@ const env = require('../../config/env');
 const { errors } = require('../../shared/errors');
 const { writeAudit } = require('../../shared/audit');
 const { assetUrl } = require('../../shared/asset-url');
-const { toIso, toDateOnly } = require('../../shared/dates');
+const { toIso, toDateOnly, startOfLocalDay } = require('../../shared/dates');
 const { v4: uuidv4 } = require('uuid');
 const { hasProtectiveEquipment, PROTECTIVE_TYPE } = require('../equipment/equipment.service');
 const { sendTransactional } = require('../../shared/sms-provider');
@@ -393,7 +393,8 @@ function statusCounts(rows) {
 
 /** Operasyon Merkezi / sidebar sayaçları — tek istekte tüm özet. */
 async function dashboardSummary() {
-  const startOfToday = db.raw('curdate()');
+  // "Bugün" Türkiye gününe göre; created_at UTC tutulur.
+  const startOfToday = startOfLocalDay();
   const [
     volunteerTotal, appStatuses, fireStatuses, fireToday, missionStatuses,
     pendingPhotos, sahaPending, emergencyTotal, emergencyToday, blogActive,
