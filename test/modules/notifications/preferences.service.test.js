@@ -15,7 +15,11 @@ jest.mock('../../../src/config/db', () => {
         return 1;
       }),
       insert: jest.fn(async (row) => {
-        mockState.writes.push(row);
+        if (mockState.dupInsert) {
+          mockState.dupInsert = false;
+          throw Object.assign(new Error('Duplicate entry'), { code: 'ER_DUP_ENTRY' });
+        }
+        mockState.writes.push({ insert: true, ...row });
         return [1];
       }),
     };
@@ -107,5 +111,18 @@ describe('preferences.update', () => {
 
   it('sınır dışı mesafe reddedilir', async () => {
     await expect(service.update('u1', { distanceKm: 500 })).rejects.toMatchObject({ status: 400 });
+  });
+});
+
+describe('preferences.update — eş zamanlı ilk kayıt (BUG-025)', () => {
+  it('diğer istek tercih satırını açtıysa 500 yerine güncellenir', async () => {
+    mockState.row = null;
+    mockState.writes = [];
+    mockState.dupInsert = true;
+
+    await expect(service.update('u1', { trainings: true })).resolves.toMatchObject({ trainings: true });
+    expect(mockState.writes).toHaveLength(1);
+    expect(mockState.writes[0].insert).toBeUndefined();
+    expect(mockState.writes[0]).toMatchObject({ user_id: 'u1', trainings: true });
   });
 });

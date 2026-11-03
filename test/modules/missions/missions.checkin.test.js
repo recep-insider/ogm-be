@@ -47,6 +47,13 @@ jest.mock('../../../src/config/db', () => {
         return undefined;
       }),
       insert: jest.fn(async (row) => {
+        // Eş zamanlı istek satırı bu istekten önce açtıysa: unique ihlali (BUG-025).
+        if (mockState.dupOnce?.[table]) {
+          const concurrentRow = mockState.dupOnce[table];
+          delete mockState.dupOnce[table];
+          if (table === 'mission_participants') mockState.participant = concurrentRow;
+          throw Object.assign(new Error('Duplicate entry'), { code: 'ER_DUP_ENTRY' });
+        }
         mockState.inserts[table] = [...(mockState.inserts[table] || []), row];
         return [1];
       }),
@@ -91,6 +98,7 @@ const reset = () => {
   mockState.historyRows = [];
   mockState.whereInCalls = [];
   mockState.orderCalls = [];
+  mockState.dupOnce = {};
   env.admin.scanHmacSecret = '';
   jest.clearAllMocks();
 };
@@ -134,6 +142,28 @@ describe('respond — katılım kararı', () => {
   it('arşivlenmiş olaya katılım kararı verilemez', async () => {
     mockState.mission.status = 'archived';
     await expect(service.respond('u1', 'm1', 'yolda', {})).rejects.toMatchObject({ status: 404 });
+  });
+});
+
+describe('eş zamanlı ilk kayıt (BUG-025)', () => {
+  beforeEach(reset);
+
+  it('respond: diğer istek katılım satırını açtıysa 500 yerine karar o satıra yazılır', async () => {
+    mockState.dupOnce = { mission_participants: { id: 'p-diger', status: 'cagrildi' } };
+
+    await expect(service.respond('u1', 'm1', 'yolda', {})).resolves.toEqual({ ok: true, userStatus: 'yolda' });
+    expect(mockState.inserts.mission_participants).toBeUndefined();
+    expect(mockState.updates.mission_participants[0]).toMatchObject({ status: 'yolda' });
+  });
+
+  it('scan: aynı QR eş zamanlı okutulursa ikinci okutma 500 almaz, durum sahada', async () => {
+    mockState.dupOnce = { check_ins: true, mission_participants: { id: 'p-diger', status: 'yolda' } };
+
+    const result = await service.scan('m1', { qr: 'OGM:VOL:u1' }, { role: 'officer' });
+
+    expect(result.userStatus).toBe('sahada');
+    expect(mockState.inserts.check_ins).toBeUndefined();
+    expect(mockState.updates.mission_participants.at(-1)).toMatchObject({ status: 'sahada' });
   });
 });
 
