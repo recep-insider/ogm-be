@@ -226,7 +226,11 @@ describe('onboarding.service.complete — telefon ve kayıt token\'ı', () => {
     mockState.userRecord = {
       id: 'silinen', tc_kimlik: '10000000146', phone: '+905551112233', is_active: 0, deleted_at: new Date(),
     };
-    await expect(registrationCall(undefined)).rejects.toMatchObject({ status: 409, code: 'account_pending_deletion' });
+    await expect(registrationCall(undefined)).rejects.toMatchObject({
+      status: 409,
+      code: 'account_pending_deletion',
+      message: expect.stringContaining('eski telefon numaranızla'),
+    });
     expect(mockInserted.users).toHaveLength(0);
     expect(mockRedis.set).not.toHaveBeenCalled();
   });

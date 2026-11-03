@@ -3,7 +3,7 @@
 // backend §4 — kanal kategoriden türer, operatör seçmez; acil sınıfı SMS + push ve
 // tercih bypass'lı, diğer her şey push.
 
-const mockState = { users: [], prefs: null, participants: [], inserts: {}, updates: {}, readiness: {}, mission: null, order: [] };
+const mockState = { users: [], prefs: null, participants: [], inserts: {}, updates: {}, readiness: {}, mission: null, order: [], failLogUpdate: false };
 
 jest.mock('../../../src/config/db', () => {
   const makeChain = (table) => {
@@ -51,6 +51,7 @@ jest.mock('../../../src/config/db', () => {
         return [1];
       }),
       update: jest.fn(async (row) => {
+        if (table === 'notification_log' && mockState.failLogUpdate) throw new Error('log down');
         mockState.order.push(`update:${table}`);
         mockState.updates[table] = [...(mockState.updates[table] || []), row];
         return 1;
@@ -81,6 +82,7 @@ beforeEach(() => {
   mockState.inserts = {};
   mockState.updates = {};
   mockState.order = [];
+  mockState.failLogUpdate = false;
   mockState.mission = { id: 'm1', title: 'Marmaris Yangını', lat: null, lng: null };
   mockState.readiness = {
     u1: { kisiDurumu: 'hazir', zincir: { komisyon: 'approved', eksikAdimlar: [] } },
@@ -208,16 +210,20 @@ describe('hedef kitle', () => {
     }));
   });
 
-  it('sayı kaydı da düşerse asıl gönderim hatası gizlenmez, kayıt hatası loglanır', async () => {
+  it('sayı kaydı da düşerse asıl gönderim hatası gizlenmez; hata loglanır, denetim izi yine yazılır', async () => {
     const logger = require('../../../src/config/logger');
     const error = jest.spyOn(logger, 'error').mockImplementation(() => {});
     mockState.users = [{ id: 'u1' }, { id: 'u2' }];
+    mockState.failLogUpdate = true;
     sendPushToUser.mockResolvedValueOnce({ sent: 1, failed: 0 }).mockRejectedValueOnce(new Error('fcm down'));
-    writeAudit.mockRejectedValueOnce(new Error('audit down'));
 
     await expect(service.send({ category: 'bilgi', title: 'Duyuru', body: 'x', audience: 'tumu' }, {}))
       .rejects.toThrow('fcm down');
-    expect(error).toHaveBeenCalledWith('Bildirim sayıları kaydedilemedi', expect.objectContaining({ pushCount: 1, error: 'audit down' }));
+    expect(error).toHaveBeenCalledWith('Bildirim sayıları kaydedilemedi', expect.objectContaining({ pushCount: 1, error: 'log down' }));
+    expect(writeAudit).toHaveBeenCalledWith(expect.objectContaining({
+      action: 'notifications.send',
+      payload: expect.objectContaining({ pushCount: 1, incomplete: true }),
+    }));
     error.mockRestore();
   });
 

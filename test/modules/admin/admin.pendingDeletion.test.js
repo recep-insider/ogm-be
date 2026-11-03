@@ -8,7 +8,11 @@ let mockRows = [];
 jest.mock('../../../src/config/db', () => {
   const makeChain = (state = { counting: false }) => {
     const c = {};
-    for (const m of ['where', 'select', 'orderBy', 'limit', 'offset', 'on', 'andOn', 'whereRaw']) c[m] = jest.fn(() => c);
+    for (const m of ['select', 'orderBy', 'limit', 'offset', 'on', 'andOn', 'whereRaw']) c[m] = jest.fn(() => c);
+    c.where = jest.fn((col, op, value) => {
+      if (col === 'u.deleted_at') mockCalls.push({ col, op, value });
+      return c;
+    });
     for (const m of ['whereNull', 'whereNotNull']) {
       c[m] = jest.fn((col) => {
         mockCalls.push(`${m}:${col}`);
@@ -61,6 +65,13 @@ describe('admin.service — listVolunteers pendingDeletion', () => {
     await listVolunteers({ pendingDeletion: true });
     expect(mockCalls).toEqual(expect.arrayContaining(['whereNotNull:u.deleted_at', 'whereNull:u.anonymized_at']));
     expect(mockCalls).not.toContain('whereNull:u.deleted_at');
+  });
+
+  it('30 günü dolmuş (anonimleştirme bekleyen) hesaplar listede yer almaz', async () => {
+    await listVolunteers({ pendingDeletion: true });
+    const bound = mockCalls.find((c) => typeof c === 'object' && c.col === 'u.deleted_at');
+    expect(bound).toMatchObject({ op: '>' });
+    expect(Math.abs(bound.value.getTime() - (Date.now() - 30 * 86400 * 1000))).toBeLessThan(5000);
   });
 
   it('satırda silme tarihi, anonimleştirme tarihi ve kalan gün döner', async () => {
