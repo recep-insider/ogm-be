@@ -89,6 +89,8 @@ router.post(
  *     description: |
  *       Mevcut kullanıcı: access + refresh token döner.
  *       Yeni kullanıcı: kayıt formu için kısa süreli `registrationToken` döner.
+ *       Silinme sürecindeki hesap (K28): `pendingDeletion: true` ve 10 dakikalık `restoreToken` döner,
+ *       token yoktur. Mobil kişiye sorar; "Devam" derse POST /auth/restore çağrılır.
  *     requestBody:
  *       required: true
  *       content:
@@ -120,6 +122,13 @@ router.post(
  *                     isExisting: { type: boolean, example: false }
  *                     registrationToken: { type: string }
  *                     expiresIn: { type: integer }
+ *                 - type: object
+ *                   properties:
+ *                     ok: { type: boolean }
+ *                     isExisting: { type: boolean, example: true }
+ *                     pendingDeletion: { type: boolean, example: true }
+ *                     restoreToken: { type: string }
+ *                     expiresIn: { type: integer, example: 600 }
  *       401:
  *         description: Kod hatalı
  *         content:

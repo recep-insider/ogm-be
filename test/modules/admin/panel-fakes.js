@@ -1,7 +1,7 @@
 'use strict';
 
 // Panel auth testleri için bellek içi knex/ioredis taklitleri; yalnız servisin kullandığı
-// sorgu biçimlerini (where/whereNot/whereNull/whereIn + orderBy/limit/select/forUpdate +
+// sorgu biçimlerini (where/whereNot/whereNull/whereNotNull/whereIn + orderBy/limit/select/forUpdate +
 // first/pluck/update/insert/delete, await ile liste, hata olunca geri alınan transaction) destekler.
 
 function createFakeDb() {
@@ -53,6 +53,10 @@ function createFakeDb() {
       },
       whereNull(col) {
         preds.push((row) => row[col] === null || row[col] === undefined);
+        return q;
+      },
+      whereNotNull(col) {
+        preds.push((row) => row[col] !== null && row[col] !== undefined);
         return q;
       },
       whereIn(col, values) {

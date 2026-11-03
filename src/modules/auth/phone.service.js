@@ -16,8 +16,12 @@ const {
   signAccessToken,
   signRefreshToken,
   signRegistrationToken,
+  signRestoreToken,
+  verifyRestoreToken,
   accessTokenSeconds,
   registrationTokenSeconds,
+  restoreTokenSeconds,
+  userBlockKey,
 } = require('../../shared/jwt');
 
 const PREFIX = 'otp:phone:';
@@ -159,6 +163,22 @@ async function verifyOtpFlow({ sessionId, code, ip, userAgent }) {
     return finalizeExistingUser(existing, ip, userAgent);
   }
 
+  // Silinme sürecindeki hesap (K28): kişiye önce sorulur; "Devam" derse /auth/restore silmeyi iptal eder.
+  const pending = await db('users')
+    .where({ phone: session.phone })
+    .whereNotNull('deleted_at')
+    .whereNull('anonymized_at')
+    .first();
+  if (pending) {
+    return {
+      ok: true,
+      isExisting: true,
+      pendingDeletion: true,
+      restoreToken: signRestoreToken({ sub: pending.id }),
+      expiresIn: restoreTokenSeconds(),
+    };
+  }
+
   const registrationToken = signRegistrationToken({ sub: null, phone: session.phone });
   return {
     ok: true,
@@ -166,6 +186,55 @@ async function verifyOtpFlow({ sessionId, code, ip, userAgent }) {
     registrationToken,
     expiresIn: registrationTokenSeconds(),
   };
+}
+
+/**
+ * Silme talebini iptal eder (K28): hesap yeniden açılır, erişim engeli kalkar, oturum verilir.
+ * Token, yalnız kendisi verilmeden önce silinmiş hesabı açar; kullanıldıktan sonra ya da hesap
+ * yeniden silinmişse işe yaramaz.
+ */
+async function restoreFlow({ restoreToken, ip, userAgent }) {
+  let payload;
+  try {
+    payload = verifyRestoreToken(restoreToken);
+  } catch {
+    throw errors.unauthorized('Silme talebi iptal edilemedi; lütfen tekrar giriş yapın.', 'restore_invalid');
+  }
+  const issuedAt = new Date(payload.iat * 1000);
+  const pending = () => db('users')
+    .where({ id: payload.sub })
+    .whereNotNull('deleted_at')
+    .whereNull('anonymized_at')
+    .where('deleted_at', '<=', issuedAt);
+
+  if (!(await pending().first())) {
+    throw errors.unauthorized('Silme talebi iptal edilemedi; lütfen tekrar giriş yapın.', 'restore_invalid');
+  }
+
+  try {
+    await redis.del(userBlockKey(payload.sub));
+  } catch (err) {
+    logger.warn('Silinen hesabın erişim engeli kaldırılamadı', { userId: payload.sub, error: err.message });
+    throw errors.make(503, 'restore_unavailable', 'Hesap şu an açılamıyor; birkaç saniye sonra tekrar deneyin.');
+  }
+
+  const now = new Date();
+  const restored = await pending().update({ is_active: true, deleted_at: null, updated_at: now });
+  if (!restored) {
+    throw errors.unauthorized('Silme talebi iptal edilemedi; lütfen tekrar giriş yapın.', 'restore_invalid');
+  }
+
+  const user = await db('users').where({ id: payload.sub }).first();
+  await writeAudit({
+    userId: user.id,
+    action: 'users.restore',
+    entity: 'user',
+    entityId: user.id,
+    ip,
+    userAgent,
+    payload: { method: 'phone' },
+  });
+  return finalizeExistingUser(user, ip, userAgent);
 }
 
 async function finalizeExistingUser(user, ip, userAgent) {
@@ -209,4 +278,4 @@ async function finalizeExistingUser(user, ip, userAgent) {
   };
 }
 
-module.exports = { sendOtpFlow, resendOtpFlow, verifyOtpFlow, isDummyPhone, getOtpForPhone };
+module.exports = { sendOtpFlow, resendOtpFlow, verifyOtpFlow, restoreFlow, isDummyPhone, getOtpForPhone };

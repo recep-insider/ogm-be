@@ -163,6 +163,19 @@ WGS84 datum. Frontend `react-native-maps` ile uyumlu.
 }
 ```
 
+**Silinme sürecindeki hesap (`pendingDeletion: true`, K28):** hesabını silmiş, 30 günü dolmamış kişi.
+Token çifti yoktur; mobil "Hesabınız için silme talebi var. Giriş yaparsanız talep iptal olur. Devam
+edilsin mi?" diye sorar. "Devam" → `POST /auth/restore`; "Vazgeç" → hiçbir şey çağrılmaz.
+```json
+{
+  "ok": true,
+  "isExisting": true,
+  "pendingDeletion": true,
+  "restoreToken": "eyJ...",
+  "expiresIn": 600
+}
+```
+
 - **Error cases:**
   - `400 invalid_otp` — yanlış kod
   - `410 otp_expired` — `expiresIn` aşıldı
@@ -263,6 +276,21 @@ WGS84 datum. Frontend `react-native-maps` ile uyumlu.
 - **TS tipleri:** `RefreshRequest`, `AuthTokenPair` (`types.ts:35-39, 149-151`)
 - **Mock:** `mocks.ts:mockApi.refresh`
 - **Notlar:** Sliding refresh — backend her refresh'te yeni refresh token üretip dönmeli (frontend overwrite ediyor — `client.ts:82`).
+
+---
+
+### 1.6a POST /auth/restore
+- **Auth:** Hayır (`restoreToken` body'de)
+- **Ne zaman:** verify-otp `pendingDeletion: true` döndüğünde, kişi "Devam" derse (K28).
+- **Request Body:**
+```json
+{ "restoreToken": "eyJ..." }
+```
+- **Success Response (200):** verify-otp'deki mevcut kullanıcı yanıtıyla aynı (`isExisting: true`, token çifti, `user`).
+  Hesap yeniden açılır, silme talebi iptal olur; cihaz kaydı (push) yeniden yapılmalıdır.
+- **Error cases:**
+  - `401 restore_invalid` — token geçersiz, süresi dolmuş (10 dk), kullanılmış ya da hesap artık silinme sürecinde değil; yeniden giriş yapılır
+  - `503 restore_unavailable` — hesap açılamadı, değişiklik yok; tekrar denenebilir
 
 ---
 
@@ -377,6 +405,7 @@ WGS84 datum. Frontend `react-native-maps` ile uyumlu.
 - **Error cases:**
   - `400 validation_error` (details: alan bazlı hata listesi)
   - `409 already_applied` — bu kullanıcı zaten başvuru yapmış
+  - `409 account_pending_deletion` — TC ya da telefon silinme sürecindeki (30 günü dolmamış) bir hesaba ait; kişi telefonla giriş yapıp silmeyi iptal edebilir (K28)
   - `413 file_too_large`
   - `415 unsupported_media_type`
 - **TS tipleri:** `OnboardingData`, `OnboardingCompleteResponse`, `CompleteOnboardingArgs` (`types.ts:157-189`, `onboarding.ts:15-19`)

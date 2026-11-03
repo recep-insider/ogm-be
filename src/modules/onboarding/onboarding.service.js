@@ -27,6 +27,14 @@ async function unlinkSafe(file) {
   }
 }
 
+function pendingDeletionConflict() {
+  return errors.conflict(
+    'Bu bilgilerle silinme sürecinde bir hesap var. Telefon numaranızla giriş yaparak silme talebini iptal edebilirsiniz.',
+    undefined,
+    'account_pending_deletion',
+  );
+}
+
 // Kayıt token'ı tek kullanımlıktır. Redis'e ulaşılamazsa kayıt engellenmez (kontrol yapılamadı, token kullanılmış sayılmaz).
 async function claimRegistrationToken(token) {
   const key = `used:reg:${crypto.createHash('sha256').update(token).digest('hex')}`;
@@ -84,10 +92,15 @@ async function complete({ user, registration, registrationToken, data, files, ip
   let userId = user?.id;
   let isNewUser = false;
 
-  // tcKimlik conflict kontrolü
+  // tcKimlik conflict kontrolü. Silinme sürecindeki hesabın TC'si 30 gün dolana kadar
+  // dolu kalır; yeni kayıt 500 yerine 409 alır, kişi giriş yapıp silmeyi iptal edebilir (K28).
   const existsByTc = await db('users')
-    .where({ tc_kimlik: data.kimlik.tcKimlik, is_active: true })
+    .where({ tc_kimlik: data.kimlik.tcKimlik })
     .first();
+  if (existsByTc?.deleted_at && existsByTc.id !== userId) {
+    await Promise.all([unlinkSafe(saglik), unlinkSafe(sabika)]);
+    throw pendingDeletionConflict();
+  }
   if (existsByTc && existsByTc.id !== userId) {
     if (!userId) {
       // registration token akışında zaten o TC mevcutsa engelle
@@ -112,8 +125,11 @@ async function complete({ user, registration, registrationToken, data, files, ip
   if (phoneToUse) {
     const existsByPhone = await db('users')
       .where({ phone: phoneToUse })
-      .whereNull('deleted_at')
       .first();
+    if (existsByPhone?.deleted_at && existsByPhone.id !== userId) {
+      await Promise.all([unlinkSafe(saglik), unlinkSafe(sabika)]);
+      throw pendingDeletionConflict();
+    }
     if (existsByPhone && existsByPhone.id !== userId) {
       await Promise.all([unlinkSafe(saglik), unlinkSafe(sabika)]);
       throw errors.conflict(

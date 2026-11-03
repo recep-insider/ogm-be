@@ -59,7 +59,7 @@ const router = Router();
  *                     refreshToken: { type: string }
  *                     expiresIn: { type: integer }
  *       401: { $ref: '#/components/responses/Unauthorized' }
- *       409: { description: 'TC kimlik ile mevcut başvuru var' }
+ *       409: { description: 'phone_in_use / TC ile mevcut başvuru var; account_pending_deletion — TC ya da telefon silinme sürecindeki bir hesaba ait (K28)' }
  *       422: { $ref: '#/components/responses/ValidationError' }
  */
 router.post(
