@@ -626,7 +626,7 @@ edilsin mi?" diye sorar. "Devam" → `POST /auth/restore`; "Vazgeç" → hiçbir
 ```json
 { "applicationId": "app_t_1", "status": "pending" }
 ```
-- **Error cases:** `403 commission_pending` (komisyon onayı yok; onay bekleyen gönüllü eğitimleri görür ama başvuramaz, K16), `409 already_applied`, `410 training_full`, `410 training_closed`, `410 training_past` (training day is before today, Europe/Istanbul)
+- **Error cases:** `403 commission_pending` (komisyon onayı yok; onay bekleyen gönüllü eğitimleri görür ama başvuramaz, K16), `403 commission_rejected` (komisyon başvuruyu reddetti), `409 already_applied`, `410 training_full`, `410 training_closed`, `410 training_past` (training day is before today, Europe/Istanbul)
 - **TS tipi:** `TrainingApplyResponse` (`types.ts:233-236`)
 - **Mock:** `mocks.ts:mockApi.applyTraining`
 

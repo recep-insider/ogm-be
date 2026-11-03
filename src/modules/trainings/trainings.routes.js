@@ -76,7 +76,7 @@ router.get('/saha', asyncHandler(async (req, res) => {
  *               properties:
  *                 applicationId: { type: string }
  *                 status: { type: string, example: pending }
- *       403: { description: 'commission_pending — komisyon onayı yok' }
+ *       403: { description: 'commission_pending — komisyon onayı yok; commission_rejected — komisyon reddetti' }
  *       409: { description: 'already_applied' }
  *       410: { description: 'training_full | training_closed | training_past' }
  */
