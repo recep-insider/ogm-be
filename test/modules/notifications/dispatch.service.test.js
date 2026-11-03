@@ -194,6 +194,20 @@ describe('hedef kitle', () => {
     expect(mockState.updates.notification_log[0]).toMatchObject({ push_count: 1 });
   });
 
+  it('gönderim yarıda kesilirse gidenlerin sayısı ve eksik gönderim denetim izine yine yazılır', async () => {
+    mockState.users = [{ id: 'u1' }, { id: 'u2' }];
+    sendPushToUser.mockResolvedValueOnce({ sent: 1, failed: 0 }).mockRejectedValueOnce(new Error('db down'));
+
+    await expect(service.send({ category: 'bilgi', title: 'Duyuru', body: 'x', audience: 'tumu' }, {}))
+      .rejects.toThrow('db down');
+
+    expect(mockState.updates.notification_log[0]).toMatchObject({ push_count: 1 });
+    expect(writeAudit).toHaveBeenCalledWith(expect.objectContaining({
+      action: 'notifications.send',
+      payload: expect.objectContaining({ recipients: 2, pushCount: 1, incomplete: true }),
+    }));
+  });
+
   it('kayıt gönderimden önce yazılır; push verisi notificationId taşır (K5)', async () => {
     await service.send({ category: 'bilgi', title: 'Duyuru', body: 'x', audience: 'tumu' }, {});
 

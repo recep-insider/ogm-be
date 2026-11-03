@@ -130,11 +130,13 @@ async function cancel(sosId, { userId, ip, userAgent }) {
   }
 
   const now = new Date();
-  await db('sos_reports').where({ id: sosId }).update({
+  // Koşullu yazım: arada operatör "müdahale edildi" dediyse iptal onun kaydını ezmez (BUG-025).
+  const cancelled = await db('sos_reports').where({ id: sosId, status: 'active' }).update({
     status: 'cancelled',
     cancelled_at: now,
     updated_at: now,
   });
+  if (!cancelled) throw errors.conflict('Çağrı zaten kapanmış', undefined, 'sos_not_active');
   await addHistory(sosId, { event: 'Gönüllü SOS çağrısını iptal etti', by: 'Mobil', byKind: 'mobil' });
 
   await writeAudit({

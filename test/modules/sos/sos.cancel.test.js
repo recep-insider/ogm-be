@@ -2,7 +2,7 @@
 
 // backend §10 / mobil §4 — "SOS'u iptal et" sinyalinin sahibi gönüllüdür.
 
-const mockState = { row: null, updates: [], history: [] };
+const mockState = { row: null, updates: [], history: [], updateCount: 1 };
 
 jest.mock('../../../src/config/db', () => {
   const makeChain = (table) => {
@@ -13,7 +13,7 @@ jest.mock('../../../src/config/db', () => {
       first: jest.fn(async () => (table === 'sos_reports' ? mockState.row : undefined)),
       update: jest.fn(async (row) => {
         mockState.updates.push(row);
-        return 1;
+        return mockState.updateCount;
       }),
       insert: jest.fn(async (row) => {
         if (table === 'sos_history') mockState.history.push(row);
@@ -37,6 +37,7 @@ const service = require('../../../src/modules/sos/sos.service');
 describe('sos.cancel', () => {
   beforeEach(() => {
     mockState.row = { id: 's1', user_id: 'u1', status: 'active', created_at: new Date() };
+    mockState.updateCount = 1;
     mockState.updates = [];
     mockState.history = [];
     jest.clearAllMocks();
@@ -55,6 +56,12 @@ describe('sos.cancel', () => {
     expect(mockState.updates).toHaveLength(0);
   });
 
+  it('okuma ile yazma arasında operatör müdahale ettiyse iptal onun kaydını ezmez: 409, geçmiş yok', async () => {
+    mockState.updateCount = 0;
+    await expect(service.cancel('s1', { userId: 'u1' })).rejects.toMatchObject({ status: 409, code: 'sos_not_active' });
+    expect(mockState.history).toHaveLength(0);
+  });
+
   it('kapanmış çağrı tekrar iptal edilemez', async () => {
     mockState.row.status = 'responded';
     await expect(service.cancel('s1', { userId: 'u1' })).rejects.toMatchObject({
@@ -67,6 +74,7 @@ describe('sos.cancel', () => {
 describe('sos.adminAddHistory', () => {
   beforeEach(() => {
     mockState.row = { id: 's1', user_id: 'u1', status: 'active', created_at: new Date() };
+    mockState.updateCount = 1;
     mockState.updates = [];
     mockState.history = [];
     jest.clearAllMocks();

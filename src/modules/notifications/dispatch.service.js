@@ -165,46 +165,59 @@ async function send(input, actor = {}) {
 
   let pushCount = 0;
   let smsCount = 0;
-  for (const userId of targets) {
-    // eslint-disable-next-line no-await-in-loop
-    const push = await sendPushToUser(userId, {
-      topic: channel.topic,
-      title: input.title,
-      body: input.body,
-      data: { type: 'operator_notification', category: input.category, missionId: input.missionId, notificationId: id },
-    });
-    // Yalnız sağlayıcının kabul ettiği teslim sayılır: cihazsız, tercihle atlanan,
-    // hatalı ve mock gönderim "gönderildi" değildir.
-    if (push?.sent > 0 && !push.mock) pushCount += 1;
-
-    if (channel.sms) {
+  let completed = false;
+  try {
+    for (const userId of targets) {
       // eslint-disable-next-line no-await-in-loop
-      const phone = await db('users').where({ id: userId }).first('phone');
-      if (phone?.phone) {
-        try {
-          // eslint-disable-next-line no-await-in-loop
-          await sendSms(phone.phone, `${input.title}. ${input.body}`);
-          smsCount += 1;
-        } catch (err) {
-          logger.error('Acil SMS gönderilemedi', { userId, error: err.message });
+      const push = await sendPushToUser(userId, {
+        topic: channel.topic,
+        title: input.title,
+        body: input.body,
+        data: { type: 'operator_notification', category: input.category, missionId: input.missionId, notificationId: id },
+      });
+      // Yalnız sağlayıcının kabul ettiği teslim sayılır: cihazsız, tercihle atlanan,
+      // hatalı ve mock gönderim "gönderildi" değildir.
+      if (push?.sent > 0 && !push.mock) pushCount += 1;
+
+      if (channel.sms) {
+        // eslint-disable-next-line no-await-in-loop
+        const phone = await db('users').where({ id: userId }).first('phone');
+        if (phone?.phone) {
+          try {
+            // eslint-disable-next-line no-await-in-loop
+            await sendSms(phone.phone, `${input.title}. ${input.body}`);
+            smsCount += 1;
+          } catch (err) {
+            logger.error('Acil SMS gönderilemedi', { userId, error: err.message });
+          }
         }
       }
     }
+    completed = true;
+  } finally {
+    // Gönderim yarıda kesilse de giden sayılar ve denetim izi yazılır: aksi halde kayıt 0 gösterir,
+    // görevli bildirimi tekrar gönderir.
+    await db('notification_log')
+      .where({ id })
+      .update({ push_count: pushCount, sms_count: smsCount, updated_at: new Date() });
+
+    await writeAudit({
+      userId: actor.userId || null,
+      action: 'notifications.send',
+      entity: 'notification',
+      entityId: id,
+      ip: actor.ip,
+      userAgent: actor.userAgent,
+      payload: {
+        category: input.category,
+        target: targetDoc,
+        recipients: targets.length,
+        pushCount,
+        smsCount,
+        ...(completed ? {} : { incomplete: true }),
+      },
+    });
   }
-
-  await db('notification_log')
-    .where({ id })
-    .update({ push_count: pushCount, sms_count: smsCount, updated_at: new Date() });
-
-  await writeAudit({
-    userId: actor.userId || null,
-    action: 'notifications.send',
-    entity: 'notification',
-    entityId: id,
-    ip: actor.ip,
-    userAgent: actor.userAgent,
-    payload: { category: input.category, target: targetDoc, recipients: targets.length, pushCount, smsCount },
-  });
 
   return {
     ok: true,

@@ -148,9 +148,11 @@ async function adminUpdate(id, { version, ...body }, actor = {}) {
   if (version !== undefined) target.where({ version });
   const updated = await target.update({ ...toRow(body), version: db.raw('version + 1'), updated_at: new Date() });
   if (version !== undefined && !updated) {
+    const current = await db('blog_posts').where({ id }).first();
+    if (!current) throw errors.notFound('Yazı bulunamadı', 'post_not_found');
     throw errors.conflict(
       'Yazı siz düzenlerken başka biri tarafından değiştirildi. Sayfayı yenileyip tekrar kaydedin.',
-      { currentVersion: existing.version },
+      { currentVersion: current.version },
       'blog_version_conflict',
     );
   }
