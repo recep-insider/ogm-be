@@ -64,7 +64,7 @@ async function getById(id) {
 // (URL'den path'e geri çevirmek kırılgandır); (2) taslaklar (is_active=false) da listelenir.
 
 function mapAdminContentBlock(block) {
-  if (block && block.type === 'image') {
+  if (block && (block.type === 'image' || block.type === 'video')) {
     return { ...block, source: block.source, sourceUrl: assetUrl(block.source) };
   }
   return block;
