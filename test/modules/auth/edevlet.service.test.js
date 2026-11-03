@@ -83,4 +83,8 @@ describe('edevlet.validators — callbackSchema', () => {
     expect(callbackSchema.validate({ sessionId: SESSION_ID, code: 'c' }).error).toBeUndefined();
     expect(callbackSchema.validate({ sessionId: SESSION_ID, code: 'c', state: '' }).error.details[0].path).toEqual(['state']);
   });
+
+  test('yalnız boşluktan oluşan kod reddedilir (BUG-032)', () => {
+    expect(callbackSchema.validate({ sessionId: SESSION_ID, code: '   ' }).error.details[0].path).toEqual(['code']);
+  });
 });
