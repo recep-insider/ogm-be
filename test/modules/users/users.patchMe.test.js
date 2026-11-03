@@ -36,6 +36,8 @@ jest.mock('../../../src/config/env', () => ({
   api: { baseUrl: 'https://api.test' },
 }));
 jest.mock('../../../src/shared/audit', () => ({ writeAudit: jest.fn() }));
+jest.mock('../../../src/config/redis', () => ({ redis: {} }));
+jest.mock('../../../src/config/logger', () => ({ warn: jest.fn(), error: jest.fn(), info: jest.fn() }));
 jest.mock('../../../src/shared/asset-url', () => ({ assetUrl: () => null }));
 jest.mock('../../../src/modules/equipment/equipment.service', () => ({
   hasProtectiveEquipment: jest.fn(async () => false),
@@ -64,6 +66,7 @@ describe('users.service — giysiBedeni / ayakkabiNumarasi', () => {
       soyad: 'Yılmaz',
       giysi_bedeni: 'M',
       ayakkabi_numarasi: 38,
+      phone: '+905551112233',
       profile_complete: 1,
     };
     jest.clearAllMocks();
@@ -111,5 +114,34 @@ describe('users.service — giysiBedeni / ayakkabiNumarasi', () => {
     const profile = await getMe('u1');
     expect(profile.giysiBedeni).toBeNull();
     expect(profile.ayakkabiNumarasi).toBeNull();
+  });
+});
+
+describe('users.service — telefon PATCH ile değişmez', () => {
+  beforeEach(() => {
+    mockUpdates.length = 0;
+    mockState.userRow = { id: 'u1', tc_kimlik: '10000000146', ad: 'Ali', soyad: 'Yılmaz', phone: '+905551112233' };
+  });
+
+  test('aynı numara yok sayılır, diğer alanlar kaydedilir', async () => {
+    await patchMe('u1', { phone: '+905551112233', giysiBedeni: 'L' });
+
+    expect(mockUpdates).toHaveLength(1);
+    expect(mockUpdates[0]).not.toHaveProperty('phone');
+    expect(mockUpdates[0].giysi_bedeni).toBe('L');
+  });
+
+  test('farklı numara 400 use_phone_change, hiçbir şey yazılmaz', async () => {
+    await expect(patchMe('u1', { phone: '+905559998877', giysiBedeni: 'L' })).rejects.toMatchObject({
+      status: 400,
+      code: 'use_phone_change',
+    });
+    expect(mockUpdates).toHaveLength(0);
+  });
+
+  test('silinmiş hesap güncellenmez: 404', async () => {
+    mockState.userRow = undefined;
+    await expect(patchMe('u1', { giysiBedeni: 'L' })).rejects.toMatchObject({ status: 404 });
+    expect(mockUpdates).toHaveLength(0);
   });
 });

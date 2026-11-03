@@ -1,7 +1,7 @@
 'use strict';
 
 const { errors } = require('../shared/errors');
-const { verifyAccessToken, verifyRegistrationToken } = require('../shared/jwt');
+const { verifyAccessToken, verifyRegistrationToken, userBlockKey } = require('../shared/jwt');
 const { redis } = require('../config/redis');
 const env = require('../config/env');
 const panelAuthService = require('../modules/admin/auth/panelAuth.service');
@@ -14,20 +14,40 @@ function extractBearer(req) {
 }
 
 /**
+ * Hesabı silinen gönüllünün henüz süresi dolmamış access token'ları (users.service softDelete yazar).
+ * Redis'e ulaşılamazsa engel yok sayılır: gönüllünün SOS ve ihbar istekleri kesintide de işlenmeli.
+ */
+async function isUserBlocked(userId) {
+  try {
+    return (await redis.get(userBlockKey(userId))) !== null;
+  } catch {
+    return false;
+  }
+}
+
+function verifyActiveAccessToken(token) {
+  let payload;
+  try {
+    payload = verifyAccessToken(token);
+  } catch {
+    return Promise.resolve(null);
+  }
+  return isUserBlocked(payload.sub).then((blocked) => (blocked ? null : payload));
+}
+
+/**
  * Erişim token'ı zorunlu — geçersiz/eksikse 401.
  */
 function requireAuth(req, _res, next) {
   const token = extractBearer(req);
   if (!token) return next(errors.unauthorized('Token gerekli'));
 
-  try {
-    const payload = verifyAccessToken(token);
+  return verifyActiveAccessToken(token).then((payload) => {
+    if (!payload) return next(errors.unauthorized('Geçersiz veya süresi dolmuş token'));
     req.user = { id: payload.sub, ...payload };
     req.token = token;
     return next();
-  } catch (err) {
-    return next(errors.unauthorized('Geçersiz veya süresi dolmuş token'));
-  }
+  });
 }
 
 /**
@@ -36,14 +56,13 @@ function requireAuth(req, _res, next) {
 function optionalAuth(req, _res, next) {
   const token = extractBearer(req);
   if (!token) return next();
-  try {
-    const payload = verifyAccessToken(token);
-    req.user = { id: payload.sub, ...payload };
-    req.token = token;
-  } catch {
-    // sessizce yoksay
-  }
-  return next();
+  return verifyActiveAccessToken(token).then((payload) => {
+    if (payload) {
+      req.user = { id: payload.sub, ...payload };
+      req.token = token;
+    }
+    return next();
+  });
 }
 
 /**
@@ -70,11 +89,9 @@ function requireAuthOrRegistration(req, _res, next) {
   const token = extractBearer(req);
   if (!token) return next(errors.unauthorized('Token gerekli'));
 
+  let access = null;
   try {
-    const payload = verifyAccessToken(token);
-    req.user = { id: payload.sub, ...payload };
-    req.token = token;
-    return next();
+    access = verifyAccessToken(token);
   } catch {
     try {
       const payload = verifyRegistrationToken(token);
@@ -85,6 +102,12 @@ function requireAuthOrRegistration(req, _res, next) {
       return next(errors.unauthorized('Geçersiz token'));
     }
   }
+  return isUserBlocked(access.sub).then((blocked) => {
+    if (blocked) return next(errors.unauthorized('Geçersiz token'));
+    req.user = { id: access.sub, ...access };
+    req.token = token;
+    return next();
+  });
 }
 
 /**
