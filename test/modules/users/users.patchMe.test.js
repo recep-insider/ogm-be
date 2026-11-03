@@ -146,4 +146,10 @@ describe('users.service — telefon PATCH ile değişmez', () => {
     await expect(patchMe('u1', { giysiBedeni: 'L' })).rejects.toMatchObject({ status: 404 });
     expect(mockUpdates).toHaveLength(0);
   });
+
+  test('silinmiş hesapta telefon gönderilirse 404', async () => {
+    mockState.userRow = undefined;
+    await expect(patchMe('u1', { phone: '+905551112233', giysiBedeni: 'L' })).rejects.toMatchObject({ status: 404 });
+    expect(mockUpdates).toHaveLength(0);
+  });
 });

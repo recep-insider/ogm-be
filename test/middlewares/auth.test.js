@@ -47,6 +47,26 @@ describe('middlewares/auth — silinen hesabın token engeli', () => {
     get.mockRestore();
   });
 
+  it('engel yokken requireAuthOrRegistration access token\'ı kullanıcı olarak geçirir', async () => {
+    const { err, req } = await run(requireAuthOrRegistration, token());
+    expect(err).toBeUndefined();
+    expect(req.user.id).toBe('u1');
+    expect(req.token).toEqual(expect.any(String));
+    expect(req.registration).toBeUndefined();
+  });
+
+  it('bozuk token requireAuthOrRegistration\'da 401', async () => {
+    expect((await run(requireAuthOrRegistration, 'bozuk.token.degeri')).err).toMatchObject({ status: 401 });
+  });
+
+  it('engel yokken optionalAuth kullanıcıyı ve token\'ı tanır', async () => {
+    const t = token();
+    const { err, req } = await run(optionalAuth, t);
+    expect(err).toBeUndefined();
+    expect(req.user.id).toBe('u1');
+    expect(req.token).toBe(t);
+  });
+
   it('Redis yanıt vermezse (takılı bağlantı) kontrol beklemeden atlanır', async () => {
     const get = jest.spyOn(redis, 'get').mockImplementation(() => new Promise(() => {}));
     const started = Date.now();

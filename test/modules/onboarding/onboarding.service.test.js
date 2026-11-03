@@ -44,7 +44,7 @@ jest.mock('../../../src/config/db', () => {
 });
 jest.mock('../../../src/config/env', () => ({
   upload: { dir: '/tmp/uploads' },
-  jwt: { accessSecret: 's', refreshSecret: 's', accessTtl: '15m', refreshTtl: '7d' },
+  jwt: { accessSecret: 's', refreshSecret: 's', accessTtl: '15m', refreshTtl: '7d', accessExpiresIn: '15m', refreshExpiresIn: '7d' },
 }));
 jest.mock('../../../src/config/logger', () => ({ warn: jest.fn(), info: jest.fn(), error: jest.fn() }));
 // Kayıt token'ının tek kullanım kaydı (SET NX) ve geri alınması (DEL) için.
@@ -192,6 +192,34 @@ describe('onboarding.service.complete — telefon ve kayıt token\'ı', () => {
     expect([value, ex, nx]).toEqual(['1', 'EX', 'NX']);
     expect(ttl).toBeGreaterThan(0);
     expect(mockRedis.del).toHaveBeenCalledWith(key);
+  });
+
+  test('Redis yazılamazsa kayıt engellenmez ve uyarı loglanır', async () => {
+    const logger = require('../../../src/config/logger');
+    const runTransaction = db.transaction.getMockImplementation();
+    db.transaction.mockImplementationOnce(async (cb) => {
+      await runTransaction(cb);
+      mockState.userRecord = { id: 'new', tc_kimlik: '10000000146', phone: '+905551112233', profile_complete: 1 };
+    });
+    mockState.applicationRecord = { id: 'app2', status: 'pending', submitted_at: new Date('2026-08-04T10:00:00Z') };
+    mockRedis.set.mockRejectedValueOnce(new Error('redis down'));
+
+    const result = await registrationCall(undefined);
+
+    expect(db.transaction).toHaveBeenCalledTimes(1);
+    expect(mockInserted.users).toHaveLength(1);
+    expect(result.applicationId).toBe('app2');
+    expect(logger.warn).toHaveBeenCalledWith('Kayıt token kullanım kaydı yazılamadı', { error: 'redis down' });
+  });
+
+  test('Redis yazılamadıysa kayıt başarısız olduğunda işaret silinmeye çalışılmaz', async () => {
+    mockRedis.set.mockRejectedValueOnce(new Error('redis down'));
+    db.transaction.mockRejectedValueOnce(new Error('db down'));
+
+    await expect(registrationCall(undefined)).rejects.toThrow('db down');
+
+    expect(mockRedis.set).toHaveBeenCalledTimes(1);
+    expect(mockRedis.del).not.toHaveBeenCalled();
   });
 
   test('oturumlu kullanıcı onboarding ile telefonunu değiştiremez', async () => {
