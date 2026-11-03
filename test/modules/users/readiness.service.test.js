@@ -176,3 +176,23 @@ describe('readiness.service — collectMany', () => {
     expect(mockCalls).toHaveLength(0);
   });
 });
+
+describe('readiness.service — latestCommissionDecisions', () => {
+  beforeEach(() => {
+    const sameDay = d('2026-07-01T00:00:00Z');
+    mockTables.commission_decisions = [
+      { id: 'c9', user_id: 'u1', decision: 'approved', decided_at: sameDay, created_at: d('2026-07-01T09:00:00Z') },
+      { id: 'c8', user_id: 'u1', decision: 'rejected', decided_at: sameDay, created_at: d('2026-07-01T10:00:00Z') },
+    ];
+  });
+
+  test('aynı decided_at taşıyan kararlarda sonra oluşturulan kazanır', async () => {
+    const latest = await readiness.latestCommissionDecisions(['u1']);
+    expect(latest.get('u1').id).toBe('c8');
+  });
+
+  test('getReadiness sonra oluşturulan red kararını raporlar', async () => {
+    const r = await readiness.getReadiness('u1');
+    expect(r.komisyon.decision).toBe('rejected');
+  });
+});
