@@ -175,13 +175,34 @@ function mapHistoryDetail(m, volunteers, userStatus) {
   };
 }
 
+/** Gönüllünün mesafe tercihi olayı kapsıyor mu? Baz konum ya da olay koordinatı yoksa kapsar (çağrıyla aynı kural). */
+function missionInReach(prefs, m) {
+  const base = prefs?.base_lat != null && prefs?.base_lng != null
+    ? { lat: Number(prefs.base_lat), lng: Number(prefs.base_lng) }
+    : null;
+  const target = m.lat != null && m.lng != null ? { lat: Number(m.lat), lng: Number(m.lng) } : null;
+  return coversTarget(base, prefs?.distance_km ?? null, target).covered;
+}
+
+function reachPrefs(userId) {
+  return db('notification_preferences').where({ user_id: userId }).first('distance_km', 'base_lat', 'base_lng');
+}
+
+/**
+ * Aktif olaylar (K29): gönüllü yalnız çağrıldığı/katıldığı ve mesafe tercihinin kapsadığı
+ * olayları görür.
+ */
 async function listActive(userId) {
   const rows = await db('missions')
     .where({ is_active: true, status: 'active' })
     .orderBy('started_at', 'desc');
+  const prefs = await reachPrefs(userId);
   const out = [];
   for (const m of rows) {
-    out.push(mapActiveSummary(m, await statusFor(userId, m.id)));
+    // eslint-disable-next-line no-await-in-loop
+    const status = await statusFor(userId, m.id);
+    if (status === 'not_joined' && !missionInReach(prefs, m)) continue;
+    out.push(mapActiveSummary(m, status));
   }
   return out;
 }
@@ -242,6 +263,10 @@ async function respond(userId, id, decision, audit = {}) {
 
   const now = new Date();
   const existing = await db('mission_participants').where({ user_id: userId, mission_id: id }).first();
+  // K29: çağrılmamış ve mesafe tercihinin dışındaki olaya katılım kapalı.
+  if (!existing && !missionInReach(await reachPrefs(userId), m)) {
+    throw errors.forbidden('Bu olay mesafe tercihinizin dışında; katılım için çağrılmanız gerekir.', 'mission_out_of_range');
+  }
   if (existing) {
     if (['sahada', 'tamamladi'].includes(existing.status)) {
       throw errors.conflict('Bu görevde durumunuz kapanmış', { status: existing.status }, 'status_locked');

@@ -11,7 +11,7 @@ const { accessTokenSeconds, userBlockKey } = require('../../shared/jwt');
 const { errors } = require('../../shared/errors');
 const { writeAudit } = require('../../shared/audit');
 const { assetUrl } = require('../../shared/asset-url');
-const { toDateOnly } = require('../../shared/dates');
+const { toDateOnly, toIso } = require('../../shared/dates');
 const { hasProtectiveEquipment } = require('../equipment/equipment.service');
 const readinessService = require('./readiness.service');
 const { regionForCity } = require('../../shared/regions');
@@ -272,7 +272,10 @@ async function recordConsent(userId, { document, version, ip, userAgent }) {
  * KVKK Madde 11 — kullanıcının tüm verilerini JSON olarak döndürür.
  */
 async function dataExport(userId, audit = {}) {
-  const [user, applications, consents, devices, fireReports] = await Promise.all([
+  const [
+    user, applications, consents, devices, fireReports,
+    sosCalls, emergencyReports, participation, checkIns, sahaApplications,
+  ] = await Promise.all([
     db('users').where({ id: userId }).first(),
     db('applications').where({ user_id: userId }).select(),
     db('consents').where({ user_id: userId }).select(),
@@ -281,6 +284,20 @@ async function dataExport(userId, audit = {}) {
       'id', 'latitude', 'longitude', 'description', 'status', 'created_at',
       'location_name', 'postal_code', 'il', 'ilce',
     ),
+    // K22: SOS, acil bildirim, görev katılımı, check-in ve saha eğitimi başvuruları da verilir.
+    db('sos_reports').where({ user_id: userId }).select(
+      'id', 'status', 'lat', 'lng', 'il', 'ilce', 'message', 'created_at', 'responded_at',
+    ),
+    db('emergency_reports').where({ user_id: userId }).select('id', 'mission_id', 'lat', 'lng', 'message', 'created_at'),
+    db('mission_participants as mp')
+      .leftJoin('missions as m', 'm.id', 'mp.mission_id')
+      .where('mp.user_id', userId)
+      .select('mp.mission_id', 'm.ref_no', 'm.title', 'mp.status', 'mp.called_at', 'mp.responded_at', 'mp.joined_at'),
+    db('check_ins').where({ user_id: userId }).select('mission_id', 'checked_in_at', 'method'),
+    db('saha_training_applications as a')
+      .leftJoin('saha_trainings as t', 't.id', 'a.training_id')
+      .where('a.user_id', userId)
+      .select('a.training_id', 't.title', 'a.status', 'a.attendance', 'a.created_at'),
   ]);
 
   if (!user) throw errors.notFound('Kullanıcı bulunamadı');
@@ -313,6 +330,46 @@ async function dataExport(userId, audit = {}) {
     consents,
     devices,
     fireReports: fireReports.map((r) => ({ ...r, title: reportTitles.get(r.id) ?? null })),
+    sosCalls: sosCalls.map((r) => ({
+      id: r.id,
+      status: r.status,
+      createdAt: toIso(r.created_at),
+      respondedAt: toIso(r.responded_at),
+      latitude: r.lat == null ? null : Number(r.lat),
+      longitude: r.lng == null ? null : Number(r.lng),
+      il: r.il || null,
+      ilce: r.ilce || null,
+      message: r.message || null,
+    })),
+    emergencyReports: emergencyReports.map((r) => ({
+      id: r.id,
+      missionId: r.mission_id || null,
+      createdAt: toIso(r.created_at),
+      latitude: r.lat == null ? null : Number(r.lat),
+      longitude: r.lng == null ? null : Number(r.lng),
+      message: r.message || null,
+    })),
+    missionParticipation: participation.map((r) => ({
+      missionId: r.mission_id,
+      refNo: r.ref_no || null,
+      missionTitle: r.title || null,
+      status: r.status,
+      calledAt: toIso(r.called_at),
+      respondedAt: toIso(r.responded_at),
+      joinedAt: toIso(r.joined_at),
+    })),
+    checkIns: checkIns.map((r) => ({
+      missionId: r.mission_id,
+      checkedInAt: toIso(r.checked_in_at),
+      method: r.method,
+    })),
+    sahaTrainingApplications: sahaApplications.map((r) => ({
+      trainingId: r.training_id,
+      trainingTitle: r.title || null,
+      status: r.status,
+      attendance: r.attendance || null,
+      appliedAt: toIso(r.created_at),
+    })),
   };
 }
 

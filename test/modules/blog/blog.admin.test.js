@@ -80,6 +80,53 @@ describe('blog.service — admin CRUD', () => {
     expect(patch.updated_at).toBeInstanceOf(Date);
   });
 
+  test('adminUpdate her kayıtta sürümü artırır; version gövdeye yazılacak alan sayılmaz', async () => {
+    mockQueue.push({ ...dbRow, version: 3 });
+    mockQueue.push({ ...dbRow, version: 4 });
+
+    const dto = await blogService.adminUpdate('bp_x', { title: 'Yeni', version: 3 }, {});
+
+    const patch = mockUpdate.mock.calls[0][0];
+    expect(patch.version).toEqual({ __raw: 'version + 1' });
+    expect(patch.title).toBe('Yeni');
+    expect(dto.version).toBe(4);
+  });
+
+  test('adminUpdate: yazı arada başka biri tarafından kaydedildiyse 409 blog_version_conflict', async () => {
+    mockQueue.push({ ...dbRow, version: 5 });
+    mockQueue.push({ ...dbRow, version: 5 });
+    mockUpdate.mockResolvedValueOnce(0);
+
+    await expect(blogService.adminUpdate('bp_x', { title: 'Eski', version: 4 }, {}))
+      .rejects.toMatchObject({ status: 409, code: 'blog_version_conflict', details: { currentVersion: 5 } });
+    expect(mockWriteAudit).not.toHaveBeenCalled();
+  });
+
+  test('adminUpdate: çakışmada güncel sürüm ilk okumadan değil yeniden okumadan döner', async () => {
+    mockQueue.push({ ...dbRow, version: 4 });
+    mockQueue.push({ ...dbRow, version: 6 });
+    mockUpdate.mockResolvedValueOnce(0);
+
+    await expect(blogService.adminUpdate('bp_x', { title: 'Eski', version: 4 }, {}))
+      .rejects.toMatchObject({ status: 409, code: 'blog_version_conflict', details: { currentVersion: 6 } });
+  });
+
+  test('adminUpdate: çakışmada yazı arada silindiyse post_not_found', async () => {
+    mockQueue.push({ ...dbRow, version: 4 });
+    mockUpdate.mockResolvedValueOnce(0);
+
+    await expect(blogService.adminUpdate('bp_x', { title: 'Eski', version: 4 }, {}))
+      .rejects.toMatchObject({ status: 404, code: 'post_not_found' });
+  });
+
+  test('adminUpdate: version gönderilmezse (eski panel) kontrol yapılmaz', async () => {
+    mockQueue.push(dbRow);
+    mockQueue.push(dbRow);
+    mockUpdate.mockResolvedValueOnce(0);
+
+    await expect(blogService.adminUpdate('bp_x', { title: 'x' }, {})).resolves.toMatchObject({ id: 'bp_x', version: 1 });
+  });
+
   test('adminUpdate/adminRemove olmayan kayıtta post_not_found fırlatır', async () => {
     mockQueue.push(undefined);
     await expect(blogService.adminUpdate('yok', { title: 'x' }, {})).rejects.toMatchObject({ code: 'post_not_found' });

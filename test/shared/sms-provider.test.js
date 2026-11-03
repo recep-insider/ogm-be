@@ -88,6 +88,24 @@ describe('sendOtp — günlük SMS limiti ve log maskeleme', () => {
     await expect(sms.sendOtp('+905329998877', '444444')).resolves.toMatchObject({ providerMessageId: expect.any(String) });
   });
 
+  test('günlük sınır numara + IP başınadır: başka bağlantıdan aynı numaraya kod istenebilir (K10)', async () => {
+    const PHONE = '+905321112233';
+    await sms.sendOtp(PHONE, '111111', { ip: '1.1.1.1' });
+    await sms.sendOtp(PHONE, '222222', { ip: '1.1.1.1' });
+
+    await expect(sms.sendOtp(PHONE, '333333', { ip: '1.1.1.1' })).rejects.toMatchObject({ status: 429, code: 'sms_daily_limit' });
+    await expect(sms.sendOtp(PHONE, '444444', { ip: '2.2.2.2' })).resolves.toMatchObject({ providerMessageId: expect.any(String) });
+  });
+
+  test('numara başına günde 30 SMS kesin tavan; tavana takılan istek IP hakkını harcamaz (K10)', async () => {
+    const PHONE = '+905321112233';
+    expect(sms.DAILY_OTP_PHONE_CAP).toBe(30);
+    await redis.set(`rl:sms:otp:daily:${PHONE}`, '30', 'EX', 86400);
+
+    await expect(sms.sendOtp(PHONE, '111111', { ip: '9.9.9.9' })).rejects.toMatchObject({ status: 429, code: 'sms_daily_limit' });
+    expect(await redis.get(`rl:sms:otp:daily:${PHONE}:9.9.9.9`)).toBe('0');
+  });
+
   test('dummy numaralar sayaca girmez', async () => {
     env.sms.dummyPhones = ['+905555555555'];
     for (let i = 0; i < 3; i += 1) {
@@ -140,6 +158,15 @@ describe('sendOtp — günlük SMS limiti ve log maskeleme', () => {
     redis.eval.mockRejectedValueOnce(new Error('redis kapalı'));
     await expect(sms.sendOtp('+905321112233', '222222')).rejects.toThrow(/NetGSM/);
     expect(logger.warn).toHaveBeenCalledWith('Günlük OTP sayacı iade edilemedi', { phone: '***2233', error: 'redis kapalı' });
+  });
+
+  test('işlemsel SMS zaman aşımı kesin ret değil: reason timeout', async () => {
+    const axios = require('axios');
+    Object.assign(env.sms, { provider: 'netgsm', apiKey: 'k', apiSecret: 's' });
+    axios.get.mockRejectedValueOnce(Object.assign(new Error('timeout of 10000ms exceeded'), { code: 'ECONNABORTED' }));
+
+    await expect(sms.sendTransactional('+905321112233', 'applicationReceived'))
+      .resolves.toMatchObject({ sent: false, reason: 'timeout' });
   });
 
   test('işlemsel SMS hatası telefonu maskeli loglar', async () => {

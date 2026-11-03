@@ -12,4 +12,9 @@ async function remove(req, res) {
   res.status(204).end();
 }
 
-module.exports = { register, remove };
+async function opened(req, res) {
+  await service.markOpened(req.user.id, req.params.id);
+  res.status(204).end();
+}
+
+module.exports = { register, remove, opened };

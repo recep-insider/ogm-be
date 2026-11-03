@@ -5,7 +5,7 @@ jest.mock('../../src/config/logger', () => ({ info: jest.fn(), warn: jest.fn(), 
 const { AppError } = require('../../src/shared/errors');
 const { __testables } = require('../../src/middlewares/upload');
 
-const { mimeFilter, imageSizeGuard, MIME_TO_EXT, ALLOWED_MEDIA_MIME } = __testables;
+const { mimeFilter, imageSizeGuard, totalSizeGuard, FIRE_REPORT_TOTAL_BYTES, MIME_TO_EXT, ALLOWED_MEDIA_MIME } = __testables;
 
 // mimeFilter(allowed) → multer fileFilter: (req, file, cb).
 // Accept: cb(null, true). Reject: cb(AppError) with a single argument.
@@ -108,6 +108,47 @@ describe('upload imageSizeGuard — fireReport per-type size limit', () => {
     expect(err.status).toBe(413);
     expect(err.code).toBe('file_too_large');
     expect(err.details).toEqual({ limitBytes: 10 * MB, field: 'big.png' });
+  });
+});
+
+describe('upload totalSizeGuard — ihbar başına toplam sınır (K9)', () => {
+  const fs = require('fs');
+  const os = require('os');
+  const path = require('path');
+
+  it('ihbar sınırı 100 MB; nginx gövde sınırının (110 MB) altında', () => {
+    expect(FIRE_REPORT_TOTAL_BYTES).toBe(100 * MB);
+  });
+
+  it('ihbar yükleme zinciri toplam sınırı uygular', async () => {
+    const { fireReportUpload } = require('../../src/middlewares/upload');
+    const last = fireReportUpload[fireReportUpload.length - 1];
+    const err = await new Promise((resolve) => last({ files: [{ size: 101 * MB }] }, {}, resolve));
+    expect(err).toMatchObject({ status: 413, code: 'payload_too_large' });
+  });
+
+  it('toplam sınırın altındaki dosyaları geçirir', async () => {
+    const guard = totalSizeGuard(100 * MB);
+    const err = await new Promise((resolve) => guard({
+      files: [{ size: 60 * MB, path: '/tmp/a' }, { size: 40 * MB, path: '/tmp/b' }],
+    }, {}, resolve));
+    expect(err).toBeUndefined();
+  });
+
+  it('toplam sınırı aşınca 413 payload_too_large döner ve yüklenen dosyalar silinir', async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'total-size-'));
+    const files = ['a.mp4', 'b.mp4'].map((name) => {
+      const p = path.join(dir, name);
+      fs.writeFileSync(p, 'x');
+      return { size: 60 * MB, path: p, originalname: name };
+    });
+    const guard = totalSizeGuard(100 * MB);
+
+    const err = await new Promise((resolve) => guard({ files }, {}, resolve));
+
+    expect(err).toMatchObject({ status: 413, code: 'payload_too_large', details: { limitBytes: 100 * MB, totalBytes: 120 * MB } });
+    await new Promise((r) => setTimeout(r, 50));
+    expect(files.some((f) => fs.existsSync(f.path))).toBe(false);
   });
 });
 

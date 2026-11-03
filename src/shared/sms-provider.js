@@ -8,6 +8,9 @@ const { hitFixedWindow } = require('./fixed-window');
 const { errors } = require('./errors');
 
 const DAILY_OTP_PREFIX = 'rl:sms:otp:daily:';
+// K10: başkası birinin numarasına kod isteyerek o numarayı bir gün kilitleyemesin diye günlük
+// sınır numara + bağlantı (IP) başınadır; numara başına ayrıca kesin bir günlük tavan vardır.
+const DAILY_OTP_PHONE_CAP = 30;
 // Sağlayıcı hatasında harcanan hak iade edilir; süresi dolmuş/olmayan sayaç yaratılmaz, 0'ın altına inmez.
 const REFUND_OTP = "local n = tonumber(redis.call('get', KEYS[1])) if n and n > 0 then return redis.call('decr', KEYS[1]) end return 0";
 
@@ -98,23 +101,38 @@ function assertOtpDeliverable(phone) {
   }
 }
 
-// Günlük OTP SMS limiti (SMS_DAILY_LIMIT_PER_USER) burada uygulanır: tüm OTP akışları buradan geçer.
-// Kullanıcı kimliği olmayan giriş akışlarında da geçerli olsun diye hedef telefon başınadır.
-async function sendOtp(phone, code) {
+function hitDailyOtp(key, max) {
+  return hitFixedWindow(redis, key, {
+    max,
+    windowSec: 86400,
+    message: 'Günlük SMS limitine ulaşıldı, lütfen daha sonra tekrar deneyin',
+    code: 'sms_daily_limit',
+  });
+}
+
+// Günlük OTP SMS limiti burada uygulanır: tüm OTP akışları buradan geçer. Kullanıcı kimliği
+// olmayan giriş akışlarında da geçerli olsun diye hedef telefon üzerindendir: numara + IP başına
+// SMS_DAILY_LIMIT_PER_USER, numara başına DAILY_OTP_PHONE_CAP.
+async function sendOtp(phone, code, { ip } = {}) {
   assertOtpDeliverable(phone);
-  const key = phone && !env.sms.dummyPhones.includes(phone) ? `${DAILY_OTP_PREFIX}${phone}` : null;
-  if (key) {
-    await hitFixedWindow(redis, key, {
-      max: env.sms.dailyLimitPerUser,
-      windowSec: 86400,
-      message: 'Günlük SMS limitine ulaşıldı, lütfen daha sonra tekrar deneyin',
-      code: 'sms_daily_limit',
-    });
+  const counted = [];
+  if (phone && !env.sms.dummyPhones.includes(phone)) {
+    const pairKey = `${DAILY_OTP_PREFIX}${phone}:${ip || 'bilinmiyor'}`;
+    await hitDailyOtp(pairKey, env.sms.dailyLimitPerUser);
+    counted.push(pairKey);
+    const phoneKey = `${DAILY_OTP_PREFIX}${phone}`;
+    try {
+      await hitDailyOtp(phoneKey, DAILY_OTP_PHONE_CAP);
+    } catch (err) {
+      await refundDailyOtp(pairKey, phone);
+      throw err;
+    }
+    counted.push(phoneKey);
   }
   try {
     return await sendSms(phone, OTP_TEMPLATE(code));
   } catch (err) {
-    if (key) await refundDailyOtp(key, phone);
+    for (const key of counted) await refundDailyOtp(key, phone); // eslint-disable-line no-await-in-loop
     throw err;
   }
 }
@@ -137,8 +155,12 @@ async function sendTransactional(phone, templateKey) {
     return { sent: true, sentAt: new Date(), ...result };
   } catch (err) {
     logger.error('İşlemsel SMS gönderilemedi', { templateKey, phone: maskPhone(phone), error: err.message });
-    return { sent: false, reason: 'provider_error' };
+    // Zaman aşımı ya da kopan bağlantıda mesaj sağlayıcıya ulaşmış olabilir: kesin ret sayılmaz.
+    const uncertain = ['ECONNABORTED', 'ETIMEDOUT', 'ECONNRESET'].includes(err.code);
+    return { sent: false, reason: uncertain ? 'timeout' : 'provider_error' };
   }
 }
 
-module.exports = { sendOtp, sendSms, sendTransactional, assertOtpDeliverable, maskPhone, OTP_TEMPLATE, SMS_TEMPLATES };
+module.exports = {
+  sendOtp, sendSms, sendTransactional, assertOtpDeliverable, maskPhone, OTP_TEMPLATE, SMS_TEMPLATES, DAILY_OTP_PHONE_CAP,
+};

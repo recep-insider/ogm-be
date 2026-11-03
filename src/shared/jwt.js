@@ -6,6 +6,8 @@ const env = require('../config/env');
 const ACCESS = 'access';
 const REFRESH = 'refresh';
 const REGISTRATION = 'registration';
+const RESTORE = 'restore';
+const RESTORE_EXPIRES_IN = '10m';
 const PANEL_ACCESS = 'panel_access';
 const PANEL_AUDIENCE = 'ogm-panel';
 const PANEL_ACCESS_EXPIRES_IN = '15m';
@@ -30,6 +32,22 @@ function signRegistrationToken(payload) {
     expiresIn: env.jwt.registrationExpiresIn,
     issuer: 'ogm-gonullu-api',
   });
+}
+
+// Silinme sürecindeki hesabın sahibi SMS kodunu doğruladığında verilir; yalnız /auth/restore kabul eder.
+function signRestoreToken({ sub }) {
+  return jwt.sign({ sub, typ: RESTORE }, env.jwt.accessSecret, {
+    expiresIn: RESTORE_EXPIRES_IN,
+    issuer: 'ogm-gonullu-api',
+  });
+}
+
+function verifyRestoreToken(token) {
+  const payload = jwt.verify(token, env.jwt.accessSecret, { issuer: 'ogm-gonullu-api' });
+  if (payload.typ !== RESTORE || typeof payload.sub !== 'string' || !payload.sub) {
+    throw new jwt.JsonWebTokenError('restore token bekleniyor');
+  }
+  return payload;
 }
 
 function verifyAccessToken(token) {
@@ -90,6 +108,10 @@ function registrationTokenSeconds() {
   return resolveExpiresIn(env.jwt.registrationExpiresIn);
 }
 
+function restoreTokenSeconds() {
+  return resolveExpiresIn(RESTORE_EXPIRES_IN);
+}
+
 // Hesabı silinen gönüllünün access token'ları bu anahtar varken reddedilir (middlewares/auth).
 function userBlockKey(userId) {
   return `bl:user:${userId}`;
@@ -121,6 +143,9 @@ module.exports = {
   verifyAccessToken,
   verifyRefreshToken,
   verifyRegistrationToken,
+  signRestoreToken,
+  verifyRestoreToken,
+  restoreTokenSeconds,
   signPanelAccessToken,
   verifyPanelAccessToken,
   panelAccessTokenSeconds,

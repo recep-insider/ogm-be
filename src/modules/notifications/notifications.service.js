@@ -32,4 +32,16 @@ async function deleteDevice(userId, tokenId) {
   return { ok: true };
 }
 
-module.exports = { registerDevice, deleteDevice };
+/**
+ * Gönüllü bildirime dokunup uygulamayı açtı (K5). Aynı kişinin ikinci açılışı sayılmaz.
+ */
+async function markOpened(userId, notificationId) {
+  const exists = await db('notification_log').where({ id: notificationId }).first('id');
+  if (!exists) throw errors.notFound('Bildirim bulunamadı', 'notification_not_found');
+  await db('notification_opens')
+    .insert({ notification_id: notificationId, user_id: userId, opened_at: new Date() })
+    .onConflict(['notification_id', 'user_id'])
+    .ignore();
+}
+
+module.exports = { registerDevice, deleteDevice, markOpened };

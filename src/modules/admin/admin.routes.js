@@ -188,6 +188,7 @@ const pageQueryKeys = {
 const volunteersQuerySchema = Joi.object({
   status: Joi.string().valid(...adminService.APPLICATION_STATUSES).optional(),
   q: Joi.string().max(100).optional(),
+  pendingDeletion: Joi.boolean().optional(),
   ...pageQueryKeys,
 });
 
@@ -200,10 +201,13 @@ const volunteersQuerySchema = Joi.object({
  *     description: >-
  *       Mobil uygulamadan ÇAĞRILMAZ. Panel oturumu (Bearer) gerektirir.
  *       Misafir/silinmiş kullanıcılar hariç; her kullanıcı en güncel başvurusuyla döner.
+ *       pendingDeletion=true ile yalnız silinme sürecindekiler (hesabını silmiş, 30 günü dolmamış,
+ *       henüz anonimleşmemiş) döner; bu satırlarda deletedAt, deletionDueAt ve deletionDaysLeft vardır.
  *       PII gözetimi: tcKimlik bu listede dönmez (detay ucunda döner).
  *     security: [ { panelBearer: [] } ]
  *     parameters:
  *       - { in: query, name: status, schema: { type: string, enum: [pending, approved, rejected, requires_revision] } }
+ *       - { in: query, name: pendingDeletion, schema: { type: boolean }, description: 'true → yalnız silinme sürecindeki hesaplar (K3)' }
  *       - { in: query, name: q, schema: { type: string }, description: 'ad/soyad/telefon/eposta/TC/il/ilçe/STK araması; boşlukla ayrılan her kelime eşleşmeli, Türkçe büyük/küçük harf duyarsız' }
  *       - { in: query, name: page, schema: { type: integer, default: 1 } }
  *       - { in: query, name: pageSize, schema: { type: integer, default: 20, maximum: 100 } }
@@ -252,6 +256,10 @@ const volunteersQuerySchema = Joi.object({
  *                           decidedAt: { type: string, format: date-time, nullable: true }
  *                           decidedBy: { type: string, nullable: true }
  *                           decisionNo: { type: string, nullable: true }
+ *                       pendingDeletion: { type: boolean, description: 'Yalnız pendingDeletion=true listesinde' }
+ *                       deletedAt: { type: string, format: date-time, description: 'Yalnız pendingDeletion=true listesinde' }
+ *                       deletionDueAt: { type: string, format: date-time, description: 'Anonimleştirme zamanı (silme + 30 gün)' }
+ *                       deletionDaysLeft: { type: integer, minimum: 0 }
  *                 total: { type: integer }
  *                 page: { type: integer }
  *                 pageSize: { type: integer }
@@ -270,7 +278,7 @@ router.get(
  *   get:
  *     tags: [Admin]
  *     summary: Gönüllü detayı (panel)
- *     description: 'PII (tcKimlik, adres, acil kişi, belgeler) yalnızca bu uçta döner. Panel oturumu.'
+ *     description: 'PII (tcKimlik, adres, acil kişi, belgeler) yalnızca bu uçta döner. Silinme sürecindeki (anonimleşmemiş) hesap da açılır; user alanında pendingDeletion, deletedAt, deletionDueAt, deletionDaysLeft döner (K3). Panel oturumu.'
  *     security: [ { panelBearer: [] } ]
  *     parameters:
  *       - { in: path, name: userId, required: true, schema: { type: string } }
@@ -530,7 +538,8 @@ router.get(
  *     description: >-
  *       Tek hazır aksiyon merkezin KENDİ işlemidir: müdahale edildi. Sahadan gelen
  *       bilgi serbest nota yazılır ve operatörün adına düşer. Operatör çağrıyı İPTAL
- *       EDEMEZ — `cancelled` yalnızca gönüllünün mobilden verdiği sinyaldir.
+ *       EDEMEZ — `cancelled` yalnızca gönüllünün mobilden verdiği sinyaldir. Müdahale edildi
+ *       kaydedilince gönüllüye `sos_responded` push'u gider (K26); kapanmış çağrıya not yazılamaz (K25).
  *     security: [ { panelBearer: [] } ]
  *     parameters:
  *       - { in: path, name: id, required: true, schema: { type: string } }
@@ -547,7 +556,7 @@ router.get(
  *     responses:
  *       200: { description: '{ok, sosId, status, history[], responseSeconds}' }
  *       404: { description: sos_not_found }
- *       409: { description: sos_cancelled }
+ *       409: { description: 'sos_cancelled — gönüllü iptal etti; sos_not_active — çağrı zaten kapanmış (müdahale edildi), not ya da ikinci yanıt yazılmaz' }
  */
 router.post(
   '/sos-reports/:id/history',
@@ -679,7 +688,7 @@ const blogBaseKeys = {
 };
 
 const blogCreateSchema = Joi.object({ ...blogBaseKeys, title: blogBaseKeys.title.required() });
-const blogUpdateSchema = Joi.object(blogBaseKeys).min(1);
+const blogUpdateSchema = Joi.object({ ...blogBaseKeys, version: Joi.number().integer().min(1) }).min(1);
 
 /**
  * @openapi
@@ -740,12 +749,24 @@ router.post(
  *   put:
  *     tags: [Admin]
  *     summary: Blog yazısı güncelle (kısmi — isActive:false = yayından kaldır)
+ *     description: >-
+ *       Gövdede `version` (düzenleme açılırken okunan sürüm) gönderilirse yazı arada başka biri tarafından
+ *       kaydedildiyse 409 blog_version_conflict döner, değişiklik yazılmaz (K17). Her kayıt sürümü bir artırır;
+ *       yanıttaki `version` bir sonraki kayıtta gönderilir.
  *     security: [ { panelBearer: [] } ]
  *     parameters:
  *       - { in: path, name: id, required: true, schema: { type: string } }
+ *     requestBody:
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               version: { type: integer, minimum: 1, description: 'Okunan sürüm; verilmezse kontrol yapılmaz' }
  *     responses:
- *       200: { description: Güncellenen yazı }
+ *       200: { description: Güncellenen yazı (yeni version ile) }
  *       404: { description: post_not_found }
+ *       409: { description: 'blog_version_conflict — yazı arada değişti; details.currentVersion' }
  *   delete:
  *     tags: [Admin]
  *     summary: Blog yazısını KALICI sil
@@ -1116,6 +1137,7 @@ router.put(
 
 const commissionSchema = Joi.object({
   decision: Joi.string().valid('approved', 'rejected').required(),
+  expectedDecision: Joi.string().valid('approved', 'rejected', 'pending').allow(null).optional(),
   decidedBy: Joi.string().max(120).allow('', null).optional(),
   decisionNo: Joi.string().max(64).allow('', null).optional(),
   note: Joi.string().max(1000).allow('', null).optional(),
@@ -1131,6 +1153,9 @@ const commissionSchema = Joi.object({
  *       Bölge Müdürlüğü Komisyonunun kararını AYRI bir kayıt olarak yazar (red kararı da
  *       saklanır) ve kararla birlikte gönüllüye sabit şablonlu bilgilendirme SMS'i gönderir.
  *       Karar ve SMS tek işlemdir; ret gerekçesi SMS metnine girmez.
+ *       expectedDecision (ekranda görülen son karar; kararsızsa pending ya da null) gönderilirse ve
+ *       karar arada başka bir görevlice değiştiyse 409 decision_conflict döner, kayıt ve SMS yoktur (K20).
+ *       Aynı karar tekrar gelirse yeni kayıt ve SMS olmaz; yanıtta unchanged true döner.
  *     security: [ { panelBearer: [] } ]
  *     parameters:
  *       - { in: path, name: userId, required: true, schema: { type: string } }
@@ -1143,12 +1168,14 @@ const commissionSchema = Joi.object({
  *             required: [decision]
  *             properties:
  *               decision: { type: string, enum: [approved, rejected] }
+ *               expectedDecision: { type: string, enum: [approved, rejected, pending], nullable: true, description: 'Ekranda görülen son karar' }
  *               decidedBy: { type: string, nullable: true }
  *               decisionNo: { type: string, nullable: true }
  *               note: { type: string, nullable: true }
  *     responses:
- *       200: { description: '{decisionId, decision, decidedAt, smsSent, kisiDurumu, eksikAdimlar}' }
+ *       200: { description: '{decisionId, decision, decidedAt, smsSent, unchanged?, kisiDurumu, eksikAdimlar}' }
  *       404: { description: user_not_found }
+ *       409: { description: 'decision_conflict — karar arada değişti; details.currentDecision' }
  */
 router.post(
   '/volunteers/:userId/commission',
@@ -1761,6 +1788,8 @@ const notificationSendSchema = Joi.object({
     .optional(),
   // Genel gönderim: Hazır / Eğitim Bekleyenler / Tüm Gönüllüler.
   audience: Joi.string().valid('hazir', 'egitim_bekleyen', 'tumu').optional(),
+  // K8: bildirim yalnız seçili bölgeye gider; yoksa ya da `all` ise Tüm Bölgeler.
+  region: Joi.string().valid(...REGION_KEYS, 'all').optional(),
 })
   .oxor('missionId', 'audience')
   // Yarıçap/mesafe alanı bilinçli olarak YOK: admin mesafe girmez (§4).
@@ -1774,10 +1803,14 @@ const notificationSendSchema = Joi.object({
  *     summary: Bildirim gönder (panel)
  *     description: >-
  *       Kanal KATEGORİDEN TÜRER, operatör seçmez: SMS yalnızca `acil` sınıfına gider,
- *       diğer her şey push. `acil` kapatılamaz ve gönüllünün bildirim tercihini bypass
+ *       diğer her şey push. `acil` kapatılamaz ve gönüllünün konu tercihini bypass
  *       eder. Yarıçap admin'de girilmez. Olay bazlı gönderimde segment seçimi Hazır,
  *       Çağrıldı, Yolda, Sahada; genel gönderimde Hazır, Eğitim Bekleyenler, Tüm
- *       Gönüllüler. Gönderim denetim izine yazılır. `recipients` hedef kitledeki kişi
+ *       Gönüllüler. Olaya bağlı gönderimde (Acil dahil) Hazır gönüllüler yalnız mesafe
+ *       tercihi olayı kapsıyorsa alır; olaya katılmış olanlar (Çağrıldı, Yolda, Sahada)
+ *       mesafeden bağımsız alır (K6). `region` verilirse Hazır ve genel kitle yalnız o
+ *       bölgedeki gönüllülerdir; verilmezse ya da `all` ise Tüm Bölgeler (K8).
+ *       Gönderim denetim izine yazılır. `recipients` hedef kitledeki kişi
  *       sayısıdır; `pushCount` push'u sağlayıcının KABUL ETTİĞİ kişi sayısıdır (cihazı
  *       olmayan, tercihini kapatan ve hata alan sayılmaz; mock sağlayıcıda 0).
  *     security: [ { panelBearer: [] } ]
@@ -1800,7 +1833,7 @@ const notificationSendSchema = Joi.object({
  *     summary: Bildirim gönderim geçmişi (panel)
  *     security: [ { panelBearer: [] } ]
  *     responses:
- *       200: { description: 'items[] + total/page/pageSize (pushCount: sağlayıcının kabul ettiği kişi sayısı)' }
+ *       200: { description: 'items[] + total/page/pageSize (pushCount: sağlayıcının kabul ettiği kişi sayısı; openCount: bildirime dokunup uygulamayı açan tekil gönüllü, K5)' }
  */
 router.post(
   '/notifications',

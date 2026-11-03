@@ -16,6 +16,10 @@ const router = Router();
  *   get:
  *     tags: [Missions]
  *     summary: Aktif görev listesi (Anasayfa)
+ *     description: >-
+ *       Yalnız gönüllünün çağrıldığı ya da katıldığı olaylar ve mesafe tercihinin (baz konumundan)
+ *       kapsadığı olaylar döner; baz konumu ya da tercih yoksa tüm aktif olaylar döner (K29).
+ *       lat/lng sorgu parametreleri kullanılmaz.
  *     security: [ { bearerAuth: [] } ]
  *     parameters:
  *       - in: query
@@ -94,7 +98,7 @@ router.get('/active/:id', requireAuth, asyncHandler(controller.getActive));
  *               properties:
  *                 ok: { type: boolean }
  *                 userStatus: { type: string, enum: [yolda, katilamiyor] }
- *       403: { description: 'readiness_incomplete — eksik adımlar details.engeller içinde' }
+ *       403: { description: 'readiness_incomplete — eksik adımlar details.engeller içinde; mission_out_of_range — çağrılmadığı ve mesafe tercihinin dışındaki olay (K29)' }
  *       409: { description: 'status_locked — sahada/tamamladı durumu değiştirilemez' }
  */
 router.post(

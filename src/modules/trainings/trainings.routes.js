@@ -35,7 +35,10 @@ router.get('/online', asyncHandler(async (req, res) => {
  *   get:
  *     tags: [Trainings]
  *     summary: Saha eğitim listesi
- *     description: Only active trainings dated today or later (Europe/Istanbul); past trainings are not listed.
+ *     description: >-
+ *       Only active trainings dated today or later (Europe/Istanbul); past trainings are not listed.
+ *       Her kayıtta applicationStatus (approved | rejected | null) döner; rejected, başvurunun kabul
+ *       edilmediğini ya da gönüllünün eğitimden çıkarıldığını söyler, yeniden başvuru kapalıdır (K27).
  *     security: [ { bearerAuth: [] } ]
  *     responses:
  *       200:
@@ -56,6 +59,7 @@ router.get('/saha', asyncHandler(async (req, res) => {
  *   post:
  *     tags: [Trainings]
  *     summary: Saha eğitimine başvur
+ *     description: Komisyon onayı olmayan gönüllü eğitimleri görür ama başvuramaz (K16).
  *     security: [ { bearerAuth: [] } ]
  *     parameters:
  *       - in: path
@@ -72,6 +76,7 @@ router.get('/saha', asyncHandler(async (req, res) => {
  *               properties:
  *                 applicationId: { type: string }
  *                 status: { type: string, example: pending }
+ *       403: { description: 'commission_pending — komisyon onayı yok; commission_rejected — komisyon reddetti' }
  *       409: { description: 'already_applied' }
  *       410: { description: 'training_full | training_closed | training_past' }
  */

@@ -2,6 +2,7 @@
 
 const { Router } = require('express');
 const asyncHandler = require('../../shared/async-handler');
+const Joi = require('joi');
 const validate = require('../../middlewares/validate');
 const { requireAuth } = require('../../middlewares/auth');
 const controller = require('./notifications.controller');
@@ -58,5 +59,27 @@ router.post('/devices', validate({ body: registerSchema }), asyncHandler(control
  *       404: { $ref: '#/components/responses/NotFound' }
  */
 router.delete('/devices/:tokenId', asyncHandler(controller.remove));
+
+/**
+ * @openapi
+ * /notifications/{id}/opened:
+ *   post:
+ *     tags: [Notifications]
+ *     summary: Bildirim açıldı (okunma sayısı, K5)
+ *     description: >-
+ *       Gönüllü panelden gönderilen bildirime dokunup uygulamayı açtığında çağrılır (soğuk açılış dahil).
+ *       `id`, push verisindeki `notificationId`'dir. Aynı kişinin tekrar açması sayılmaz.
+ *     security: [ { bearerAuth: [] } ]
+ *     parameters:
+ *       - { in: path, name: id, required: true, schema: { type: string, format: uuid } }
+ *     responses:
+ *       204: { description: 'Kaydedildi' }
+ *       404: { description: notification_not_found }
+ */
+router.post(
+  '/:id/opened',
+  validate({ params: Joi.object({ id: Joi.string().uuid().required() }) }),
+  asyncHandler(controller.opened),
+);
 
 module.exports = router;

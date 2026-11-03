@@ -2,6 +2,28 @@
 
 const { db } = require('../../config/db');
 const { assetUrl } = require('../../shared/asset-url');
+const { toDateOnly } = require('../../shared/dates');
+
+const NEWS_LIMIT = 5;
+
+// K31: "Haberler & Duyurular" panelde yayımlanan "Haber" kategorisindeki blog yazılarıdır.
+async function latestNews() {
+  const rows = await db('blog_posts')
+    .where({ is_active: true, category: 'haber' })
+    .orderBy([
+      { column: 'published_at', order: 'desc' },
+      { column: 'id', order: 'desc' },
+    ])
+    .limit(NEWS_LIMIT);
+  return rows.map((r) => ({
+    id: r.id,
+    type: 'haber',
+    title: r.title,
+    imageUrl: assetUrl(r.cover_path),
+    publishedAt: toDateOnly(r.published_at),
+    url: null,
+  }));
+}
 
 async function getFeed(userId) {
   let userRow = null;
@@ -41,16 +63,7 @@ async function getFeed(userId) {
         status: 'not_started',
       },
     },
-    news: [
-      {
-        id: '00000000-0000-0000-0000-000000000010',
-        type: 'haber',
-        title: 'Yeni Gönüllü Teçhizatları Dağıtılmaya Başlandı',
-        imageUrl: null,
-        publishedAt: new Date().toISOString(),
-        url: 'https://www.ogm.gov.tr/',
-      },
-    ],
+    news: await latestNews(),
   };
 }
 

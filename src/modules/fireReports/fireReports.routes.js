@@ -50,7 +50,7 @@ const router = Router();
  *       400: { $ref: '#/components/responses/ValidationError' }
  *       409: { description: 'idempotency_in_flight — aynı anahtarlı ilk istek sürüyor' }
  *       422: { description: 'idempotency_key_reused — anahtar farklı bir gövdeyle kullanılmış' }
- *       413: { $ref: '#/components/responses/PayloadTooLarge' }
+ *       413: { description: 'file_too_large — tek dosya sınırı (görsel 10 MB, video 100 MB); payload_too_large — ihbar başına toplam 100 MB aşıldı (K9); details.limitBytes' }
  *       429: { $ref: '#/components/responses/RateLimited' }
  */
 // Yangın ihbarı acil akıştır — token'sız (guest) gönderim kabul edilir; token

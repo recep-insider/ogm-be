@@ -115,7 +115,7 @@ WGS84 datum. Frontend `react-native-maps` ile uyumlu.
 - **Error cases:**
   - `400 invalid_phone` — E.164 değil
   - `429 rate_limited` — çok sık deneme
-  - `429 sms_daily_limit` — numaraya günlük OTP SMS limiti (`SMS_DAILY_LIMIT_PER_USER`, varsayılan 10) doldu; `details.retryAfterSec` döner
+  - `429 sms_daily_limit` — günlük OTP SMS limiti doldu: aynı numaraya aynı bağlantıdan (IP) `SMS_DAILY_LIMIT_PER_USER` (varsayılan 10), numaraya toplamda 30 (K10); `details.retryAfterSec` döner
   - `503 sms_unavailable` — üretimde SMS sağlayıcı bağlı değil (`SMS_PROVIDER=mock`); yalnız `OTP_DUMMY_PHONES` numaraları giriş yapabilir. Oturum açılmaz, telefon/günlük SMS limitinden düşülmez. Mesaj: "SMS servisi henüz bağlı değil; şu an yalnız test numaralarıyla giriş yapılabilir."
 - **TS tipleri:** `SendOtpRequest`, `SendOtpResponse` (`src/services/api/types.ts:87-94`)
 - **Mock:** `src/services/api/mocks.ts:172` (`mockApi.sendOtp`)
@@ -160,6 +160,19 @@ WGS84 datum. Frontend `react-native-maps` ile uyumlu.
   "isExisting": false,
   "registrationToken": "regt_xyz",
   "expiresIn": 900
+}
+```
+
+**Silinme sürecindeki hesap (`pendingDeletion: true`, K28):** hesabını silmiş, 30 günü dolmamış kişi.
+Token çifti yoktur; mobil "Hesabınız için silme talebi var. Giriş yaparsanız talep iptal olur. Devam
+edilsin mi?" diye sorar. "Devam" → `POST /auth/restore`; "Vazgeç" → hiçbir şey çağrılmaz.
+```json
+{
+  "ok": true,
+  "isExisting": true,
+  "pendingDeletion": true,
+  "restoreToken": "eyJ...",
+  "expiresIn": 600
 }
 ```
 
@@ -263,6 +276,21 @@ WGS84 datum. Frontend `react-native-maps` ile uyumlu.
 - **TS tipleri:** `RefreshRequest`, `AuthTokenPair` (`types.ts:35-39, 149-151`)
 - **Mock:** `mocks.ts:mockApi.refresh`
 - **Notlar:** Sliding refresh — backend her refresh'te yeni refresh token üretip dönmeli (frontend overwrite ediyor — `client.ts:82`).
+
+---
+
+### 1.6a POST /auth/restore
+- **Auth:** Hayır (`restoreToken` body'de)
+- **Ne zaman:** verify-otp `pendingDeletion: true` döndüğünde, kişi "Devam" derse (K28).
+- **Request Body:**
+```json
+{ "restoreToken": "eyJ..." }
+```
+- **Success Response (200):** verify-otp'deki mevcut kullanıcı yanıtıyla aynı (`isExisting: true`, token çifti, `user`).
+  Hesap yeniden açılır, silme talebi iptal olur; cihaz kaydı (push) yeniden yapılmalıdır.
+- **Error cases:**
+  - `401 restore_invalid` — token geçersiz, süresi dolmuş (10 dk), kullanılmış ya da hesap artık silinme sürecinde değil; yeniden giriş yapılır
+  - `503 restore_unavailable` — hesap açılamadı, değişiklik yok; tekrar denenebilir
 
 ---
 
@@ -377,6 +405,8 @@ WGS84 datum. Frontend `react-native-maps` ile uyumlu.
 - **Error cases:**
   - `400 validation_error` (details: alan bazlı hata listesi)
   - `409 already_applied` — bu kullanıcı zaten başvuru yapmış
+  - `409 account_pending_deletion` — TC ya da telefon silinme sürecindeki (30 günü dolmamış) bir hesaba ait; kişi telefonla giriş yapıp silmeyi iptal edebilir (K28)
+  - `409 account_deletion_finalizing` — hesabın 30 günü doldu, anonimleştirme bekleniyor (en geç bir saat); iptal artık mümkün değil, kişi kısa süre sonra yeniden kayıt olabilir ("Hesabınız siliniyor; kısa süre sonra yeniden kayıt olabilirsiniz.")
   - `413 file_too_large`
   - `415 unsupported_media_type`
 - **TS tipleri:** `OnboardingData`, `OnboardingCompleteResponse`, `CompleteOnboardingArgs` (`types.ts:157-189`, `onboarding.ts:15-19`)
@@ -570,10 +600,12 @@ WGS84 datum. Frontend `react-native-maps` ile uyumlu.
     "cover": "https://cdn.example.com/saha/yangin.jpg",
     "availableSeats": 12,
     "seatStatus": "available",
-    "applied": false
+    "applied": false,
+    "applicationStatus": null
   }
 ]
 ```
+- **`applicationStatus`** (K27): `approved` | `rejected` | `null` (başvuru yok). `rejected` → "Başvurunuz kabul edilmedi"; başvuru reddedildiğinde ya da gönüllü eğitimden çıkarıldığında gönüllüye `saha_application_rejected` push'u gider, aynı eğitime yeniden başvuru `409 already_applied` alır.
 - **TS tipleri:** `SahaTraining`, `SahaSeatStatus` (`types.ts:206-231`)
 - **Mock:** `mocks.ts:593-650` (`MOCK_SAHA_TRAININGS`)
 - **Notlar:**
@@ -595,7 +627,7 @@ WGS84 datum. Frontend `react-native-maps` ile uyumlu.
 ```json
 { "applicationId": "app_t_1", "status": "pending" }
 ```
-- **Error cases:** `409 already_applied`, `410 training_full`, `410 training_closed`, `410 training_past` (training day is before today, Europe/Istanbul)
+- **Error cases:** `403 commission_pending` (komisyon onayı yok; onay bekleyen gönüllü eğitimleri görür ama başvuramaz, K16), `403 commission_rejected` (komisyon başvuruyu reddetti), `409 already_applied`, `410 training_full`, `410 training_closed`, `410 training_past` (training day is before today, Europe/Istanbul)
 - **TS tipi:** `TrainingApplyResponse` (`types.ts:233-236`)
 - **Mock:** `mocks.ts:mockApi.applyTraining`
 
@@ -694,7 +726,8 @@ WGS84 datum. Frontend `react-native-maps` ile uyumlu.
 - **TS tipleri:** `ActiveMissionSummary`, `ActiveMissionStatus`, `MissionUserStatus`, `ActiveMissionIcon` (`types.ts:366-391`)
 - **Mock:** `mocks.ts:mockApi.listActiveMissions` (line 361-372)
 - **Notlar:**
-  - Backend `lat`/`lng`'i ignore edebilir ve last-known location'ı kullanabilir.
+  - Backend `lat`/`lng`'i kullanmaz. Liste K29 ile süzülür: yalnız gönüllünün çağrıldığı ya da katıldığı olaylar ve bildirim ayarlarındaki baz konumdan mesafe tercihinin kapsadığı olaylar döner (baz konum ya da tercih yoksa tümü). Liste boşsa "Yakınında aktif olay yok" doğru metindir.
+  - Çağrılmadığı ve mesafe dışındaki bir olaya `respond` → `403 mission_out_of_range`.
   - `userStatus` per-user filter (her kullanıcı için ayrı state).
   - `status: 'staffed'` → tamamen dolmuş misyon (frontend "yeterli gönüllü" overlay gösterir).
 
@@ -921,7 +954,7 @@ WGS84 datum. Frontend `react-native-maps` ile uyumlu.
   - `PUT /admin/fire-reports/{id}` — body `{status: 'confirmed' | 'rejected', note?: string}`
   - Mobile app bu admin endpoint'i ÇAĞIRMAZ — yalnızca status değişimini React Query invalidation + push notification ile öğrenir.
 
-- **Error cases:** `400 validation_error` (missing media), `413 file_too_large`, `429 rate_limited`
+- **Error cases:** `400 validation_error` (missing media), `413 file_too_large` (tek dosya sınırı), `413 payload_too_large` (ihbar başına toplam 100 MB aşıldı, K9; `details.limitBytes`, `details.totalBytes`), `429 rate_limited`
 - **TS tipler:** `FireReportSubmitRequest`, `FireReportSubmitResponse`, `FireReportMedia`, `FireReportNeed`, `FireReportStatus` (`types.ts:508-552`)
 - **Mock:** `mocks.ts:426-447`, auto-promotion delay: 15s (`MOCK_REPORT_APPROVAL_DELAY_MS`)
 
@@ -1103,6 +1136,16 @@ WGS84 datum. Frontend `react-native-maps` ile uyumlu.
 - **Error cases:** `400 validation_error` (örn. `distanceKm < min` veya `> max`)
 - **TS tipi:** `UpdateNotificationPreferencesRequest` (`types.ts:602-607`)
 - **Mock:** `mocks.ts:mockApi.updateNotificationPreferences`
+
+---
+
+### 12.3 POST /notifications/{id}/opened
+- **Ne zaman:** gönüllü panelden gönderilen bir bildirime dokunup uygulamayı açtığında (soğuk açılış dahil), K5.
+- **Auth:** Evet
+- **`id`:** push verisindeki `notificationId` (`type: "operator_notification"` bildirimlerinde gelir).
+- **Success Response (204):** Body yok. Aynı kişinin tekrar açması sayılmaz, hata da vermez.
+- **Error cases:** `400 validation_error` (uuid değil), `404 notification_not_found`
+- **Notlar:** Panel bildirim listesindeki okunma sayısı (`openCount`) bu kayıtlardan gelir.
 
 ---
 

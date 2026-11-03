@@ -17,6 +17,7 @@ const {
 } = require('../../shared/jwt');
 const { toIso, toDateOnly } = require('../../shared/dates');
 const { sendTransactional } = require('../../shared/sms-provider');
+const { isPendingDeletion } = require('../users/anonymize.service');
 
 async function unlinkSafe(file) {
   if (!file) return;
@@ -25,6 +26,25 @@ async function unlinkSafe(file) {
   } catch (err) {
     logger.warn('Dosya silinemedi', { path: file.path, error: err.message });
   }
+}
+
+// Silinmiş hesap 30 gün içindeyse kişi giriş yapıp silmeyi iptal edebilir (K28); süre dolup
+// anonimleştirme bekliyorsa iptal artık mümkün değildir, kısa süre sonra yeniden kayıt olunabilir.
+// TC eşleşmesinde kişi numarasını değiştirmiş olabilir: geri alma yalnız eski numarayla girişte sunulur.
+const PENDING_DELETION_MESSAGE = {
+  phone: 'Bu bilgilerle silinme sürecinde bir hesap var. Telefon numaranızla giriş yaparak silme talebini iptal edebilirsiniz.',
+  tc: 'Bu TC kimlik numarasıyla silinme sürecinde bir hesap var; eski telefon numaranızla giriş yaparak iptal edebilir ya da 30 gün sonra yeniden kayıt olabilirsiniz.',
+};
+
+function deletedAccountConflict(row, matchedBy) {
+  if (isPendingDeletion(row)) {
+    return errors.conflict(PENDING_DELETION_MESSAGE[matchedBy], undefined, 'account_pending_deletion');
+  }
+  return errors.conflict(
+    'Hesabınız siliniyor; kısa süre sonra yeniden kayıt olabilirsiniz.',
+    undefined,
+    'account_deletion_finalizing',
+  );
 }
 
 // Kayıt token'ı tek kullanımlıktır. Redis'e ulaşılamazsa kayıt engellenmez (kontrol yapılamadı, token kullanılmış sayılmaz).
@@ -84,10 +104,15 @@ async function complete({ user, registration, registrationToken, data, files, ip
   let userId = user?.id;
   let isNewUser = false;
 
-  // tcKimlik conflict kontrolü
+  // tcKimlik conflict kontrolü. Silinme sürecindeki hesabın TC'si 30 gün dolana kadar
+  // dolu kalır; yeni kayıt 500 yerine 409 alır, kişi giriş yapıp silmeyi iptal edebilir (K28).
   const existsByTc = await db('users')
-    .where({ tc_kimlik: data.kimlik.tcKimlik, is_active: true })
+    .where({ tc_kimlik: data.kimlik.tcKimlik })
     .first();
+  if (existsByTc?.deleted_at && existsByTc.id !== userId) {
+    await Promise.all([unlinkSafe(saglik), unlinkSafe(sabika)]);
+    throw deletedAccountConflict(existsByTc, 'tc');
+  }
   if (existsByTc && existsByTc.id !== userId) {
     if (!userId) {
       // registration token akışında zaten o TC mevcutsa engelle
@@ -112,8 +137,11 @@ async function complete({ user, registration, registrationToken, data, files, ip
   if (phoneToUse) {
     const existsByPhone = await db('users')
       .where({ phone: phoneToUse })
-      .whereNull('deleted_at')
       .first();
+    if (existsByPhone?.deleted_at && existsByPhone.id !== userId) {
+      await Promise.all([unlinkSafe(saglik), unlinkSafe(sabika)]);
+      throw deletedAccountConflict(existsByPhone, 'phone');
+    }
     if (existsByPhone && existsByPhone.id !== userId) {
       await Promise.all([unlinkSafe(saglik), unlinkSafe(sabika)]);
       throw errors.conflict(

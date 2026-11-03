@@ -222,6 +222,62 @@ describe('onboarding.service.complete — telefon ve kayıt token\'ı', () => {
     expect(mockRedis.del).not.toHaveBeenCalled();
   });
 
+  test('silinme sürecindeki hesabın TC ya da telefonuyla yeni kayıt 500 yerine 409 account_pending_deletion', async () => {
+    mockState.userRecord = {
+      id: 'silinen', tc_kimlik: '10000000146', phone: '+905551112233', is_active: 0, deleted_at: new Date(),
+    };
+    await expect(registrationCall(undefined)).rejects.toMatchObject({
+      status: 409,
+      code: 'account_pending_deletion',
+      message: expect.stringContaining('eski telefon numaranızla'),
+    });
+    expect(mockInserted.users).toHaveLength(0);
+    expect(mockRedis.set).not.toHaveBeenCalled();
+  });
+
+  test('30 günü dolmuş (anonimleştirme bekleyen) hesabın TC\'siyle kayıt 409 account_deletion_finalizing; giriş önerilmez', async () => {
+    mockState.userRecord = {
+      id: 'silinen', tc_kimlik: '10000000146', phone: '+905551112233', is_active: 0,
+      deleted_at: new Date(Date.now() - 31 * 86400 * 1000), anonymized_at: null,
+    };
+    await expect(registrationCall(undefined)).rejects.toMatchObject({ status: 409, code: 'account_deletion_finalizing' });
+    expect(mockInserted.users).toHaveLength(0);
+  });
+
+  test('30 günü dolmuş hesabın telefonuyla kayıt da 409 account_deletion_finalizing', async () => {
+    const baseImpl = db.getMockImplementation();
+    db.mockImplementationOnce((table) => {
+      const chain = baseImpl(table);
+      chain.first = jest.fn(async () => undefined);
+      return chain;
+    });
+    mockState.userRecord = { id: 'silinen', phone: '+905551112233', deleted_at: new Date(Date.now() - 31 * 86400 * 1000) };
+
+    await expect(registrationCall(undefined)).rejects.toMatchObject({ status: 409, code: 'account_deletion_finalizing' });
+    expect(mockInserted.users).toHaveLength(0);
+  });
+
+  test('TC kaydı yokken telefonu silinme sürecindeki hesapta olan yeni kayıt 409 account_pending_deletion; dosyalar silinir', async () => {
+    const fs = require('fs/promises');
+    const unlink = jest.spyOn(fs, 'unlink').mockResolvedValue();
+    const baseImpl = db.getMockImplementation();
+    db.mockImplementationOnce((table) => {
+      const chain = baseImpl(table);
+      chain.first = jest.fn(async () => undefined);
+      return chain;
+    });
+    mockState.userRecord = { id: 'silinen', phone: '+905551112233', deleted_at: new Date() };
+
+    await expect(registrationCall(undefined)).rejects.toMatchObject({ status: 409, code: 'account_pending_deletion' });
+
+    expect(mockInserted.users).toHaveLength(0);
+    expect(unlink.mock.calls.map(([p]) => p).sort()).toEqual([
+      FILES.sabikaKaydi[0].path,
+      FILES.saglikRaporu[0].path,
+    ]);
+    unlink.mockRestore();
+  });
+
   test('oturumlu kullanıcı onboarding ile telefonunu değiştiremez', async () => {
     mockState.userRecord = { id: 'u1', tc_kimlik: '10000000146', phone: '+905321234567' };
     await expect(service.complete({
