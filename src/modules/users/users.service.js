@@ -17,6 +17,7 @@ const readinessService = require('./readiness.service');
 const { regionForCity } = require('../../shared/regions');
 const { publishedVersion } = require('../../shared/legal-documents');
 const { ANONYMIZE_AFTER_DAYS } = require('./anonymize.service');
+const { namePattern } = require('../onboarding/onboarding.validators');
 
 function safeJson(value, fallback) {
   if (value == null) return fallback;
@@ -133,6 +134,17 @@ const PATCH_KEYS = {
   stkText: 'stk_text',
 };
 
+// Acil kişi adında desen sonradan zorunlu oldu; değişmeyen eski değer yeniden gönderilince reddedilmez.
+async function assertAcilNames(userId, acil, fieldPrefix) {
+  const stored = await db('users').where({ id: userId }).first('acil_ad', 'acil_soyad');
+  const invalid = ['ad', 'soyad'].filter((f) => acil[f] !== stored?.[`acil_${f}`] && !namePattern.test(acil[f]));
+  if (invalid.length > 0) {
+    throw errors.validation('Form alanlarında hata var', {
+      errors: invalid.map((f) => ({ field: `${fieldPrefix}${f}`, message: 'Yalnız harf, boşluk ve kesme işareti kullanılabilir' })),
+    });
+  }
+}
+
 async function patchMe(userId, body, audit = {}) {
   // hobiler reference-data validasyonu
   if (Array.isArray(body.hobiler)) {
@@ -163,6 +175,8 @@ async function patchMe(userId, body, audit = {}) {
       .first();
     if (taken) throw errors.conflict('Bu e-posta başka bir kullanıcıda kayıtlı', undefined, 'email_taken');
   }
+
+  if (body.acil) await assertAcilNames(userId, body.acil, 'acil.');
 
   const update = {};
   for (const [k, col] of Object.entries(PATCH_KEYS)) {
@@ -199,6 +213,7 @@ async function patchMe(userId, body, audit = {}) {
 
 /** PUT /users/me/acil — acil iletişim bilgisini tamamen değiştirir (kontrat 4.2). */
 async function updateAcil(userId, body, audit = {}) {
+  await assertAcilNames(userId, body, '');
   await db('users').where({ id: userId }).update({
     acil_ad: body.ad,
     acil_soyad: body.soyad,

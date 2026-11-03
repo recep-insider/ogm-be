@@ -153,3 +153,35 @@ describe('users.service — telefon PATCH ile değişmez', () => {
     expect(mockUpdates).toHaveLength(0);
   });
 });
+
+describe('users.service — acil kişi adı deseni (BUG-055)', () => {
+  const { updateAcil } = require('../../../src/modules/users/users.service');
+  const acil = (ad, soyad = 'Yılmaz') => ({ ad, soyad, telefon: '+905329876543', yakinlik: 'Eş' });
+
+  beforeEach(() => {
+    mockUpdates.length = 0;
+    mockState.userRow = { id: 'u1', tc_kimlik: '10000000146', ad: 'Ali', soyad: 'Yılmaz', acil_ad: 'Ayşe', acil_soyad: 'Yılmaz' };
+  });
+
+  test('desene uymayan yeni ad 400; hiçbir şey yazılmaz', async () => {
+    await expect(updateAcil('u1', acil('12345 <script>'))).rejects.toMatchObject({
+      status: 400,
+      details: { errors: [{ field: 'ad' }] },
+    });
+    await expect(patchMe('u1', { acil: acil('Ayşe', 'x1') })).rejects.toMatchObject({
+      details: { errors: [{ field: 'acil.soyad' }] },
+    });
+    expect(mockUpdates).toHaveLength(0);
+  });
+
+  test('Âdem gibi büyük şapkalı ad kabul', async () => {
+    await updateAcil('u1', acil('Âdem'));
+    expect(mockUpdates[0].acil_ad).toBe('Âdem');
+  });
+
+  test('desen öncesi kaydedilmiş değişmeyen ad yeniden gönderilince reddedilmez (PA-42999)', async () => {
+    mockState.userRow.acil_ad = 'Ayşe 2';
+    await updateAcil('u1', { ...acil('Ayşe 2'), telefon: '+905320000000' });
+    expect(mockUpdates[0]).toMatchObject({ acil_ad: 'Ayşe 2', acil_telefon: '+905320000000' });
+  });
+});
