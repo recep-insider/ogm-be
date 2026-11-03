@@ -125,6 +125,19 @@ describe('POST /auth/restore — restoreFlow', () => {
     del.mockRestore();
   });
 
+  it('kontrolden sonra anonimleşen hesap açılmaz, oturum verilmez', async () => {
+    const { restoreToken } = await verify();
+    const del = jest.spyOn(redis, 'del').mockImplementationOnce(async () => {
+      db.rows('users')[0].anonymized_at = new Date();
+      return 1;
+    });
+
+    await expect(restoreFlow({ restoreToken })).rejects.toMatchObject({ status: 401, code: 'restore_invalid' });
+    expect(db.rows('users')[0]).toMatchObject({ is_active: false, deleted_at: DELETED_AT });
+    expect(db.rows('refresh_tokens')).toHaveLength(0);
+    del.mockRestore();
+  });
+
   it('restore token access token yerine kullanılamaz', async () => {
     const restoreToken = signRestoreToken({ sub: 'u1' });
     expect(() => verifyAccessToken(restoreToken)).toThrow();
