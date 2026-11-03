@@ -1,7 +1,7 @@
 'use strict';
 
 // Panel auth testleri için bellek içi knex/ioredis taklitleri; yalnız servisin kullandığı
-// sorgu biçimlerini (where/whereNot/whereNull/whereNotNull/whereIn + orderBy/limit/select/forUpdate +
+// sorgu biçimlerini (where/whereNot/whereNull/whereNotNull/whereIn + orderBy/limit/offset/select/forUpdate +
 // first/pluck/update/insert/delete, await ile liste, hata olunca geri alınan transaction) destekler.
 
 function createFakeDb() {
@@ -15,6 +15,7 @@ function createFakeDb() {
     const preds = [];
     let sort = null;
     let max = Infinity;
+    let skip = 0;
     const matches = (row) => preds.every((p) => p(row));
     const clashes = (self, values) => (uniques[name] || [])
       .some((col) => values[col] !== undefined && rows.some((r) => r !== self && r[col] === values[col]));
@@ -30,7 +31,7 @@ function createFakeDb() {
           return 0;
         });
       }
-      return out.slice(0, max);
+      return out.slice(skip, skip + max);
     };
     const eq = (obj) => (row) => Object.entries(obj).every(([k, v]) => row[k] === v);
     const OPS = {
@@ -73,6 +74,10 @@ function createFakeDb() {
       },
       limit(n) {
         max = n;
+        return q;
+      },
+      offset(n) {
+        skip = n;
         return q;
       },
       select() {

@@ -1164,6 +1164,9 @@ edilsin mi?" diye sorar. "Devam" → `POST /auth/restore`; "Vazgeç" → hiçbir
 ### 13.1 GET /blog/posts
 - **Kullanıldığı yer:** `src/services/api/endpoints/blog.ts:16`, `src/screens/Blog/hooks/useBlog.ts:14`
 - **Auth:** Evet
+- **Query (opsiyonel):** `category` (`haber` | `teknik` | `egitim` | `tumu`), `page` (≥1), `pageSize` (1–100; verilmezse
+  tüm liste). Yanıt her durumda düz dizidir. Geçersiz değer ya da dizi biçimli `category` `400 validation_error`
+  (BUG-054, SG-18).
 - **Success Response (200):**
 ```json
 [

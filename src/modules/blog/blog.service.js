@@ -44,9 +44,10 @@ function mapPost(row) {
   };
 }
 
-async function list({ category } = {}) {
+async function list({ category, page = 1, pageSize } = {}) {
   const query = db('blog_posts').where({ is_active: true });
   if (category && category !== 'tumu') query.where({ category });
+  if (pageSize) query.limit(pageSize).offset((page - 1) * pageSize);
   const rows = await query.orderBy('published_at', 'desc');
   return rows.map(mapPost);
 }
