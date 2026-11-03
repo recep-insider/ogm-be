@@ -45,4 +45,14 @@ describe('home feed — news', () => {
     db.reset({ users: [], fire_reports: [], blog_posts: [post('teknik', 'teknik', '2026-11-02T09:00:00')] });
     expect((await getFeed(null)).news).toEqual([]);
   });
+
+  it('en fazla en yeni 5 haber döner', async () => {
+    db.reset({
+      users: [],
+      fire_reports: [],
+      blog_posts: [1, 2, 3, 4, 5, 6].map((d) => post(`haber-${d}`, 'haber', `2026-10-0${d}T09:00:00`)),
+    });
+
+    expect((await getFeed(null)).news.map((n) => n.id)).toEqual(['haber-6', 'haber-5', 'haber-4', 'haber-3', 'haber-2']);
+  });
 });
