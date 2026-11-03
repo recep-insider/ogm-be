@@ -76,6 +76,16 @@ describe('phone.service — sendOtpFlow limitleri', () => {
     expect(await redis.ttl('rl:otp:ip:1.2.3.4')).toBe(3600);
   });
 
+  test('hatalı kod denemesi saatlik sınırdan düşer; bütçe bitince yeni kod 429 (KALAN_ISLER §2.3)', async () => {
+    await svc.sendOtpFlow({ phone: PHONE, ip: '1.2.3.4' });
+    redis.store.set('otp:phone:s1', { value: JSON.stringify({ phone: PHONE, codeHash: 'x', attempts: 0 }), expiresAt: null });
+    for (let i = 0; i < 4; i += 1) {
+      // eslint-disable-next-line no-await-in-loop
+      await expect(svc.verifyOtpFlow({ sessionId: 's1', code: '000000' })).rejects.toMatchObject({ code: 'invalid_otp' });
+    }
+    await expect(svc.sendOtpFlow({ phone: PHONE, ip: '1.2.3.4' })).rejects.toMatchObject({ status: 429, code: 'rate_limited' });
+  });
+
   test('günlük SMS limiti 500e dönüşmeden 429 sms_daily_limit olarak döner, oturum açılmaz', async () => {
     env.sms.dailyLimitPerUser = 0;
 
