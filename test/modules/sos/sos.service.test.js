@@ -10,6 +10,7 @@ const mockUpdates = [];
 const mockState = {
   user: null,
   participation: undefined,
+  openSos: undefined,
   whereCalls: [],
   whereInCalls: [],
   orderByCalls: [],
@@ -26,6 +27,7 @@ jest.mock('../../../src/config/db', () => {
         return c;
       }),
       join: jest.fn(() => c),
+      forUpdate: jest.fn(() => c),
       leftJoin: jest.fn((...args) => {
         mockState.leftJoinCalls.push(args);
         return c;
@@ -49,6 +51,7 @@ jest.mock('../../../src/config/db', () => {
       first: jest.fn(async () => {
         if (table === 'users') return mockState.user;
         if (table === 'mission_participants as mp') return mockState.participation;
+        if (table === 'sos_reports') return mockState.openSos;
         return undefined;
       }),
       insert: jest.fn(async (row) => {
@@ -66,6 +69,7 @@ jest.mock('../../../src/config/db', () => {
     return c;
   };
   const db = Object.assign(jest.fn((table) => makeChain(table)), { raw: jest.fn() });
+  db.transaction = jest.fn(async (cb) => cb(db));
   return { db };
 });
 jest.mock('../../../src/config/redis', () => {
@@ -105,6 +109,7 @@ describe('sos.service.create', () => {
     mockState.user = { ...USER_ROW };
     redis.store.clear();
     mockState.participation = undefined;
+    mockState.openSos = undefined;
     mockState.whereCalls = [];
     mockState.whereInCalls = [];
     mockState.orderByCalls = [];
@@ -132,6 +137,16 @@ describe('sos.service.create', () => {
     // Geçmişteki ilk satır mobil kaynaklıdır — yanıt süresi operatör kaydından türer.
     expect(mockHistory).toHaveLength(1);
     expect(mockHistory[0]).toMatchObject({ event: 'SOS çağrısı gönderildi', by_kind: 'mobil' });
+  });
+
+  test('açık çağrısı olan gönüllü yeni çağrı açamaz; mevcut çağrı döner (BUG-023)', async () => {
+    mockState.openSos = { id: 'eski', status: 'active', created_at: new Date('2026-11-01T10:00:00Z'), dispatched_to: 'OGM Yangın Harekat Merkezi' };
+
+    const result = await service.create({ userId: 'u1', body: {}, ip: '1.2.3.4', userAgent: 'jest' });
+
+    expect(result).toMatchObject({ ok: true, sosId: 'eski', status: 'active', createdAt: '2026-11-01T10:00:00.000Z', alreadyActive: true });
+    expect(mockInserted).toHaveLength(0);
+    expect(mockHistory).toHaveLength(0);
   });
 
   test('kullanıcı bilgileri satıra snapshot\'lanır (geri arama telefonu dahil)', async () => {
