@@ -75,9 +75,11 @@ async function create({ userId, body, ip, userAgent }) {
   const coords = body.coordinates;
   const open = await db.transaction(async (trx) => {
     await trx('users').where({ id: userId }).forUpdate().first('id');
-    // Satır da kilitlenir: aynı anda operatör kapattıysa ya da gönüllü iptal ettiyse tekrar basış kapanmış
-    // çağrıya yazılmaz.
-    const active = await trx('sos_reports').where({ user_id: userId, status: 'active' }).orderBy('created_at', 'desc').forUpdate().first();
+    // Bulunan çağrı birincil anahtarıyla kilitlenip yeniden okunur: aynı anda operatör kapattıysa ya da
+    // gönüllü iptal ettiyse tekrar basış kapanmış çağrıya yazılmaz. Koşullu okuma kilitlenmez; açık çağrısı
+    // olmayan gönüllülerin eş zamanlı SOS'u boşluk kilidinde kilitlenmesin.
+    const found = await trx('sos_reports').where({ user_id: userId, status: 'active' }).orderBy('created_at', 'desc').first('id');
+    const active = found && await trx('sos_reports').where({ id: found.id, status: 'active' }).forUpdate().first();
     if (active) {
       const locationAdded = coords != null && active.lat == null;
       if (locationAdded) {
