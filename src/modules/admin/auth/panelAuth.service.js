@@ -20,6 +20,7 @@ const REFRESH_TTL_SEC = 12 * 3600;
 const LOGIN_MAX_FAILURES = 5;
 const LOGIN_WINDOW_SEC = 15 * 60;
 const LOGIN_RL_PREFIX = 'rl:panel-login:';
+const PASSWORD_RL_PREFIX = 'rl:panel-password:';
 
 let dummyHashPromise;
 // Kullanıcı yokken de bcrypt karşılaştırması yapılır; yanıt süresi e-postanın varlığını sızdırmasın.
@@ -114,9 +115,14 @@ async function revokeAllForUser(userId, { exceptHash } = {}) {
   await query.update({ revoked_at: new Date() });
 }
 
+// Bu sürümden önce verilmiş access token'lar (çıkış, şifre değişimi) reddedilir.
+function bumpTokenVersion(userId) {
+  return db('panel_users').where({ id: userId }).increment('token_version', 1);
+}
+
 function session(user, refreshToken) {
   return {
-    accessToken: signPanelAccessToken({ sub: user.id, role: user.role }),
+    accessToken: signPanelAccessToken({ sub: user.id, role: user.role, ver: user.token_version || 0 }),
     expiresIn: panelAccessTokenSeconds(),
     refreshToken,
     user: publicUser(user),
@@ -199,12 +205,16 @@ async function logout(rawToken) {
   const row = await db('panel_refresh_tokens').where({ token_hash: sha256(rawToken) }).first();
   if (!row || row.revoked_at || new Date(row.expires_at).getTime() <= Date.now()) return;
   await revokeAllForUser(row.user_id);
+  await bumpTokenVersion(row.user_id);
   await writePanelAudit({ actorId: row.user_id, targetId: row.user_id, action: 'auth.logout' });
 }
 
 async function changePassword(user, { currentPassword, newPassword }, currentRefreshToken) {
+  const rlKey = `${PASSWORD_RL_PREFIX}${user.id}`;
+  await assertLoginAllowed(rlKey);
   const ok = await bcrypt.compare(String(currentPassword), user.password_hash);
   if (!ok) throw invalidCredentials();
+  await redis.del(rlKey);
 
   const now = new Date();
   await db('panel_users').where({ id: user.id }).update({
@@ -215,6 +225,8 @@ async function changePassword(user, { currentPassword, newPassword }, currentRef
   await revokeAllForUser(user.id, {
     exceptHash: currentRefreshToken ? sha256(currentRefreshToken) : undefined,
   });
+  // Bu sekme dahil tüm access token'lar düşer; bu sekme korunan refresh çereziyle yeniler.
+  await bumpTokenVersion(user.id);
   await writePanelAudit({ actorId: user.id, targetId: user.id, action: 'auth.password_change' });
 }
 
@@ -226,7 +238,9 @@ async function findActiveUserByToken(token) {
     return null;
   }
   const user = await db('panel_users').where({ id: payload.sub }).first();
-  return isActive(user) ? user : null;
+  if (!isActive(user)) return null;
+  // `ver` taşımayan eski token'lar sürüm 0 sayılır; dağıtımda açık oturumlar düşmez.
+  return (payload.ver || 0) === (user.token_version || 0) ? user : null;
 }
 
 module.exports = {
@@ -239,6 +253,7 @@ module.exports = {
   hashPassword,
   normalizeEmail,
   revokeAllForUser,
+  bumpTokenVersion,
   writePanelAudit,
   REFRESH_TTL_SEC,
   LOGIN_MAX_FAILURES,

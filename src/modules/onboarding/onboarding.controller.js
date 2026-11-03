@@ -30,6 +30,7 @@ async function complete(req, res) {
   const result = await onboardingService.complete({
     user: req.user || null,
     registration: req.registration || null,
+    registrationToken: req.registration ? req.token : null,
     data: value,
     files: req.files,
     ip: req.ip,

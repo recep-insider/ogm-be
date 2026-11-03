@@ -57,8 +57,9 @@ function verifyRegistrationToken(token) {
 }
 
 // Panel token'ı mobil access secret'ıyla imzalanır; mobil token'dan ayrımı typ + aud ile yapılır.
-function signPanelAccessToken({ sub, role }) {
-  return jwt.sign({ sub, role, typ: PANEL_ACCESS }, env.jwt.accessSecret, {
+// `ver`, panel_users.token_version'dır; çıkış ve şifre değişimi sürümü artırıp eski token'ları düşürür.
+function signPanelAccessToken({ sub, role, ver = 0 }) {
+  return jwt.sign({ sub, role, ver, typ: PANEL_ACCESS }, env.jwt.accessSecret, {
     expiresIn: PANEL_ACCESS_EXPIRES_IN,
     issuer: 'ogm-gonullu-api',
     audience: PANEL_AUDIENCE,
@@ -87,6 +88,11 @@ function accessTokenSeconds() {
 
 function registrationTokenSeconds() {
   return resolveExpiresIn(env.jwt.registrationExpiresIn);
+}
+
+// Hesabı silinen gönüllünün access token'ları bu anahtar varken reddedilir (middlewares/auth).
+function userBlockKey(userId) {
+  return `bl:user:${userId}`;
 }
 
 function resolveExpiresIn(value) {
@@ -121,4 +127,5 @@ module.exports = {
   PANEL_ROLES,
   accessTokenSeconds,
   registrationTokenSeconds,
+  userBlockKey,
 };

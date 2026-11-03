@@ -1,7 +1,7 @@
 'use strict';
 
 const { errors } = require('../shared/errors');
-const { verifyAccessToken, verifyRegistrationToken } = require('../shared/jwt');
+const { verifyAccessToken, verifyRegistrationToken, userBlockKey } = require('../shared/jwt');
 const { redis } = require('../config/redis');
 const env = require('../config/env');
 const panelAuthService = require('../modules/admin/auth/panelAuth.service');
@@ -13,6 +13,39 @@ function extractBearer(req) {
   return token;
 }
 
+// Takılan bir Redis bağlantısında GET hiç sonuçlanmayabilir; kontrol en fazla bu kadar bekler.
+const BLOCK_CHECK_TIMEOUT_MS = 200;
+
+/**
+ * Hesabı silinen gönüllünün henüz süresi dolmamış access token'ları (users.service softDelete yazar).
+ * Redis hazır değilse, hata verirse ya da zamanında yanıt vermezse engel yok sayılır: gönüllünün SOS ve
+ * ihbar istekleri kesintide de beklemeden işlenmeli.
+ */
+async function isUserBlocked(userId) {
+  if (redis.status !== 'ready') return false;
+  let timer;
+  const timeout = new Promise((resolve) => {
+    timer = setTimeout(() => resolve(null), BLOCK_CHECK_TIMEOUT_MS);
+  });
+  try {
+    return (await Promise.race([redis.get(userBlockKey(userId)), timeout])) !== null;
+  } catch {
+    return false;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+function verifyActiveAccessToken(token) {
+  let payload;
+  try {
+    payload = verifyAccessToken(token);
+  } catch {
+    return Promise.resolve(null);
+  }
+  return isUserBlocked(payload.sub).then((blocked) => (blocked ? null : payload));
+}
+
 /**
  * Erişim token'ı zorunlu — geçersiz/eksikse 401.
  */
@@ -20,14 +53,12 @@ function requireAuth(req, _res, next) {
   const token = extractBearer(req);
   if (!token) return next(errors.unauthorized('Token gerekli'));
 
-  try {
-    const payload = verifyAccessToken(token);
+  return verifyActiveAccessToken(token).then((payload) => {
+    if (!payload) return next(errors.unauthorized('Geçersiz veya süresi dolmuş token'));
     req.user = { id: payload.sub, ...payload };
     req.token = token;
     return next();
-  } catch (err) {
-    return next(errors.unauthorized('Geçersiz veya süresi dolmuş token'));
-  }
+  });
 }
 
 /**
@@ -36,14 +67,13 @@ function requireAuth(req, _res, next) {
 function optionalAuth(req, _res, next) {
   const token = extractBearer(req);
   if (!token) return next();
-  try {
-    const payload = verifyAccessToken(token);
-    req.user = { id: payload.sub, ...payload };
-    req.token = token;
-  } catch {
-    // sessizce yoksay
-  }
-  return next();
+  return verifyActiveAccessToken(token).then((payload) => {
+    if (payload) {
+      req.user = { id: payload.sub, ...payload };
+      req.token = token;
+    }
+    return next();
+  });
 }
 
 /**
@@ -71,20 +101,18 @@ function requireAuthOrRegistration(req, _res, next) {
   if (!token) return next(errors.unauthorized('Token gerekli'));
 
   try {
-    const payload = verifyAccessToken(token);
-    req.user = { id: payload.sub, ...payload };
+    req.registration = verifyRegistrationToken(token);
     req.token = token;
     return next();
   } catch {
-    try {
-      const payload = verifyRegistrationToken(token);
-      req.registration = payload;
-      req.token = token;
-      return next();
-    } catch {
-      return next(errors.unauthorized('Geçersiz token'));
-    }
+    // kayıt token'ı değil; access token olarak denenir
   }
+  return verifyActiveAccessToken(token).then((payload) => {
+    if (!payload) return next(errors.unauthorized('Geçersiz token'));
+    req.user = { id: payload.sub, ...payload };
+    req.token = token;
+    return next();
+  });
 }
 
 /**

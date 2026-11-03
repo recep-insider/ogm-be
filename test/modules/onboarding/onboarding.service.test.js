@@ -16,6 +16,7 @@ jest.mock('../../../src/config/db', () => {
   const makeChain = (table) => {
     const c = {
       where: jest.fn(() => c),
+      whereNull: jest.fn(() => c),
       orderBy: jest.fn(() => c),
       pluck: jest.fn(async () => mockState.hobilerAllowed),
       first: jest.fn(async () => {
@@ -43,11 +44,12 @@ jest.mock('../../../src/config/db', () => {
 });
 jest.mock('../../../src/config/env', () => ({
   upload: { dir: '/tmp/uploads' },
-  jwt: { accessSecret: 's', refreshSecret: 's', accessTtl: '15m', refreshTtl: '7d' },
+  jwt: { accessSecret: 's', refreshSecret: 's', accessTtl: '15m', refreshTtl: '7d', accessExpiresIn: '15m', refreshExpiresIn: '7d' },
 }));
 jest.mock('../../../src/config/logger', () => ({ warn: jest.fn(), info: jest.fn(), error: jest.fn() }));
-// sms-provider günlük OTP sayacı için redis'i yükler; bu akış OTP göndermez.
-jest.mock('../../../src/config/redis', () => ({ redis: {} }));
+// Kayıt token'ının tek kullanım kaydı (SET NX) ve geri alınması (DEL) için.
+const mockRedis = { set: jest.fn(async () => 'OK'), del: jest.fn(async () => 1) };
+jest.mock('../../../src/config/redis', () => ({ redis: mockRedis }));
 
 const service = require('../../../src/modules/onboarding/onboarding.service');
 
@@ -145,5 +147,88 @@ describe('onboarding.service.complete — egitim bloğu', () => {
     expect(mockUpdated.users).toHaveLength(1);
     expect('giysi_bedeni' in mockUpdated.users[0]).toBe(false);
     expect('ayakkabi_numarasi' in mockUpdated.users[0]).toBe(false);
+  });
+});
+
+describe('onboarding.service.complete — telefon ve kayıt token\'ı', () => {
+  const { db } = require('../../../src/config/db');
+
+  beforeEach(() => {
+    mockInserted.users.length = 0;
+    mockInserted.applications.length = 0;
+    mockUpdated.users.length = 0;
+    mockState.forestUnit = { id: 'x' };
+    mockState.userRecord = undefined;
+    jest.clearAllMocks();
+    mockRedis.set.mockResolvedValue('OK');
+  });
+
+  const registrationCall = (telefon) => service.complete({
+    user: null,
+    registration: { sub: null, phone: '+905551112233' },
+    registrationToken: 'kayit-token',
+    data: { ...baseData(), iletisim: { ...baseData().iletisim, telefon } },
+    files: FILES,
+  });
+
+  test('SMS akışında gövdedeki farklı telefon 400 phone_mismatch; kayıt açılmaz', async () => {
+    await expect(registrationCall('+905559998877')).rejects.toMatchObject({ status: 400, code: 'phone_mismatch' });
+    expect(mockInserted.users).toHaveLength(0);
+    expect(mockRedis.set).not.toHaveBeenCalled();
+  });
+
+  test('kullanılmış kayıt token\'ı 401 registration_used; kayıt açılmaz', async () => {
+    mockRedis.set.mockResolvedValue(null);
+    await expect(registrationCall('+905551112233')).rejects.toMatchObject({ status: 401, code: 'registration_used' });
+    expect(db.transaction).not.toHaveBeenCalled();
+  });
+
+  test('token tek kullanımlık işaretlenir; kayıt yazılamazsa işaret geri alınır', async () => {
+    db.transaction.mockRejectedValueOnce(new Error('db down'));
+    await expect(registrationCall(undefined)).rejects.toThrow('db down');
+
+    const [key, value, ex, ttl, nx] = mockRedis.set.mock.calls[0];
+    expect(key).toMatch(/^used:reg:[0-9a-f]{64}$/);
+    expect([value, ex, nx]).toEqual(['1', 'EX', 'NX']);
+    expect(ttl).toBeGreaterThan(0);
+    expect(mockRedis.del).toHaveBeenCalledWith(key);
+  });
+
+  test('Redis yazılamazsa kayıt engellenmez ve uyarı loglanır', async () => {
+    const logger = require('../../../src/config/logger');
+    const runTransaction = db.transaction.getMockImplementation();
+    db.transaction.mockImplementationOnce(async (cb) => {
+      await runTransaction(cb);
+      mockState.userRecord = { id: 'new', tc_kimlik: '10000000146', phone: '+905551112233', profile_complete: 1 };
+    });
+    mockState.applicationRecord = { id: 'app2', status: 'pending', submitted_at: new Date('2026-08-04T10:00:00Z') };
+    mockRedis.set.mockRejectedValueOnce(new Error('redis down'));
+
+    const result = await registrationCall(undefined);
+
+    expect(db.transaction).toHaveBeenCalledTimes(1);
+    expect(mockInserted.users).toHaveLength(1);
+    expect(result.applicationId).toBe('app2');
+    expect(logger.warn).toHaveBeenCalledWith('Kayıt token kullanım kaydı yazılamadı', { error: 'redis down' });
+  });
+
+  test('Redis yazılamadıysa kayıt başarısız olduğunda işaret silinmeye çalışılmaz', async () => {
+    mockRedis.set.mockRejectedValueOnce(new Error('redis down'));
+    db.transaction.mockRejectedValueOnce(new Error('db down'));
+
+    await expect(registrationCall(undefined)).rejects.toThrow('db down');
+
+    expect(mockRedis.set).toHaveBeenCalledTimes(1);
+    expect(mockRedis.del).not.toHaveBeenCalled();
+  });
+
+  test('oturumlu kullanıcı onboarding ile telefonunu değiştiremez', async () => {
+    mockState.userRecord = { id: 'u1', tc_kimlik: '10000000146', phone: '+905321234567' };
+    await expect(service.complete({
+      user: { id: 'u1' },
+      data: { ...baseData(), iletisim: { ...baseData().iletisim, telefon: '+905559998877' } },
+      files: FILES,
+    })).rejects.toMatchObject({ status: 400, code: 'phone_mismatch' });
+    expect(mockUpdated.users).toHaveLength(0);
   });
 });

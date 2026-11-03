@@ -272,6 +272,7 @@ async function resetPassword(actor, id) {
     throw errors.conflict('Onaylanmamış hesabın şifresi sıfırlanamaz.', undefined, 'invalid_state');
   }
   await auth.revokeAllForUser(id);
+  await auth.bumpTokenVersion(id);
   await auth.writePanelAudit({ actorId: actor.id, targetId: id, action: 'user.reset_password' });
   return { temporaryPassword };
 }

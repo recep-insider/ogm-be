@@ -88,6 +88,13 @@ function createFakeDb() {
         hit.forEach((row) => Object.assign(row, values));
         return hit.length;
       },
+      async increment(col, by = 1) {
+        const hit = rows.filter(matches);
+        hit.forEach((row) => {
+          row[col] = (row[col] || 0) + by;
+        });
+        return hit.length;
+      },
       async insert(row) {
         [].concat(row).forEach((r) => rows.push({ ...r }));
         return [rows.length];
@@ -135,6 +142,7 @@ function createFakeRedis() {
   };
   const fake = {
     store,
+    status: 'ready',
     async get(key) {
       const entry = alive(key);
       return entry ? String(entry.value) : null;
@@ -177,6 +185,15 @@ function createFakeRedis() {
     },
     async del(key) {
       return store.delete(key) ? 1 : 0;
+    },
+    // Yalnız `set(key, value)`, `set(key, value, 'EX', sec)` ve sonuna 'NX' eklenmiş biçimleri.
+    async set(key, value, ...args) {
+      const nx = args.includes('NX');
+      if (nx && alive(key)) return null;
+      const exIdx = args.indexOf('EX');
+      const expiresAt = exIdx >= 0 ? Date.now() + Number(args[exIdx + 1]) * 1000 : null;
+      store.set(key, { value, expiresAt });
+      return 'OK';
     },
   };
   return fake;

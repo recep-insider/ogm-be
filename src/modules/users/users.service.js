@@ -4,7 +4,10 @@ const path = require('path');
 const fs = require('fs/promises');
 const { v4: uuidv4 } = require('uuid');
 const { db } = require('../../config/db');
+const { redis } = require('../../config/redis');
 const env = require('../../config/env');
+const logger = require('../../config/logger');
+const { accessTokenSeconds, userBlockKey } = require('../../shared/jwt');
 const { errors } = require('../../shared/errors');
 const { writeAudit } = require('../../shared/audit');
 const { assetUrl } = require('../../shared/asset-url');
@@ -113,7 +116,6 @@ async function getMe(userId) {
 }
 
 const PATCH_KEYS = {
-  phone: 'phone',
   eposta: 'eposta',
   adres: 'adres',
   il: 'il',
@@ -141,16 +143,17 @@ async function patchMe(userId, body, audit = {}) {
     }
   }
 
-  // Telefon/eposta benzersizlik kontrolü (kontrat 4.1 → 409 phone_taken / email_taken).
-  // NOT: PATCH ile doğrudan telefon değişimi destekleniyor; OTP doğrulamalı güvenli akış için
-  // /users/me/phone-change/init + /commit uçları korunuyor.
+  // Telefon yalnız SMS kodlu /users/me/phone-change akışıyla değişir. Mevcut mobil sürüm formdaki
+  // numarayı her kayıtta gönderdiği için aynı numara yok sayılır, farklısı reddedilir.
   if (body.phone !== undefined) {
-    const taken = await db('users')
-      .where({ phone: body.phone, is_active: true })
-      .whereNot({ id: userId })
-      .first();
-    if (taken) throw errors.conflict('Bu telefon başka bir kullanıcıda kayıtlı', undefined, 'phone_taken');
+    const current = await db('users').where({ id: userId, is_active: true }).first('phone');
+    if (!current) throw errors.notFound('Kullanıcı bulunamadı');
+    if (body.phone !== current.phone) {
+      throw errors.make(400, 'use_phone_change', 'Telefon numarası yalnız SMS doğrulamasıyla değiştirilebilir.');
+    }
   }
+
+  // E-posta benzersizlik kontrolü (kontrat 4.1 → 409 email_taken).
   if (body.eposta !== undefined) {
     const taken = await db('users')
       .where({ eposta: body.eposta, is_active: true })
@@ -178,7 +181,8 @@ async function patchMe(userId, body, audit = {}) {
   }
 
   update.updated_at = new Date();
-  await db('users').where({ id: userId }).update(update);
+  const updated = await db('users').where({ id: userId, is_active: true }).update(update);
+  if (!updated) throw errors.notFound('Kullanıcı bulunamadı');
   await writeAudit({
     userId,
     action: 'users.patch',
@@ -335,6 +339,13 @@ async function softDelete(userId, audit = {}) {
 
   // Cihaz token'larını sil (push almasın)
   await db('devices').where({ user_id: userId }).delete();
+
+  // Verilmiş access token'lar süreleri dolana kadar reddedilir (middlewares/auth isUserBlocked).
+  try {
+    await redis.set(userBlockKey(userId), '1', 'EX', accessTokenSeconds());
+  } catch (err) {
+    logger.warn('Silinen hesabın erişim engeli yazılamadı', { userId, error: err.message });
+  }
 
   await writeAudit({
     userId,

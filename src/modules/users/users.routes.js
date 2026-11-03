@@ -57,8 +57,9 @@ const phoneChangeCommitLimiter = rateLimit({
  *     tags: [Users]
  *     summary: Profil alanlarını kısmen günceller
  *     description: |
- *       Tüm alanlar opsiyonel (partial update). Telefon için OTP doğrulamalı güvenli akış
- *       (`POST /users/me/phone-change/init` + `/commit`) de mevcuttur.
+ *       Tüm alanlar opsiyonel (partial update). Telefon bu uçla değişmez: yalnız OTP doğrulamalı
+ *       `POST /users/me/phone-change/init` + `/commit` akışıyla. `phone` mevcut numarayla aynıysa yok
+ *       sayılır (eski istemciler formdaki numarayı gönderiyor), farklıysa 400 `use_phone_change`.
  *     security: [ { bearerAuth: [] } ]
  *     requestBody:
  *       required: true
@@ -67,7 +68,7 @@ const phoneChangeCommitLimiter = rateLimit({
  *           schema:
  *             type: object
  *             properties:
- *               phone: { type: string, example: '+905557654321' }
+ *               phone: { type: string, example: '+905557654321', description: 'Yalnız mevcut numara kabul edilir (yok sayılır); değişim için /users/me/phone-change' }
  *               eposta: { type: string, format: email }
  *               avatarUrl: { type: string, format: uri, nullable: true }
  *               adres: { type: string }
@@ -97,6 +98,8 @@ const phoneChangeCommitLimiter = rateLimit({
  *         content:
  *           application/json:
  *             schema: { $ref: '#/components/schemas/UserProfile' }
+ *       400: { description: 'validation_error | use_phone_change (telefon bu uçla değişmez)' }
+ *       409: { description: email_taken }
  *   delete:
  *     tags: [Users]
  *     summary: Hesabı sil (KVKK silme talebi)
