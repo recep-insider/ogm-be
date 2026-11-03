@@ -14,7 +14,7 @@ const { LATEST_DECISION_ORDER } = require('../../shared/derive');
 const { applyRegionFilter } = require('../../shared/regions');
 const { profileFields } = require('../users/users.service');
 const { foldSearch } = require('../../shared/fold-search');
-const { ANONYMIZE_AFTER_DAYS } = require('../users/anonymize.service');
+const { ANONYMIZE_AFTER_DAYS, restorableSince } = require('../users/anonymize.service');
 
 // applications.status enum'u ile aynı (migrations/20260427120200_create_applications.js).
 const APPLICATION_STATUSES = ['pending', 'approved', 'rejected', 'requires_revision'];
@@ -99,6 +99,9 @@ async function setCommissionDecision(userId, body, actor = {}) {
   let repeated = false;
   let unchanged = null;
   let phone = null;
+  // SMS hakkı kilitli işlemde alınır (sms_sent_at yazılır), gönderim commit'ten sonra yapılır:
+  // eşzamanlı ikinci istek hakkı alınmış görür ve SMS göndermez.
+  let claimedSms = false;
 
   await db.transaction(async (trx) => {
     // Silinme ve telefon kilitli satırdan okunur: kilitten önce okunan satır arada eskiyebilir.
@@ -131,9 +134,10 @@ async function setCommissionDecision(userId, body, actor = {}) {
     };
 
     if (current === body.decision) {
-      // Aynı karar tekrar: yeni kayıt yok. Başvuru aynadaysa ve SMS gittiyse yapılacak iş yoktur;
-      // yeniden başvuran gönüllünün başvurusu aynalanır, gitmemiş SMS bir kez daha denenir.
-      if ((!application || application.status === body.decision) && latest.sms_sent_at) {
+      // Aynı karar tekrar: yeni kayıt yok. Yeniden başvuran gönüllünün başvurusu aynalanır; SMS
+      // yalnız daha önce gönderilmemiş ya da denenmemişse bir kez daha denenir.
+      const mirrored = !application || application.status === body.decision;
+      if (mirrored && latest.sms_sent_at) {
         unchanged = latest;
         return;
       }
@@ -141,6 +145,10 @@ async function setCommissionDecision(userId, body, actor = {}) {
       decisionId = latest.id;
       decidedAt = new Date(latest.decided_at);
       await mirrorTo(new Date());
+      if (!latest.sms_sent_at) {
+        await trx('commission_decisions').where({ id: latest.id }).update({ sms_sent_at: new Date(), updated_at: new Date() });
+        claimedSms = true;
+      }
       return;
     }
     const expected = body.expectedDecision === 'pending' ? null : body.expectedDecision;
@@ -163,9 +171,11 @@ async function setCommissionDecision(userId, body, actor = {}) {
       decided_by: body.decidedBy || null,
       decision_no: body.decisionNo || null,
       note: body.note || null,
+      sms_sent_at: new Date(),
       created_at: decidedAt,
       updated_at: decidedAt,
     });
+    claimedSms = true;
     await mirrorTo(decidedAt);
   });
 
@@ -183,14 +193,21 @@ async function setCommissionDecision(userId, body, actor = {}) {
     };
   }
 
-  const sms = await sendTransactional(
-    phone,
-    body.decision === 'approved' ? 'commissionApproved' : 'commissionRejected',
-  );
-  if (sms.sent) {
-    await db('commission_decisions')
-      .where({ id: decisionId })
-      .update({ sms_sent_at: sms.sentAt, sms_phone: phone, updated_at: new Date() });
+  let sms = { sent: false, reason: 'already_sent' };
+  if (claimedSms) {
+    sms = await sendTransactional(
+      phone,
+      body.decision === 'approved' ? 'commissionApproved' : 'commissionRejected',
+    );
+    if (sms.sent) {
+      await db('commission_decisions')
+        .where({ id: decisionId })
+        .update({ sms_sent_at: sms.sentAt, sms_phone: phone, updated_at: new Date() });
+    } else if (sms.reason !== 'timeout') {
+      // Kesin ret: hak bırakılır, aynı kararın tekrarı yeniden dener. Zaman aşımında SMS gitmiş
+      // olabilir; hak tutulur, ikinci SMS gönderilmez.
+      await db('commission_decisions').where({ id: decisionId }).update({ sms_sent_at: null, updated_at: new Date() });
+    }
   }
 
   await writeAudit({
@@ -257,7 +274,7 @@ function mapVolunteerListItem(row, readiness) {
  * her kullanıcı EN GÜNCEL başvurusuyla eşlenir. PII gözetimi: tc_kimlik
  * listede DÖNMEZ (yalnızca getVolunteer detayında).
  *
- * `pendingDeletion` ile yalnız silinme sürecindekiler (silinmiş, henüz anonimleşmemiş) döner (K3).
+ * `pendingDeletion` ile yalnız silinme sürecindekiler (silinmiş, 30 günü dolmamış, anonimleşmemiş) döner (K3).
  *
  * @param {{status?:string, q?:string, page?:number, pageSize?:number, pendingDeletion?:boolean}} params
  */
@@ -271,7 +288,9 @@ async function listVolunteers({ status, q, page = 1, pageSize = 20, pendingDelet
       );
     })
     .where('u.is_guest', false);
-  if (pendingDeletion) base.whereNotNull('u.deleted_at').whereNull('u.anonymized_at');
+  if (pendingDeletion) {
+    base.whereNotNull('u.deleted_at').where('u.deleted_at', '>', restorableSince()).whereNull('u.anonymized_at');
+  }
   else base.whereNull('u.deleted_at');
 
   if (status) base.where('a.status', status);

@@ -160,6 +160,15 @@ describe('sendOtp — günlük SMS limiti ve log maskeleme', () => {
     expect(logger.warn).toHaveBeenCalledWith('Günlük OTP sayacı iade edilemedi', { phone: '***2233', error: 'redis kapalı' });
   });
 
+  test('işlemsel SMS zaman aşımı kesin ret değil: reason timeout', async () => {
+    const axios = require('axios');
+    Object.assign(env.sms, { provider: 'netgsm', apiKey: 'k', apiSecret: 's' });
+    axios.get.mockRejectedValueOnce(Object.assign(new Error('timeout of 10000ms exceeded'), { code: 'ECONNABORTED' }));
+
+    await expect(sms.sendTransactional('+905321112233', 'applicationReceived'))
+      .resolves.toMatchObject({ sent: false, reason: 'timeout' });
+  });
+
   test('işlemsel SMS hatası telefonu maskeli loglar', async () => {
     env.sms.provider = 'netgsm';
     env.sms.apiKey = '';

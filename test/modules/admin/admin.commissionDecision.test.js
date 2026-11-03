@@ -79,10 +79,33 @@ describe('admin.service — setCommissionDecision', () => {
 
     const result = await setCommissionDecision('u1', { decision: 'approved' });
 
-    expect(result).toMatchObject({ decisionId: 'd0', decision: 'approved' });
+    expect(result).toMatchObject({ decisionId: 'd0', decision: 'approved', smsSent: false });
     expect(result.unchanged).toBeUndefined();
     expect(db.rows('applications')[0].status).toBe('approved');
     expect(db.rows('commission_decisions')).toHaveLength(1);
+    // SMS daha önce gitti: başvuru aynalanır ama ikinci SMS gönderilmez.
+    expect(sendTransactional).not.toHaveBeenCalled();
+  });
+
+  it('aynı karar aynı anda iki kez verilirse (çift tıklama, iki görevli) tek kayıt ve tek SMS', async () => {
+    await Promise.all([
+      setCommissionDecision('u1', { decision: 'approved' }),
+      setCommissionDecision('u1', { decision: 'approved' }),
+    ]);
+
+    expect(db.rows('commission_decisions')).toHaveLength(1);
+    expect(sendTransactional).toHaveBeenCalledTimes(1);
+  });
+
+  it('SMS zaman aşımına uğrarsa hak tutulur; aynı kararın tekrarı ikinci SMS göndermez', async () => {
+    sendTransactional.mockResolvedValueOnce({ sent: false, reason: 'timeout' });
+    await setCommissionDecision('u1', { decision: 'approved' });
+
+    const retry = await setCommissionDecision('u1', { decision: 'approved' });
+
+    expect(retry).toMatchObject({ unchanged: true, smsSent: false });
+    expect(sendTransactional).toHaveBeenCalledTimes(1);
+    expect(db.rows('commission_decisions')[0].sms_sent_at).toBeInstanceOf(Date);
   });
 
   it('aynı saniyedeki eski kararlardan sonra yazılanı en güncel sayılır (created_at, id sırası)', async () => {

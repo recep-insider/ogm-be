@@ -139,6 +139,18 @@ describe('POST /auth/restore — restoreFlow', () => {
     del.mockRestore();
   });
 
+  it('aynı anda iki geri alma isteği: biri açar, öteki 401 alır ve açılan hesabı engellemez', async () => {
+    const { restoreToken } = await verify();
+    await redis.set(userBlockKey('u1'), '1', 'EX', 900);
+
+    const results = await Promise.allSettled([restoreFlow({ restoreToken }), restoreFlow({ restoreToken })]);
+
+    expect(results.filter((r) => r.status === 'fulfilled')).toHaveLength(1);
+    expect(results.find((r) => r.status === 'rejected').reason).toMatchObject({ status: 401, code: 'restore_invalid' });
+    expect(db.rows('users')[0]).toMatchObject({ is_active: true, deleted_at: null });
+    expect(await redis.get(userBlockKey('u1'))).toBeNull();
+  });
+
   it('hesap güncellemesi hata verirse kaldırılan erişim engeli geri yazılır', async () => {
     const { restoreToken } = await verify();
     await redis.set(userBlockKey('u1'), '1', 'EX', 900);

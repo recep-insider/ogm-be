@@ -239,7 +239,9 @@ async function restoreFlow({ restoreToken, ip, userAgent }) {
     throw err;
   }
   if (!restored) {
-    await reblock();
+    // Eşzamanlı ikinci istek: hesabı öteki açtıysa engel geri yazılmaz, açılan hesap kilitlenmesin.
+    const after = await db('users').where({ id: payload.sub }).first('deleted_at');
+    if (after?.deleted_at) await reblock();
     throw errors.unauthorized('Silme talebi iptal edilemedi; lütfen tekrar giriş yapın.', 'restore_invalid');
   }
 
