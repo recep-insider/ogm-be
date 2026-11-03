@@ -56,6 +56,15 @@ describe('olmayan kayıt 404 (BUG-058)', () => {
       expect((await request(app).get(url)).status).toBe(200);
     },
   );
+
+  it.each(['/admin/volunteers/u2/kkd', '/admin/volunteers/u2/readiness'])(
+    'anonimleşmiş gönüllüde %s → 404 user_not_found', async (url) => {
+      db.rows('users').push({ id: 'u2', anonymized_at: new Date('2026-01-01') });
+      const res = await request(app).get(url);
+      expect(res.status).toBe(404);
+      expect(res.body.error.code).toBe('user_not_found');
+    },
+  );
 });
 
 describe('KKD teslim gövdesi (BUG-061, BUG-105)', () => {

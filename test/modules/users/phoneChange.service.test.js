@@ -139,6 +139,22 @@ describe('phone-change — numara başkasına geçtiyse (BUG-048)', () => {
       .rejects.toMatchObject({ status: 409, code: 'conflict' });
     expect(db.rows('users')[0].phone).toBe('+905320000000');
   });
+
+  it('çakışma dışı veritabanı hatası 409 sayılmaz, olduğu gibi yükselir', async () => {
+    redis.store.set('otp:phone-change:s1', {
+      value: JSON.stringify({ userId: 'u1', newPhone: NEW_PHONE, codeHash: 'hash:123456', attempts: 0 }),
+      expiresAt: null,
+    });
+    const lockErr = Object.assign(new Error('lock'), { code: 'ER_LOCK_WAIT_TIMEOUT' });
+    Object.defineProperty(db.rows('users')[0], 'phone', {
+      get: () => '+905320000000',
+      set: () => { throw lockErr; },
+    });
+
+    await expect(service.commit({ userId: 'u1', sessionId: 's1', code: '123456', ip: '1.1.1.1', userAgent: 'jest' }))
+      .rejects.toBe(lockErr);
+    expect(writeAudit).not.toHaveBeenCalledWith(expect.objectContaining({ action: 'users.phone-change.commit' }));
+  });
 });
 
 describe('phone-change — test numarası (KALAN_ISLER §2.3)', () => {
