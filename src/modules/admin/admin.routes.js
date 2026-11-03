@@ -1002,11 +1002,13 @@ router.delete(
  *   delete:
  *     tags: [Admin]
  *     summary: Saha eğitimini KALICI sil (başvurular CASCADE silinir)
+ *     description: Yoklamasında katılan olan eğitim silinmez (katılanların uygulamalı eğitim adımı geri alınırdı); pasife alınır.
  *     security: [ { panelBearer: [] } ]
  *     parameters: [ { in: path, name: id, required: true, schema: { type: string } } ]
  *     responses:
  *       204: { description: Silindi }
  *       404: { description: training_not_found }
+ *       409: { description: training_has_attendance }
  */
 router.post(
   '/trainings/saha',

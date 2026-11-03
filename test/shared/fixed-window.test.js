@@ -59,4 +59,22 @@ describe('hitFixedWindow', () => {
 
     await expect(hitFixedWindow(redis, 'k', opts)).rejects.toBe(boom);
   });
+
+  test('failOpen: sayaç tutulamazsa (Redis hatası) istek sınırsız geçer; failOpen yoksa hata yükselir', async () => {
+    const redis = createFakeRedis();
+    redis.multi = () => {
+      const chain = { incr: () => chain, expire: () => chain, ttl: () => chain, exec: async () => { throw new Error('Connection is closed'); } };
+      return chain;
+    };
+    await expect(hitFixedWindow(redis, 'rl:sos:u1', { ...opts, failOpen: true })).resolves.toBeUndefined();
+    await expect(hitFixedWindow(redis, 'rl:sos:u1', opts)).rejects.toThrow('Connection is closed');
+  });
+
+  test('failOpen sınır aşımını (429) kaldırmaz', async () => {
+    const redis = createFakeRedis();
+    const o = { ...opts, failOpen: true };
+    await hitFixedWindow(redis, 'k', o);
+    await hitFixedWindow(redis, 'k', o);
+    await expect(hitFixedWindow(redis, 'k', o)).rejects.toMatchObject({ status: 429 });
+  });
 });

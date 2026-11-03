@@ -23,7 +23,7 @@ function logRedisError(err) {
 // 5xx'te de silinmez (hangi yöntemle gönderilirse gönderilsin): yan etki (push/SMS) kısmen gitmiş
 // olabilir; anahtar son uzatmadan kalan 40–60 sn içinde düşer.
 // res.json gövdeyi saklar; json dışı yanıtlar (send/sendStatus/end) res.end'de sonuçlanır.
-function track(res, redisKey, hash) {
+function track(res, redisKey, hash, releaseOn5xx) {
   let settled = false;
   const heartbeat = setInterval(() => {
     redis.expire(redisKey, PENDING_TTL_SEC).catch(logRedisError);
@@ -34,7 +34,12 @@ function track(res, redisKey, hash) {
     settled = true;
     clearInterval(heartbeat);
     const status = res.statusCode;
-    if (status >= 500) return;
+    // Gönüllü uçlarında (SOS, ihbar) 5xx anahtarı bırakır: tekrar deneme 409 beklemeden işlenir,
+    // kaybolan bir acil çağrı çift kayıttan kötüdür (K23).
+    if (status >= 500) {
+      if (releaseOn5xx) redis.del(redisKey).catch(logRedisError);
+      return;
+    }
     // Yalnız JSON gövdesi tekrar oynatılabilir; diğer 2xx ve 4xx anahtarı serbest bırakır.
     if (json && status >= 200 && status < 300) {
       const done = JSON.stringify({ state: 'done', hash, status, body: json.body });
@@ -66,7 +71,7 @@ function requestHash(req) {
   return crypto.createHash('sha256').update(JSON.stringify(subject)).digest('hex');
 }
 
-async function resolve(req, res, key) {
+async function resolve(req, res, key, releaseOn5xx) {
   // Panel kullanıcısı, gönüllü ya da misafir (IP) — anahtar sahibine ve rotaya bağlıdır.
   const owner = req.panelUser?.id ?? req.user?.id ?? `ip:${req.ip}`;
   const redisKey = `idem:${owner}:${req.method}:${req.baseUrl}${req.route.path}:${key}`;
@@ -74,7 +79,7 @@ async function resolve(req, res, key) {
   for (let attempt = 0; attempt < 2; attempt += 1) {
     const claimed = await redis.set(redisKey, JSON.stringify({ state: 'pending', hash }), 'EX', PENDING_TTL_SEC, 'NX');
     if (claimed) {
-      track(res, redisKey, hash);
+      track(res, redisKey, hash, releaseOn5xx);
       return null;
     }
     const raw = await redis.get(redisKey);
@@ -91,7 +96,7 @@ async function resolve(req, res, key) {
   return null;
 }
 
-function idempotent() {
+function idempotent({ releaseOn5xx = false } = {}) {
   return async (req, res, next) => {
     const header = req.get('Idempotency-Key');
     if (header === undefined) return next();
@@ -106,7 +111,7 @@ function idempotent() {
 
     let outcome = null;
     try {
-      outcome = await resolve(req, res, key);
+      outcome = await resolve(req, res, key, releaseOn5xx);
     } catch (err) {
       // K23: panel isteği korumasız işlenmez (çift olay ve çift çağrı açılmasın); gönüllünün SOS ve
       // ihbarı ise kesintide de işlenir, çift kayıt kaybolan çağrıdan iyidir.

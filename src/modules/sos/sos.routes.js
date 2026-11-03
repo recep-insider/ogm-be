@@ -54,10 +54,13 @@ const router = Router();
  *                 status: { type: string, enum: [active, responded, cancelled] }
  *                 createdAt: { type: string, format: date-time }
  *                 dispatchedTo: { type: string, example: 'OGM Yangın Harekat Merkezi' }
+ *       400: { description: 'validation_error | idempotency_key_invalid' }
  *       401: { $ref: '#/components/responses/Unauthorized' }
+ *       409: { description: 'idempotency_in_flight — aynı anahtarlı ilk istek sürüyor' }
+ *       422: { description: 'idempotency_key_reused — anahtar farklı bir gövdeyle kullanılmış' }
  *       429: { $ref: '#/components/responses/RateLimited' }
  */
-router.post('/', requireAuth, validate({ body: sosSchema }), idempotent(), asyncHandler(async (req, res) => {
+router.post('/', requireAuth, validate({ body: sosSchema }), idempotent({ releaseOn5xx: true }), asyncHandler(async (req, res) => {
   const result = await service.create({
     userId: req.user.id,
     body: req.body,

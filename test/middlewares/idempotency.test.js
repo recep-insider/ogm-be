@@ -286,7 +286,7 @@ describe('idempotent() — gönüllü, misafir ve dosyalı istek', () => {
   const os = require('os');
   const path = require('path');
 
-  function buildVolunteerApp({ user = null, file = null } = {}) {
+  function buildVolunteerApp({ user = null, file = null, options } = {}) {
     const vApp = express();
     vApp.use(express.json());
     vApp.use((req, _res, next) => {
@@ -294,7 +294,7 @@ describe('idempotent() — gönüllü, misafir ve dosyalı istek', () => {
       if (file) req.file = file();
       next();
     });
-    vApp.post('/sos', idempotent(), (req, res, next) => handler(req, res, next));
+    vApp.post('/sos', idempotent(options), (req, res, next) => handler(req, res, next));
     vApp.use(errorHandler);
     return vApp;
   }
@@ -327,6 +327,18 @@ describe('idempotent() — gönüllü, misafir ve dosyalı istek', () => {
 
     expect(res.status).toBe(200);
     expect(handler).toHaveBeenCalledTimes(1);
+  });
+
+  it('releaseOn5xx: gönüllü isteği 5xx alırsa anahtar bırakılır, aynı anahtarla tekrar deneme işlenir', async () => {
+    const vApp = buildVolunteerApp({ user: { id: 'v1' }, options: { releaseOn5xx: true } });
+    handler.mockImplementationOnce((req, res) => res.status(500).json({ error: { code: 'internal_error' } }));
+    const first = await request(vApp).post('/sos').set('Idempotency-Key', 'k-1').send({ a: 1 });
+    await flush();
+    const retry = await request(vApp).post('/sos').set('Idempotency-Key', 'k-1').send({ a: 1 });
+
+    expect(first.status).toBe(500);
+    expect(retry.status).toBe(200);
+    expect(handler).toHaveBeenCalledTimes(2);
   });
 
   it('tekrar oynatılan istekle yüklenen dosya silinir, ilk isteğinki kalır', async () => {

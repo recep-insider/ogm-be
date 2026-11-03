@@ -48,12 +48,14 @@ const router = Router();
  *                 ok: { type: boolean }
  *                 report: { $ref: '#/components/schemas/FireReportSummary' }
  *       400: { $ref: '#/components/responses/ValidationError' }
+ *       409: { description: 'idempotency_in_flight — aynı anahtarlı ilk istek sürüyor' }
+ *       422: { description: 'idempotency_key_reused — anahtar farklı bir gövdeyle kullanılmış' }
  *       413: { $ref: '#/components/responses/PayloadTooLarge' }
  *       429: { $ref: '#/components/responses/RateLimited' }
  */
 // Yangın ihbarı acil akıştır — token'sız (guest) gönderim kabul edilir; token
 // varsa ihbar kullanıcıya bağlanır (üye olmadan devam senaryosu, kontrat 9.1).
 // Anahtar multer'dan sonra kontrol edilir: gövde alanları ancak o zaman okunur.
-router.post('/', optionalAuth, fireReportUpload, idempotent(), asyncHandler(controller.create));
+router.post('/', optionalAuth, fireReportUpload, idempotent({ releaseOn5xx: true }), asyncHandler(controller.create));
 
 module.exports = router;
