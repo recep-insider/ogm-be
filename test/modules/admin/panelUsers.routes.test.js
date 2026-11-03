@@ -385,13 +385,14 @@ describe('süper admin işlemleri', () => {
 
   describe('şifre sıfırlama', () => {
     it('geçici şifre döner, ilk girişte değiştirme zorunlu, eski oturumlar kapanır', async () => {
-      await tokenFor(ADMIN.email);
+      const adminToken = await tokenFor(ADMIN.email);
       const res = await call('post', '/ad-1/reset-password');
       expect(res.status).toBe(200);
       expect(res.headers['cache-control']).toBe('no-store');
       expect(res.body.temporaryPassword).toMatch(/^[A-Za-z0-9]{20}$/);
       expect(row('ad-1')).toMatchObject({ must_change_password: true, password_hash: `hash:${res.body.temporaryPassword}` });
       expect(db.rows('panel_refresh_tokens').filter((t) => t.user_id === 'ad-1').every((t) => t.revoked_at instanceof Date)).toBe(true);
+      expect((await request(app).get('/v1/admin/auth/me').set(as(adminToken))).status).toBe(401);
 
       const login = await request(app).post('/v1/admin/auth/login').send({ email: ADMIN.email, password: res.body.temporaryPassword });
       expect(login.body.user.mustChangePassword).toBe(true);

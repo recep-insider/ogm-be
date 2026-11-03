@@ -5,6 +5,8 @@ jest.mock('../../../src/config/db', () => ({ db: require('./panel-fakes').create
 jest.mock('../../../src/config/redis', () => ({ redis: require('./panel-fakes').createFakeRedis() }));
 
 const crypto = require('crypto');
+const jwt = require('jsonwebtoken');
+const env = require('../../../src/config/env');
 const { db } = require('../../../src/config/db');
 const { redis } = require('../../../src/config/redis');
 const logger = require('../../../src/config/logger');
@@ -123,5 +125,62 @@ describe('panelAuth.service writePanelAudit', () => {
       'Panel audit yazılamadı',
       expect.objectContaining({ error: 'audit tablosu yok', action: 'auth.login' }),
     );
+  });
+});
+
+describe('panelAuth.service token sürümü', () => {
+  const login = () => service.login({ email: 'ayse@ogm.gov.tr', password: PASSWORD });
+
+  it('çıkıştan sonra önceki access token reddedilir', async () => {
+    seed();
+    const s = await login();
+    expect(await service.findActiveUserByToken(s.accessToken)).toMatchObject({ id: 'u1' });
+
+    await service.logout(s.refreshToken);
+
+    expect(await service.findActiveUserByToken(s.accessToken)).toBeNull();
+  });
+
+  it('şifre değişince eski access token reddedilir; korunan refresh ile alınan yeni token geçerli', async () => {
+    seed();
+    const s = await login();
+    const user = db.rows('panel_users')[0];
+
+    await service.changePassword({ ...user }, { currentPassword: PASSWORD, newPassword: 'yeni-sifre-456' }, s.refreshToken);
+
+    expect(await service.findActiveUserByToken(s.accessToken)).toBeNull();
+    const renewed = await service.refresh(s.refreshToken);
+    expect(jwt.decode(renewed.accessToken).ver).toBe(1);
+    expect(await service.findActiveUserByToken(renewed.accessToken)).toMatchObject({ id: 'u1' });
+  });
+
+  it('ver taşımayan eski token, sürümü değişmemiş kullanıcıda geçerli kalır', async () => {
+    seed();
+    const legacy = jwt.sign({ sub: 'u1', role: 'admin', typ: 'panel_access' }, env.jwt.accessSecret, {
+      expiresIn: '15m', issuer: 'ogm-gonullu-api', audience: 'ogm-panel',
+    });
+    expect(await service.findActiveUserByToken(legacy)).toMatchObject({ id: 'u1' });
+  });
+});
+
+describe('panelAuth.service changePassword deneme sınırı', () => {
+  it('5 yanlış mevcut şifreden sonra 429 döner; doğru şifre de bekler', async () => {
+    seed();
+    const user = { ...db.rows('panel_users')[0] };
+    const attempt = (currentPassword) => service.changePassword(user, { currentPassword, newPassword: 'yeni-sifre-456' });
+
+    for (let i = 0; i < 5; i += 1) {
+      await expect(attempt('yanlis')).rejects.toMatchObject({ code: 'invalid_credentials' });
+    }
+    await expect(attempt('yanlis')).rejects.toMatchObject({ status: 429, code: 'rate_limited' });
+    await expect(attempt(PASSWORD)).rejects.toMatchObject({ status: 429 });
+  });
+
+  it('başarılı değişim sayacı sıfırlar', async () => {
+    seed();
+    const user = { ...db.rows('panel_users')[0] };
+    await expect(service.changePassword(user, { currentPassword: 'yanlis', newPassword: 'x-yeni-sifre' })).rejects.toBeTruthy();
+    await service.changePassword(user, { currentPassword: PASSWORD, newPassword: 'yeni-sifre-456' });
+    expect(await redis.get('rl:panel-password:u1')).toBeNull();
   });
 });
