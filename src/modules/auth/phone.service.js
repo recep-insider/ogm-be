@@ -2,7 +2,10 @@
 
 const { v4: uuidv4 } = require('uuid');
 const { db } = require('../../config/db');
-const { redis } = require('../../config/redis');
+const { redis: rawRedis } = require('../../config/redis');
+const { guardedClient } = require('../../shared/redis-guard');
+
+const redis = guardedClient(rawRedis);
 const env = require('../../config/env');
 const logger = require('../../config/logger');
 const { AppError, errors } = require('../../shared/errors');
@@ -46,14 +49,14 @@ async function checkRateLimits(phone, ip) {
   const banned = await redis.get(`${BAN_PREFIX}${phone}`);
   if (banned) throw errors.rateLimit('Çok fazla başarısız deneme, lütfen sonra tekrar deneyin');
 
-  await hitFixedWindow(redis, `${RATE_PHONE_PREFIX}${phone}`, {
+  await hitFixedWindow(rawRedis, `${RATE_PHONE_PREFIX}${phone}`, {
     max: 5,
     windowSec: 3600,
     message: 'Telefon başına saatlik OTP limiti aşıldı',
   });
 
   if (ip) {
-    await hitFixedWindow(redis, `${RATE_IP_PREFIX}${ip}`, {
+    await hitFixedWindow(rawRedis, `${RATE_IP_PREFIX}${ip}`, {
       max: 50,
       windowSec: 3600,
       message: 'IP başına saatlik OTP limiti aşıldı',

@@ -184,3 +184,26 @@ describe('panelAuth.service changePassword deneme sınırı', () => {
     expect(await redis.get('rl:panel-password:u1')).toBeNull();
   });
 });
+
+describe('panelAuth.service — Redis kesintisi (BUG-024)', () => {
+  beforeEach(() => seed());
+
+  it('giriş sınırı doğrulanamıyorsa beklemeden 503 service_unavailable', async () => {
+    redis.status = 'reconnecting';
+    try {
+      await expect(service.login({ email: 'ayse@ogm.gov.tr', password: PASSWORD }, { ip: '1.2.3.4' }))
+        .rejects.toMatchObject({ status: 503, code: 'service_unavailable' });
+    } finally {
+      redis.status = 'ready';
+    }
+  });
+
+  it('doğru şifreden sonra sayaç sıfırlanamazsa giriş yine başarılı olur', async () => {
+    jest.spyOn(redis, 'del').mockRejectedValueOnce(new Error('Connection is closed.'));
+    const warn = jest.spyOn(logger, 'warn');
+
+    await expect(service.login({ email: 'ayse@ogm.gov.tr', password: PASSWORD }, { ip: '1.2.3.4' }))
+      .resolves.toMatchObject({ accessToken: expect.any(String) });
+    expect(warn).toHaveBeenCalledWith('Giriş deneme sayacı sıfırlanamadı', { error: 'Connection is closed.' });
+  });
+});

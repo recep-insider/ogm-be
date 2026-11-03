@@ -2,6 +2,7 @@
 
 const { errors } = require('./errors');
 const logger = require('../config/logger');
+const { guardRedis } = require('./redis-guard');
 
 // Sabit pencereli sayaç: önce artırılır, eşzamanlı istekler de sınırı aşamaz.
 // INCR ve EXPIRE NX tek MULTI'de çalışır; sayaç hiçbir durumda TTL'siz kalmaz (EXPIRE NX: Redis 7+).
@@ -10,9 +11,12 @@ const logger = require('../config/logger');
 async function hitFixedWindow(redis, key, { max, windowSec, message, code = 'rate_limited', failOpen = false }) {
   let results;
   try {
-    results = await redis.multi().incr(key).expire(key, windowSec, 'NX').ttl(key).exec();
-    const failed = results.find(([err]) => err);
-    if (failed) throw failed[0];
+    results = await guardRedis(redis, async () => {
+      const out = await redis.multi().incr(key).expire(key, windowSec, 'NX').ttl(key).exec();
+      const failed = out.find(([err]) => err);
+      if (failed) throw failed[0];
+      return out;
+    });
   } catch (err) {
     if (!failOpen) throw err;
     logger.warn('Hız sınırı sayacı tutulamadı; istek sınırsız işleniyor', { key: key.split(':').slice(0, 2).join(':'), error: err.message });

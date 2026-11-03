@@ -32,7 +32,7 @@ describe('emergency.service.create — hız sınırı', () => {
     expect(mockInserted).toHaveLength(5);
   });
 
-  test('Redis hatası çağırana döner, bildirim yazılmaz', async () => {
+  test('Redis hatası 503 service_unavailable olarak döner, bildirim yazılmaz', async () => {
     const down = new Error('Connection is closed.');
     jest.spyOn(redis, 'multi').mockReturnValueOnce({
       incr() { return this; },
@@ -41,7 +41,7 @@ describe('emergency.service.create — hız sınırı', () => {
       exec: async () => { throw down; },
     });
 
-    await expect(send()).rejects.toBe(down);
+    await expect(send()).rejects.toMatchObject({ status: 503, code: 'service_unavailable' });
     expect(mockInserted).toHaveLength(0);
   });
 });

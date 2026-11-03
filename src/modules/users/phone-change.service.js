@@ -1,7 +1,10 @@
 'use strict';
 
 const { v4: uuidv4 } = require('uuid');
-const { redis } = require('../../config/redis');
+const { redis: rawRedis } = require('../../config/redis');
+const { guardedClient } = require('../../shared/redis-guard');
+
+const redis = guardedClient(rawRedis);
 const { db } = require('../../config/db');
 const env = require('../../config/env');
 const { errors } = require('../../shared/errors');

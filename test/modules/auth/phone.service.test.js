@@ -193,3 +193,21 @@ describe('phone.service — resendOtpFlow hataları', () => {
     expect(JSON.parse(value)).toMatchObject({ phone: PHONE, codeHash: 'h2', attempts: 0 });
   });
 });
+
+describe('phone.service — Redis kesintisi (BUG-024)', () => {
+  it('kod isteği Redis bağlantısı düşükken beklemeden 503 service_unavailable döner, SMS gitmez', async () => {
+    jest.resetModules();
+    const { redis } = require('../../../src/config/redis');
+    const sms = require('../../../src/shared/sms-provider');
+    const sendOtp = jest.spyOn(sms, 'sendOtp');
+    const svc = require('../../../src/modules/auth/phone.service');
+    redis.status = 'reconnecting';
+    try {
+      await expect(svc.sendOtpFlow({ phone: '+905321112233', ip: '1.2.3.4' }))
+        .rejects.toMatchObject({ status: 503, code: 'service_unavailable' });
+      expect(sendOtp).not.toHaveBeenCalled();
+    } finally {
+      redis.status = 'ready';
+    }
+  });
+});
