@@ -21,7 +21,7 @@ async function requiredTheoryIds(trx = db) {
  * @returns {Promise<Map<string, object>>} userId → commission_decisions satırı
  */
 async function latestCommissionDecisions(userIds, trx = db) {
-  const rows = await trx('commission_decisions').whereIn('user_id', userIds).orderBy('decided_at', 'desc');
+  const rows = await trx('commission_decisions').whereIn('user_id', userIds).orderBy(derive.LATEST_DECISION_ORDER);
   const latest = new Map();
   for (const row of rows) if (!latest.has(row.user_id)) latest.set(row.user_id, row);
   return latest;

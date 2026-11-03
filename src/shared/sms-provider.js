@@ -155,7 +155,9 @@ async function sendTransactional(phone, templateKey) {
     return { sent: true, sentAt: new Date(), ...result };
   } catch (err) {
     logger.error('İşlemsel SMS gönderilemedi', { templateKey, phone: maskPhone(phone), error: err.message });
-    return { sent: false, reason: 'provider_error' };
+    // Zaman aşımı ya da kopan bağlantıda mesaj sağlayıcıya ulaşmış olabilir: kesin ret sayılmaz.
+    const uncertain = ['ECONNABORTED', 'ETIMEDOUT', 'ECONNRESET'].includes(err.code);
+    return { sent: false, reason: uncertain ? 'timeout' : 'provider_error' };
   }
 }
 

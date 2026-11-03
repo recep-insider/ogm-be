@@ -239,6 +239,44 @@ describe('anonymizeDue — kapsam', () => {
     fs.rmSync(outside, { recursive: true, force: true });
   });
 
+  it('silme talebi koşu sırasında iptal edildiyse (K28) hesaba ve dosyalarına dokunmaz', async () => {
+    const u1 = db.rows('users').find((u) => u.id === 'u1');
+    Object.assign(u1, { is_active: true, deleted_at: null });
+
+    await expect(service.anonymizeUser('u1', NOW)).resolves.toBe(false);
+
+    expect(row('users', 'u1')).toMatchObject({ ad: 'Ayşe', anonymized_at: null, avatar_path: 'avatars/u1.jpg' });
+    expect(exists('avatars/u1.jpg')).toBe(true);
+    expect(db.rows('devices').some((d) => d.user_id === 'u1')).toBe(true);
+    expect(row('applications', 'a1').snapshot).not.toBeNull();
+  });
+
+  it('silme talebi ön kontrolden sonra, transaction öncesi iptal edilirse hesap anonimleşmez', async () => {
+    const fsp = require('fs/promises');
+    const unlink = fsp.unlink;
+    let restored = false;
+    const spy = jest.spyOn(fsp, 'unlink').mockImplementation(async (abs) => {
+      Object.assign(db.rows('users').find((u) => u.id === 'u1'), { is_active: true, deleted_at: null });
+      restored = true;
+      return unlink(abs);
+    });
+
+    try {
+      await expect(service.anonymizeUser('u1', NOW)).resolves.toBe(false);
+    } finally {
+      spy.mockRestore();
+    }
+
+    expect(restored).toBe(true);
+    expect(row('users', 'u1')).toMatchObject({
+      ad: 'Ayşe', tc_kimlik: 'tc-u1', phone: '+90532u1', anonymized_at: null, deleted_at: null,
+    });
+    expect(row('applications', 'a1')).toMatchObject({
+      snapshot: '{"kimlik":{"tcKimlik":"tc-u1"}}', reviewer_note: 'Telefonla arandı', saglik_raporu_path: 'onboarding/u1-saglik.pdf',
+    });
+    expect(db.rows('devices').map((d) => d.id)).toEqual(['d1', 'd2']);
+  });
+
   it('ikinci koşu aynı hesabı yeniden işlemez', async () => {
     await service.anonymizeDue(NOW);
     const again = await service.anonymizeDue(NOW);
@@ -283,6 +321,8 @@ describe('runExclusive — tek koşu kilidi', () => {
 
 describe('startSchedule', () => {
   it('açılışta ve saatte bir çalışır, süreci açık tutmaz', async () => {
+    // Zamanlanan koşular test bitince de sürer; sonraki testin hesaplarına dokunmasınlar.
+    db.reset({ users: [] });
     jest.useFakeTimers({ doNotFake: ['setImmediate', 'nextTick'] });
     try {
       const timer = service.startSchedule();

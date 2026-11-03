@@ -38,6 +38,14 @@ describe('adminSetSahaApplicationStatus — ret bildirimi', () => {
     expect(sendPushToUser).not.toHaveBeenCalled();
   });
 
+  it('aynı anda gelen iki ret tek bildirim gönderir', async () => {
+    await Promise.all([
+      adminSetSahaApplicationStatus('a1', { status: 'rejected' }),
+      adminSetSahaApplicationStatus('a1', { status: 'rejected' }),
+    ]);
+    expect(sendPushToUser).toHaveBeenCalledTimes(1);
+  });
+
   it('bildirim gönderilemese de durum kaydedilir', async () => {
     sendPushToUser.mockRejectedValueOnce(new Error('fcm down'));
     await expect(adminSetSahaApplicationStatus('a1', { status: 'rejected' })).resolves.toEqual({ applicationId: 'a1', status: 'rejected' });

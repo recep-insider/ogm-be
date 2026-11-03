@@ -15,6 +15,7 @@ const { sendOtp, assertOtpDeliverable, maskPhone } = require('../../shared/sms-p
 const { writeAudit } = require('../../shared/audit');
 const { toDateOnly } = require('../../shared/dates');
 const { getApplicationStatus } = require('../users/users.service');
+const { restorableSince } = require('../users/anonymize.service');
 const {
   signAccessToken,
   signRefreshToken,
@@ -178,6 +179,7 @@ async function verifyOtpFlow({ sessionId, code, ip, userAgent }) {
   const pending = await db('users')
     .where({ phone: session.phone })
     .whereNotNull('deleted_at')
+    .where('deleted_at', '>', restorableSince())
     .whereNull('anonymized_at')
     .first();
   if (pending) {
@@ -216,7 +218,8 @@ async function restoreFlow({ restoreToken, ip, userAgent }) {
     .where({ id: payload.sub })
     .whereNotNull('deleted_at')
     .whereNull('anonymized_at')
-    .where('deleted_at', '<=', issuedAt);
+    .where('deleted_at', '<=', issuedAt)
+    .where('deleted_at', '>', restorableSince());
 
   if (!(await pending().first())) {
     throw errors.unauthorized('Silme talebi iptal edilemedi; lütfen tekrar giriş yapın.', 'restore_invalid');
@@ -229,9 +232,27 @@ async function restoreFlow({ restoreToken, ip, userAgent }) {
     throw errors.make(503, 'restore_unavailable', 'Hesap şu an açılamıyor; birkaç saniye sonra tekrar deneyin.');
   }
 
+  // Hesap açılamazsa (arada anonimleşti, DB hatası) kaldırılan erişim engeli geri yazılır:
+  // silinmiş hesabın eski access token'ları yeniden işe yaramasın.
+  const reblock = async () => {
+    try {
+      await redis.set(userBlockKey(payload.sub), '1', 'EX', accessTokenSeconds());
+    } catch (err) {
+      logger.warn('Silinen hesabın erişim engeli geri yazılamadı', { userId: payload.sub, error: err.message });
+    }
+  };
   const now = new Date();
-  const restored = await pending().update({ is_active: true, deleted_at: null, updated_at: now });
+  let restored;
+  try {
+    restored = await pending().update({ is_active: true, deleted_at: null, updated_at: now });
+  } catch (err) {
+    await reblock();
+    throw err;
+  }
   if (!restored) {
+    // Eşzamanlı ikinci istek: hesabı öteki açtıysa engel geri yazılmaz, açılan hesap kilitlenmesin.
+    const after = await db('users').where({ id: payload.sub }).first('deleted_at');
+    if (after?.deleted_at) await reblock();
     throw errors.unauthorized('Silme talebi iptal edilemedi; lütfen tekrar giriş yapın.', 'restore_invalid');
   }
 

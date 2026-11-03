@@ -20,6 +20,16 @@ const LOCK_TTL_SEC = 60 * 60;
 // Kilit yalnız sahibince bırakılır: süresi dolup başka süreç aldıysa ona dokunulmaz.
 const RELEASE_LOCK = "if redis.call('get', KEYS[1]) == ARGV[1] then return redis.call('del', KEYS[1]) end return 0";
 
+// Silmeden bu andan sonra silinen hesap hâlâ geri alınabilir (K28); öncesi anonimleştirme sırasındadır.
+function restorableSince(now = new Date()) {
+  return new Date(now.getTime() - ANONYMIZE_AFTER_DAYS * 86400 * 1000);
+}
+
+/** Silinme sürecinde ve geri alınabilir mi: silinmiş, 30 günü dolmamış, anonimleşmemiş. */
+function isPendingDeletion(row, now = new Date()) {
+  return !!row?.deleted_at && !row.anonymized_at && new Date(row.deleted_at) > restorableSince(now);
+}
+
 const USER_PII = {
   tc_kimlik: null,
   ad: null,
@@ -88,17 +98,26 @@ async function removeUpload(rel) {
   }
 }
 
-/** Tek hesabın kişisel verilerini siler/anonimleştirir. */
+/**
+ * Tek hesabın kişisel verilerini siler/anonimleştirir. Silme talebi arada iptal edildiyse (K28)
+ * hesaba dokunmaz ve false döner.
+ */
 async function anonymizeUser(userId, now = new Date()) {
+  const stillDeleted = (q) => q.where({ id: userId }).whereNotNull('deleted_at').whereNull('anonymized_at');
+  if (!(await stillDeleted(db('users')).first())) return false;
+
   // Önce dosyalar: silinemeyen dosya varsa DB'deki yolu kalır, sonraki koşu yeniden dener.
   for (const rel of await personalFiles(userId)) {
     // eslint-disable-next-line no-await-in-loop
     await removeUpload(rel);
   }
 
+  let anonymized = false;
   await db.transaction(async (trx) => {
     const byUser = (table) => trx(table).where({ user_id: userId });
-    await trx('users').where({ id: userId }).update({ ...USER_PII, anonymized_at: now, updated_at: now });
+    const updated = await stillDeleted(trx('users')).update({ ...USER_PII, anonymized_at: now, updated_at: now });
+    if (!updated) return;
+    anonymized = true;
     await byUser('applications').update({
       saglik_raporu_path: null,
       sabika_kaydi_path: null,
@@ -124,6 +143,7 @@ async function anonymizeUser(userId, now = new Date()) {
     await byUser('notification_preferences').delete();
     await byUser('notification_opens').delete();
   });
+  return anonymized;
 }
 
 /** Silinme tarihinden 30 gün geçmiş, henüz anonimleşmemiş tüm hesaplar. */
@@ -136,8 +156,7 @@ async function anonymizeDue(now = new Date()) {
   for (const id of ids) {
     try {
       // eslint-disable-next-line no-await-in-loop
-      await anonymizeUser(id, now);
-      anonymized += 1;
+      if (await anonymizeUser(id, now)) anonymized += 1;
     } catch (err) {
       failed.push(id);
       logger.error('KVKK anonimleştirme başarısız', { userId: id, error: err.message });
@@ -170,4 +189,13 @@ function startSchedule() {
   return setInterval(tick, INTERVAL_MS).unref();
 }
 
-module.exports = { anonymizeUser, anonymizeDue, runExclusive, startSchedule, ANONYMIZE_AFTER_DAYS, LOCK_KEY };
+module.exports = {
+  anonymizeUser,
+  anonymizeDue,
+  runExclusive,
+  startSchedule,
+  restorableSince,
+  isPendingDeletion,
+  ANONYMIZE_AFTER_DAYS,
+  LOCK_KEY,
+};

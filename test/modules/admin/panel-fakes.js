@@ -3,6 +3,7 @@
 // Panel auth testleri için bellek içi knex/ioredis taklitleri; yalnız servisin kullandığı
 // sorgu biçimlerini (where/whereNot/whereNull/whereNotNull/whereIn + orderBy/limit/select/forUpdate +
 // first/pluck/update/insert/delete, await ile liste, hata olunca geri alınan transaction) destekler.
+// first() de orderBy'a uyar (knex'teki gibi).
 
 function createFakeDb() {
   let tables = {};
@@ -81,6 +82,7 @@ function createFakeDb() {
         return Promise.resolve().then(list).then(resolve, reject);
       },
       async first() {
+        if (sort) return list()[0];
         const row = rows.find(matches);
         return row ? { ...row } : undefined;
       },
@@ -119,14 +121,20 @@ function createFakeDb() {
     tables = Object.fromEntries(Object.entries(seed).map(([k, v]) => [k, v.map((r) => ({ ...r }))]));
   };
   db.destroy = async () => {};
-  db.transaction = async (fn) => {
-    const snapshot = Object.fromEntries(Object.entries(tables).map(([k, v]) => [k, v.map((r) => ({ ...r }))]));
-    try {
-      return await fn(db);
-    } catch (err) {
-      tables = snapshot;
-      throw err;
-    }
+  // Transaction'lar sırayla çalışır (FOR UPDATE ile aynı satırı kilitleyen işlemler gibi).
+  let txQueue = Promise.resolve();
+  db.transaction = (fn) => {
+    const run = txQueue.then(async () => {
+      const snapshot = Object.fromEntries(Object.entries(tables).map(([k, v]) => [k, v.map((r) => ({ ...r }))]));
+      try {
+        return await fn(db);
+      } catch (err) {
+        tables = snapshot;
+        throw err;
+      }
+    });
+    txQueue = run.catch(() => {});
+    return run;
   };
   // app.js yüklenirken bazı servisler modül seviyesinde db.raw / db.fn çağırıyor.
   db.raw = (sql) => ({ sql });
