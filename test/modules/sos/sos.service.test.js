@@ -146,7 +146,33 @@ describe('sos.service.create', () => {
 
     expect(result).toMatchObject({ ok: true, sosId: 'eski', status: 'active', createdAt: '2026-11-01T10:00:00.000Z', alreadyActive: true });
     expect(mockInserted).toHaveLength(0);
-    expect(mockHistory).toHaveLength(0);
+    expect(mockUpdates).toHaveLength(0);
+    expect(mockHistory).toEqual([expect.objectContaining({ sos_id: 'eski', event: 'SOS tekrar gönderildi', by_kind: 'mobil' })]);
+    expect(writeAudit).toHaveBeenCalledWith(expect.objectContaining({ action: 'sos.repeat', entityId: 'eski' }));
+  });
+
+  test('konumsuz açık çağrıya tekrar basışta gelen konum eklenir ve il/ilçe çözülür', async () => {
+    mockState.openSos = { id: 'eski', status: 'active', lat: null, lng: null, created_at: new Date('2026-11-01T10:00:00Z') };
+    reverseGeocode.mockResolvedValue({ il: 'Muğla', ilce: 'Marmaris' });
+
+    const result = await service.create({ userId: 'u1', body: { coordinates: { lat: 36.85, lng: 28.27 } }, ip: '1.2.3.4', userAgent: 'jest' });
+    await new Promise((r) => setImmediate(r));
+
+    expect(result).toMatchObject({ sosId: 'eski', alreadyActive: true });
+    expect(mockInserted).toHaveLength(0);
+    expect(mockUpdates[0]).toMatchObject({ table: 'sos_reports', values: { lat: 36.85, lng: 28.27 } });
+    expect(mockUpdates[1]).toMatchObject({ table: 'sos_reports', values: { il: 'Muğla', ilce: 'Marmaris' } });
+    expect(mockHistory[0]).toMatchObject({ sos_id: 'eski', event: 'SOS tekrar gönderildi, konum eklendi' });
+  });
+
+  test('konumu olan açık çağrının konumu tekrar basışta değişmez', async () => {
+    mockState.openSos = { id: 'eski', status: 'active', lat: 36.8, lng: 28.2, created_at: new Date('2026-11-01T10:00:00Z') };
+
+    await service.create({ userId: 'u1', body: { coordinates: { lat: 36.85, lng: 28.27 } }, ip: '1.2.3.4', userAgent: 'jest' });
+
+    expect(mockUpdates).toHaveLength(0);
+    expect(reverseGeocode).not.toHaveBeenCalled();
+    expect(mockHistory[0]).toMatchObject({ event: 'SOS tekrar gönderildi' });
   });
 
   test('kullanıcı bilgileri satıra snapshot\'lanır (geri arama telefonu dahil)', async () => {
