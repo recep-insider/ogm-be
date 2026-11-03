@@ -14,7 +14,7 @@ const { writeAudit } = require('../../shared/audit');
 const { sendPushToUser } = require('../../shared/push-provider');
 const readinessService = require('../users/readiness.service');
 const assemblyPoints = require('./assemblyPoints.service');
-const { regionForCity, regionLabel, applyRegionFilter } = require('../../shared/regions');
+const { regionForCity, regionLabel, applyRegionFilter, canonicalCity } = require('../../shared/regions');
 const { coversTarget } = require('../../shared/geo-distance');
 const { refYear, formatRefNo } = require('../../shared/mission-ref');
 
@@ -866,6 +866,13 @@ async function adminUpdate(missionId, body, actor = {}) {
   }
   for (const [key, column] of Object.entries(CLEARABLE_FIELDS)) {
     if (body[key] !== undefined) row[column] = body[key] || null;
+  }
+  // İl listesi doğrulaması sonradan geldi: değişmeyen eski il yeniden gönderilince reddedilmez.
+  if (row.il && row.il !== mission.il) {
+    row.il = canonicalCity(row.il);
+    if (!row.il) {
+      throw errors.validation('Form alanlarında hata var', { errors: [{ field: 'il', message: 'Geçersiz il adı' }] });
+    }
   }
   if (body.coordinates !== undefined) {
     row.lat = body.coordinates.lat;

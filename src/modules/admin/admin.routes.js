@@ -23,7 +23,7 @@ const trainingsService = require('../trainings/trainings.service');
 const blogService = require('../blog/blog.service');
 const adminService = require('./admin.service');
 const dispatchService = require('../notifications/dispatch.service');
-const { REGIONS, REGION_KEYS } = require('../../shared/regions');
+const { REGIONS, REGION_KEYS, cityJoiValidator } = require('../../shared/regions');
 const equipmentService = require('../equipment/equipment.service');
 const readinessService = require('../users/readiness.service');
 const { KKD_ITEM_KEYS } = require('../../shared/kkd');
@@ -1340,7 +1340,7 @@ const missionCreateSchema = Joi.object({
   fullTitle: Joi.string().trim().max(200).optional(),
   shortLocation: Joi.string().trim().max(120).required(),
   // §11: bölge kapsamı il alanından eşleşir.
-  il: Joi.string().trim().max(60).optional(),
+  il: Joi.string().trim().max(60).custom(cityJoiValidator).messages({ 'any.invalid': 'Geçersiz il adı' }).optional(),
   ilce: Joi.string().trim().max(60).optional(),
   regionLabel: Joi.string().trim().max(120).optional(),
   locationLabel: Joi.string().trim().max(200).optional(),

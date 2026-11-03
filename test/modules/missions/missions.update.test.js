@@ -141,6 +141,29 @@ describe('adminUpdate — kısmi güncelleme', () => {
   });
 });
 
+describe('adminUpdate — il listesi (BUG-104)', () => {
+  beforeEach(reset);
+
+  it('listede olmayan il 400, güncelleme yok', async () => {
+    await expect(service.adminUpdate('m1', { il: 'Atlantis' }, {})).rejects.toMatchObject({
+      status: 400,
+      details: { errors: [{ field: 'il' }] },
+    });
+    expect(mockState.updates.missions).toBeUndefined();
+  });
+
+  it('il kanonik ada çevrilir', async () => {
+    await service.adminUpdate('m1', { il: 'mugla' }, {});
+    expect(mockState.updates.missions[0].il).toBe('Muğla');
+  });
+
+  it('kurala uymayan eski il aynen yeniden gönderilince reddedilmez (PA-42999)', async () => {
+    mockState.mission.il = 'Mugla ili';
+    await service.adminUpdate('m1', { il: 'Mugla ili', title: 'Yeni' }, {});
+    expect(mockState.updates.missions[0]).toMatchObject({ il: 'Mugla ili', title: 'Yeni' });
+  });
+});
+
 describe('adminCreate — toplanma noktası görevlisi', () => {
   beforeEach(reset);
 

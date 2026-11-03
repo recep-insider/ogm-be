@@ -79,3 +79,22 @@ describe('admin bildirim — olaysız segment (BUG-062)', () => {
     expect(res.status).toBe(200);
   });
 });
+
+describe('admin olay oluşturma — il listesi (BUG-104)', () => {
+  const mission = (il) => ({
+    title: 'Olay', shortLocation: 'Marmaris', il, coordinates: { lat: 36.85, lng: 28.27 },
+    assemblyPoint: { name: 'Okul', coordinates: { lat: 36.8, lng: 28.2 } },
+  });
+
+  it('listede olmayan il 400 il', async () => {
+    const res = await request(app).post('/admin/missions').send(mission('Atlantis'));
+    expect(res.status).toBe(400);
+    expect(res.body.error.details.errors.map((e) => e.field)).toEqual(['il']);
+    expect(missionsService.adminCreate).not.toHaveBeenCalled();
+  });
+
+  it('il kanonik adla kaydedilir', async () => {
+    await request(app).post('/admin/missions').send(mission('mugla'));
+    expect(missionsService.adminCreate).toHaveBeenCalledWith(expect.objectContaining({ il: 'Muğla' }), expect.anything());
+  });
+});
