@@ -231,13 +231,6 @@ async function restoreFlow({ restoreToken, ip, userAgent }) {
     throw errors.unauthorized('Silme talebi iptal edilemedi; lütfen tekrar giriş yapın.', 'restore_invalid');
   }
 
-  try {
-    await redis.del(userBlockKey(payload.sub));
-  } catch (err) {
-    logger.warn('Silinen hesabın erişim engeli kaldırılamadı', { userId: payload.sub, error: err.message });
-    throw errors.make(503, 'restore_unavailable', 'Hesap şu an açılamıyor; birkaç saniye sonra tekrar deneyin.');
-  }
-
   // Hesap açılamazsa (arada anonimleşti, DB hatası) kaldırılan erişim engeli geri yazılır:
   // silinmiş hesabın eski access token'ları yeniden işe yaramasın.
   const reblock = async () => {
@@ -247,6 +240,16 @@ async function restoreFlow({ restoreToken, ip, userAgent }) {
       logger.warn('Silinen hesabın erişim engeli geri yazılamadı', { userId: payload.sub, error: err.message });
     }
   };
+
+  try {
+    await redis.del(userBlockKey(payload.sub));
+  } catch (err) {
+    logger.warn('Silinen hesabın erişim engeli kaldırılamadı', { userId: payload.sub, error: err.message });
+    // Yanıtı geciken silme Redis'te sonradan uygulanabilir; hesap açılmadığı için engel geri yazılır.
+    if (err.maybeApplied) await reblock();
+    throw errors.make(503, 'restore_unavailable', 'Hesap şu an açılamıyor; birkaç saniye sonra tekrar deneyin.');
+  }
+
   const now = new Date();
   let restored;
   try {

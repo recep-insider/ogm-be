@@ -125,6 +125,24 @@ describe('POST /auth/restore — restoreFlow', () => {
     del.mockRestore();
   });
 
+  it('engel silmenin yanıtı gecikirse (sonradan uygulanabilir) engel geri yazılır, hesap açılmaz', async () => {
+    const { restoreToken } = await verify();
+    jest.useFakeTimers();
+    const del = jest.spyOn(redis, 'del').mockImplementationOnce(() => new Promise(() => {}));
+    const set = jest.spyOn(redis, 'set');
+    try {
+      const assertion = expect(restoreFlow({ restoreToken })).rejects.toMatchObject({ status: 503, code: 'restore_unavailable' });
+      await jest.advanceTimersByTimeAsync(1000);
+      await assertion;
+      expect(set).toHaveBeenCalledWith(userBlockKey('u1'), '1', 'EX', expect.any(Number));
+      expect(db.rows('users')[0]).toMatchObject({ is_active: false, deleted_at: DELETED_AT });
+    } finally {
+      del.mockRestore();
+      set.mockRestore();
+      jest.useRealTimers();
+    }
+  });
+
   it('kontrolden sonra anonimleşen hesap açılmaz, oturum verilmez', async () => {
     const { restoreToken } = await verify();
     const del = jest.spyOn(redis, 'del').mockImplementationOnce(async () => {
