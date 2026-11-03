@@ -54,6 +54,7 @@ Tüm 4xx/5xx response'ları aşağıdaki şema ile dönecek:
 - `code`: programatik tanımlayıcı (snake_case, ASCII). Frontend `code` üzerinden switch yapacak (örn. `validation_error`, `not_found`).
 - `message`: Türkçe, user-facing. Frontend toast/alert'lerde olduğu gibi gösterir (`getApiErrorMessage` — `src/services/api/client.ts:136-150`).
 - `details` (opsiyonel): validation hata listesi, ek metadata.
+- Tüm `429` yanıtları (`rate_limited`, `sms_daily_limit`) `details.retryAfterSec` taşır: tekrar denemeden önce beklenecek saniye (BUG-028).
 - `503 service_unavailable`: Redis (oturum, kod ve hız sınırı deposu) yanıt vermiyor; giriş, SMS kodu, telefon değiştirme ve panel girişi en geç ~1 sn içinde bu kodla döner, istek işlenmez, kısa süre sonra tekrar denenebilir (BUG-024).
 
 ### 0.5 Pagination

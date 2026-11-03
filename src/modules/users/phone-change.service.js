@@ -58,7 +58,8 @@ async function commit({ userId, sessionId, code, ip, userAgent }) {
   session.attempts = (session.attempts || 0) + 1;
   if (session.attempts > env.sms.otpMaxAttempts) {
     await redis.del(`${PREFIX}${sessionId}`);
-    throw errors.rateLimit('Çok fazla başarısız deneme');
+    // Oturum silinir; kişi yeni kod isteyebilir (yeniden gönderme bekleme süresi kadar sonra).
+    throw errors.rateLimit('Çok fazla başarısız deneme; yeni kod isteyin', undefined, { retryAfterSec: env.sms.resendCooldown });
   }
 
   const ok = await verifyOtp(code, session.codeHash);

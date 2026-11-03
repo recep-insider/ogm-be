@@ -2,6 +2,7 @@
 
 const { Router } = require('express');
 const rateLimit = require('express-rate-limit');
+const { rateLimitHandler } = require('../../middlewares/rate-limit');
 
 const validate = require('../../middlewares/validate');
 const asyncHandler = require('../../shared/async-handler');
@@ -15,7 +16,7 @@ const initiateLimiter = rateLimit({
   limit: 10,
   standardHeaders: 'draft-7',
   legacyHeaders: false,
-  message: { error: { code: 'rate_limited', message: 'IP başına e-Devlet başlatma limiti aşıldı' } },
+  handler: rateLimitHandler('IP başına e-Devlet başlatma limiti aşıldı'),
 });
 
 /**

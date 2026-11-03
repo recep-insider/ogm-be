@@ -30,10 +30,10 @@ async function guardRedis(redis, run, timeoutMs = TIMEOUT_MS) {
   }
 }
 
-/** get/set/del'i guardRedis üzerinden çalıştıran ince sarmalayıcı. */
+/** get/set/del/ttl'i guardRedis üzerinden çalıştıran ince sarmalayıcı. */
 function guardedClient(redis) {
   const wrap = (cmd) => (...args) => guardRedis(redis, () => redis[cmd](...args));
-  return { get: wrap('get'), set: wrap('set'), del: wrap('del') };
+  return { get: wrap('get'), set: wrap('set'), del: wrap('del'), ttl: wrap('ttl') };
 }
 
 module.exports = { guardRedis, guardedClient, TIMEOUT_MS };

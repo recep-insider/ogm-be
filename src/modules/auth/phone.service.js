@@ -47,7 +47,12 @@ function getOtpForPhone(phone) {
 
 async function checkRateLimits(phone, ip) {
   const banned = await redis.get(`${BAN_PREFIX}${phone}`);
-  if (banned) throw errors.rateLimit('Çok fazla başarısız deneme, lütfen sonra tekrar deneyin');
+  if (banned) {
+    const ttl = await redis.ttl(`${BAN_PREFIX}${phone}`);
+    throw errors.rateLimit('Çok fazla başarısız deneme, lütfen sonra tekrar deneyin', undefined, {
+      retryAfterSec: ttl > 0 ? ttl : env.sms.otpLockoutDuration,
+    });
+  }
 
   await hitFixedWindow(rawRedis, `${RATE_PHONE_PREFIX}${phone}`, {
     max: 5,
@@ -105,7 +110,8 @@ async function resendOtpFlow({ sessionId, ip }) {
   // cooldown kontrolü
   const elapsed = (Date.now() - session.createdAt) / 1000;
   if (elapsed < env.sms.resendCooldown) {
-    throw errors.rateLimit(`Lütfen ${Math.ceil(env.sms.resendCooldown - elapsed)} saniye bekleyin`);
+    const retryAfterSec = Math.ceil(env.sms.resendCooldown - elapsed);
+    throw errors.rateLimit(`Lütfen ${retryAfterSec} saniye bekleyin`, undefined, { retryAfterSec });
   }
 
   assertOtpDeliverable(session.phone);
@@ -142,7 +148,9 @@ async function verifyOtpFlow({ sessionId, code, ip, userAgent }) {
   if (session.attempts > env.sms.otpMaxAttempts) {
     await redis.del(sessionKey(sessionId));
     await redis.set(`${BAN_PREFIX}${session.phone}`, '1', 'EX', env.sms.otpLockoutDuration);
-    throw errors.rateLimit('Çok fazla başarısız deneme, hesap geçici olarak kilitlendi');
+    throw errors.rateLimit('Çok fazla başarısız deneme, hesap geçici olarak kilitlendi', undefined, {
+      retryAfterSec: env.sms.otpLockoutDuration,
+    });
   }
 
   const ok = await verifyOtp(code, session.codeHash);

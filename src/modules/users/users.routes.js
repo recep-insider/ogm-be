@@ -2,6 +2,7 @@
 
 const { Router } = require('express');
 const rateLimit = require('express-rate-limit');
+const { rateLimitHandler } = require('../../middlewares/rate-limit');
 const asyncHandler = require('../../shared/async-handler');
 const validate = require('../../middlewares/validate');
 const { requireAuth } = require('../../middlewares/auth');
@@ -27,7 +28,7 @@ const phoneChangeInitLimiter = rateLimit({
   keyGenerator: (req) => req.user.id,
   standardHeaders: 'draft-7',
   legacyHeaders: false,
-  message: { error: { code: 'rate_limited', message: 'Telefon değiştirme OTP isteği limiti aşıldı' } },
+  handler: rateLimitHandler('Telefon değiştirme OTP isteği limiti aşıldı'),
 });
 
 const phoneChangeCommitLimiter = rateLimit({
@@ -36,7 +37,7 @@ const phoneChangeCommitLimiter = rateLimit({
   keyGenerator: (req) => req.user.id,
   standardHeaders: 'draft-7',
   legacyHeaders: false,
-  message: { error: { code: 'rate_limited', message: 'OTP doğrulama limiti aşıldı' } },
+  handler: rateLimitHandler('OTP doğrulama limiti aşıldı'),
 });
 
 /**

@@ -211,3 +211,35 @@ describe('phone.service — Redis kesintisi (BUG-024)', () => {
     }
   });
 });
+
+describe('phone.service — 429 bekleme süresi (BUG-028)', () => {
+  let env;
+  let svc;
+  let redis;
+
+  beforeEach(() => {
+    jest.resetModules();
+    env = require('../../../src/config/env');
+    ({ redis } = require('../../../src/config/redis'));
+    redis.store.clear();
+    svc = require('../../../src/modules/auth/phone.service');
+  });
+
+  it('kilitli numaraya kod isteği kalan kilit süresini döner', async () => {
+    // Bu dosyada redis.set taklit (no-op); kayıt doğrudan bellek deposuna yazılır.
+    redis.store.set('ban:phone:+905321112233', { value: '1', expiresAt: Date.now() + 300 * 1000 });
+    await expect(svc.sendOtpFlow({ phone: '+905321112233', ip: '1.2.3.4' })).rejects.toMatchObject({
+      status: 429,
+      details: { retryAfterSec: expect.any(Number) },
+    });
+    const err = await svc.sendOtpFlow({ phone: '+905321112233' }).catch((e) => e);
+    expect(err.details.retryAfterSec).toBeGreaterThan(290);
+  });
+
+  it('erken tekrar gönderme kalan bekleme süresini döner', async () => {
+    env.sms.resendCooldown = 60;
+    redis.store.set('otp:phone:s1', { value: JSON.stringify({ phone: '+905321112233', createdAt: Date.now() - 20 * 1000 }), expiresAt: null });
+    const err = await svc.resendOtpFlow({ sessionId: 's1', ip: '1.2.3.4' }).catch((e) => e);
+    expect(err).toMatchObject({ status: 429, details: { retryAfterSec: 40 } });
+  });
+});
