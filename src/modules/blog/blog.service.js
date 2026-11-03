@@ -48,7 +48,8 @@ async function list({ category, page = 1, pageSize } = {}) {
   const query = db('blog_posts').where({ is_active: true });
   if (category && category !== 'tumu') query.where({ category });
   if (pageSize) query.limit(pageSize).offset((page - 1) * pageSize);
-  const rows = await query.orderBy('published_at', 'desc');
+  // published_at gün hassasiyetinde; aynı günün yazıları sayfalar arasında tekrar etmesin diye id ile sabitlenir.
+  const rows = await query.orderBy([{ column: 'published_at', order: 'desc' }, { column: 'id', order: 'desc' }]);
   return rows.map(mapPost);
 }
 

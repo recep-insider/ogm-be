@@ -42,4 +42,15 @@ describe('GET /blog/posts', () => {
     const res = await request(app).get('/blog/posts?pageSize=2&page=2');
     expect(res.body.map((p) => p.id)).toEqual(['a']);
   });
+
+  it('aynı gün yayımlanan yazılar sayfalar arasında tekrar etmez, atlanmaz (id ile sabit sıra)', async () => {
+    db.reset({ blog_posts: [post('p1', 'haber', 12), post('p3', 'haber', 12), post('p2', 'haber', 12)] });
+    const pages = [];
+    for (let page = 1; page <= 3; page += 1) {
+      // eslint-disable-next-line no-await-in-loop
+      const res = await request(app).get(`/blog/posts?pageSize=1&page=${page}`);
+      pages.push(...res.body.map((p) => p.id));
+    }
+    expect(pages).toEqual(['p3', 'p2', 'p1']);
+  });
 });
