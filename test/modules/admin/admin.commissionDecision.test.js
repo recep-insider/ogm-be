@@ -55,6 +55,53 @@ describe('admin.service — setCommissionDecision', () => {
     expect(sendTransactional).not.toHaveBeenCalled();
   });
 
+  it('ilk karar SMS\'i gitmediyse aynı kararın tekrarı yeni kayıt açmadan SMS\'i bir kez daha gönderir', async () => {
+    sendTransactional.mockResolvedValueOnce({ sent: false });
+    await setCommissionDecision('u1', { decision: 'approved' });
+
+    const retry = await setCommissionDecision('u1', { decision: 'approved', expectedDecision: 'pending' });
+
+    expect(retry).toMatchObject({ decision: 'approved', smsSent: true });
+    expect(retry.unchanged).toBeUndefined();
+    expect(sendTransactional).toHaveBeenCalledTimes(2);
+    const rows = db.rows('commission_decisions');
+    expect(rows).toHaveLength(1);
+    expect(rows[0].sms_sent_at).toBeInstanceOf(Date);
+    expect(retry.decisionId).toBe(rows[0].id);
+  });
+
+  it('yeniden başvuran gönüllüye aynı karar verilirse yeni başvuru da karara aynalanır, yeni karar kaydı açılmaz', async () => {
+    db.reset({
+      users: [USER],
+      commission_decisions: [{ id: 'd0', user_id: 'u1', decision: 'approved', decided_at: new Date('2026-10-01T10:00:00Z'), sms_sent_at: new Date('2026-10-01T10:00:00Z') }],
+      applications: [{ id: 'app2', user_id: 'u1', status: 'pending', submitted_at: new Date('2026-11-01T10:00:00Z') }],
+    });
+
+    const result = await setCommissionDecision('u1', { decision: 'approved' });
+
+    expect(result).toMatchObject({ decisionId: 'd0', decision: 'approved' });
+    expect(result.unchanged).toBeUndefined();
+    expect(db.rows('applications')[0].status).toBe('approved');
+    expect(db.rows('commission_decisions')).toHaveLength(1);
+  });
+
+  it('aynı saniyedeki eski kararlardan sonra yazılanı en güncel sayılır (created_at, id sırası)', async () => {
+    const sameSecond = new Date('2026-10-01T10:00:00Z');
+    db.reset({
+      users: [USER],
+      commission_decisions: [
+        { id: 'd1', user_id: 'u1', decision: 'approved', decided_at: sameSecond, created_at: sameSecond },
+        { id: 'd2', user_id: 'u1', decision: 'rejected', decided_at: sameSecond, created_at: new Date('2026-10-01T10:00:01Z'), sms_sent_at: sameSecond },
+      ],
+      applications: [],
+    });
+
+    const result = await setCommissionDecision('u1', { decision: 'rejected' });
+
+    expect(result).toMatchObject({ decisionId: 'd2', unchanged: true });
+    expect(db.rows('commission_decisions')).toHaveLength(2);
+  });
+
   it('expectedDecision gönderilmezse (eski panel) değişen karar yazılır', async () => {
     await setCommissionDecision('u1', { decision: 'approved' });
     await setCommissionDecision('u1', { decision: 'rejected' });

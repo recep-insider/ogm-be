@@ -3,6 +3,7 @@
 // Panel auth testleri için bellek içi knex/ioredis taklitleri; yalnız servisin kullandığı
 // sorgu biçimlerini (where/whereNot/whereNull/whereNotNull/whereIn + orderBy/limit/select/forUpdate +
 // first/pluck/update/insert/delete, await ile liste, hata olunca geri alınan transaction) destekler.
+// first() de orderBy'a uyar (knex'teki gibi).
 
 function createFakeDb() {
   let tables = {};
@@ -81,6 +82,7 @@ function createFakeDb() {
         return Promise.resolve().then(list).then(resolve, reject);
       },
       async first() {
+        if (sort) return list()[0];
         const row = rows.find(matches);
         return row ? { ...row } : undefined;
       },

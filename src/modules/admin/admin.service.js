@@ -10,6 +10,7 @@ const { v4: uuidv4 } = require('uuid');
 const { hasProtectiveEquipment, PROTECTIVE_TYPE } = require('../equipment/equipment.service');
 const { sendTransactional } = require('../../shared/sms-provider');
 const readinessService = require('../users/readiness.service');
+const { LATEST_DECISION_ORDER } = require('../../shared/derive');
 const { applyRegionFilter } = require('../../shared/regions');
 const { profileFields } = require('../users/users.service');
 const { foldSearch } = require('../../shared/fold-search');
@@ -78,7 +79,8 @@ async function setApplicationStatus(userId, { status, note }, actor = {}) {
  *
  * Panel ekranda gördüğü kararı `expectedDecision` ile gönderirse (K20) karar arada başka bir
  * görevlice değiştiyse 409 decision_conflict döner; kayıt ve SMS yoktur. Aynı karar tekrar gelirse
- * yeni kayıt ve SMS olmaz. Kararlar kullanıcı satırı kilitlenerek sırayla yazılır; aynı saniyedeki
+ * yeni kayıt olmaz; başvuru aynası güncel ve SMS gitmişse hiçbir şey yapılmaz, değilse ayna
+ * güncellenir ve SMS bir kez daha gönderilir. Kararlar kullanıcı satırı kilitlenerek sırayla yazılır; aynı saniyedeki
  * ikinci karar bir saniye sonrasına yazılır ki en güncel karar belirsiz kalmasın (BUG-021).
  *
  * @param {string} userId
@@ -90,23 +92,55 @@ async function setCommissionDecision(userId, body, actor = {}) {
     throw errors.validation('Geçersiz komisyon kararı', { decision: body.decision });
   }
 
-  const user = await db('users').where({ id: userId }).whereNull('anonymized_at').first();
-  if (!user) throw errors.notFound('Kullanıcı bulunamadı', 'user_not_found');
-  if (user.deleted_at) {
-    throw errors.conflict('Hesap silinme sürecinde; işlem yapılamaz.', undefined, 'account_pending_deletion');
-  }
-
   const id = uuidv4();
   // decided_at saniye hassasiyetinde saklanır (TIMESTAMP(0)); karşılaştırma da saniyede yapılır.
   let decidedAt = new Date(Math.floor(Date.now() / 1000) * 1000);
+  let decisionId = id;
+  let repeated = false;
   let unchanged = null;
+  let phone = null;
 
   await db.transaction(async (trx) => {
-    await trx('users').where({ id: userId }).forUpdate().first();
-    const latest = await trx('commission_decisions').where({ user_id: userId }).orderBy('decided_at', 'desc').first();
+    // Silinme ve telefon kilitli satırdan okunur: kilitten önce okunan satır arada eskiyebilir.
+    const user = await trx('users').where({ id: userId }).forUpdate().first();
+    if (!user || user.anonymized_at) throw errors.notFound('Kullanıcı bulunamadı', 'user_not_found');
+    if (user.deleted_at) {
+      throw errors.conflict('Hesap silinme sürecinde; işlem yapılamaz.', undefined, 'account_pending_deletion');
+    }
+    phone = user.phone;
+
+    const latest = await trx('commission_decisions')
+      .where({ user_id: userId })
+      .orderBy(LATEST_DECISION_ORDER)
+      .first();
     const current = latest ? latest.decision : null;
+    // applications.status komisyon kararından TÜREYEN bir ayna alandır (mobilin
+    // accessLevel'i hâlâ bunu okuyor); kararın kendisi commission_decisions'tadır.
+    const application = await trx('applications')
+      .where({ user_id: userId })
+      .orderBy('submitted_at', 'desc')
+      .first();
+    const mirrorTo = async (reviewedAt) => {
+      if (!application || application.status === body.decision) return;
+      await trx('applications').where({ id: application.id }).update({
+        status: body.decision,
+        reviewed_at: reviewedAt,
+        reviewed_by: actor.userId || null,
+        updated_at: reviewedAt,
+      });
+    };
+
     if (current === body.decision) {
-      unchanged = latest;
+      // Aynı karar tekrar: yeni kayıt yok. Başvuru aynadaysa ve SMS gittiyse yapılacak iş yoktur;
+      // yeniden başvuran gönüllünün başvurusu aynalanır, gitmemiş SMS bir kez daha denenir.
+      if ((!application || application.status === body.decision) && latest.sms_sent_at) {
+        unchanged = latest;
+        return;
+      }
+      repeated = true;
+      decisionId = latest.id;
+      decidedAt = new Date(latest.decided_at);
+      await mirrorTo(new Date());
       return;
     }
     const expected = body.expectedDecision === 'pending' ? null : body.expectedDecision;
@@ -132,21 +166,7 @@ async function setCommissionDecision(userId, body, actor = {}) {
       created_at: decidedAt,
       updated_at: decidedAt,
     });
-
-    // applications.status komisyon kararından TÜREYEN bir ayna alandır (mobilin
-    // accessLevel'i hâlâ bunu okuyor); kararın kendisi commission_decisions'tadır.
-    const application = await trx('applications')
-      .where({ user_id: userId })
-      .orderBy('submitted_at', 'desc')
-      .first();
-    if (application) {
-      await trx('applications').where({ id: application.id }).update({
-        status: body.decision,
-        reviewed_at: decidedAt,
-        reviewed_by: actor.userId || null,
-        updated_at: decidedAt,
-      });
-    }
+    await mirrorTo(decidedAt);
   });
 
   if (unchanged) {
@@ -164,28 +184,28 @@ async function setCommissionDecision(userId, body, actor = {}) {
   }
 
   const sms = await sendTransactional(
-    user.phone,
+    phone,
     body.decision === 'approved' ? 'commissionApproved' : 'commissionRejected',
   );
   if (sms.sent) {
     await db('commission_decisions')
-      .where({ id })
-      .update({ sms_sent_at: sms.sentAt, sms_phone: user.phone, updated_at: new Date() });
+      .where({ id: decisionId })
+      .update({ sms_sent_at: sms.sentAt, sms_phone: phone, updated_at: new Date() });
   }
 
   await writeAudit({
     userId: actor.userId || null,
     action: 'admin.commission.decision',
     entity: 'commission_decision',
-    entityId: id,
+    entityId: decisionId,
     ip: actor.ip,
     userAgent: actor.userAgent,
-    payload: { targetUserId: userId, decision: body.decision, smsSent: sms.sent },
+    payload: { targetUserId: userId, decision: body.decision, smsSent: sms.sent, ...(repeated ? { repeated } : {}) },
   });
 
   const readiness = await readinessService.getReadiness(userId);
   return {
-    decisionId: id,
+    decisionId,
     userId,
     decision: body.decision,
     decidedAt: decidedAt.toISOString(),
