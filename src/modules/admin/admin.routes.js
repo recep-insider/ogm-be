@@ -1190,9 +1190,13 @@ router.post(
 
 const kkdDeliverSchema = Joi.object({
   // Operatör YALNIZCA seri numarası girer; beden profilden, ömür sonu kalem tipinden türer.
-  serials: Joi.object().pattern(Joi.string().valid(...KKD_ITEM_KEYS), Joi.string().trim().max(64).allow('', null)).optional(),
+  // Bilinmeyen kalem anahtarı sessizce atılmaz, 400 döner (stripUnknown bu nesnede kapalı).
+  serials: Joi.object()
+    .pattern(Joi.string().valid(...KKD_ITEM_KEYS), Joi.string().trim().max(64).allow('', null))
+    .prefs({ stripUnknown: false })
+    .optional(),
   itemKeys: Joi.array().items(Joi.string().valid(...KKD_ITEM_KEYS)).min(1).optional(),
-  assignedAt: Joi.date().iso().optional(),
+  assignedAt: Joi.date().iso().max('now').optional(),
 });
 
 /**
@@ -1210,6 +1214,7 @@ const kkdDeliverSchema = Joi.object({
  *       - { in: path, name: userId, required: true, schema: { type: string } }
  *     responses:
  *       200: { description: '{ok, delivered[], kkdDurumu, items[]}' }
+ *       400: { description: 'validation_error — assignedAt gelecekte (BUG-061) ya da serials içinde bilinmeyen kalem anahtarı (BUG-105)' }
  *       404: { description: user_not_found }
  *       409: { description: 'commission_not_approved — en güncel komisyon kararı onay değil' }
  *   get:
@@ -1220,6 +1225,7 @@ const kkdDeliverSchema = Joi.object({
  *       - { in: path, name: userId, required: true, schema: { type: string } }
  *     responses:
  *       200: { description: 'beş kalemin zimmet/ömür/beden görünümü' }
+ *       404: { description: user_not_found }
  */
 router.post(
   '/volunteers/:userId/kkd',
@@ -1232,6 +1238,7 @@ router.post(
 router.get(
   '/volunteers/:userId/kkd',
   asyncHandler(async (req, res) => {
+    await adminService.assertVolunteer(req.params.userId);
     res.json({ items: await readinessService.kkdSet(req.params.userId) });
   }),
 );
@@ -1247,10 +1254,12 @@ router.get(
  *       - { in: path, name: userId, required: true, schema: { type: string } }
  *     responses:
  *       200: { description: '{zincir, kisiDurumu, mudahaleYetkisi, engeller, komisyon}' }
+ *       404: { description: user_not_found }
  */
 router.get(
   '/volunteers/:userId/readiness',
   asyncHandler(async (req, res) => {
+    await adminService.assertVolunteer(req.params.userId);
     res.json(await readinessService.getReadiness(req.params.userId));
   }),
 );
@@ -1514,6 +1523,7 @@ router.post(
  *       - { in: path, name: id, required: true, schema: { type: string } }
  *     responses:
  *       200: { description: 'Toplanma noktası veya null' }
+ *       404: { description: 'mission_not_found — olay yok (BUG-058)' }
  *   put:
  *     tags: [Admin]
  *     summary: Toplanma noktasını oluştur/güncelle (panel)
@@ -1531,6 +1541,7 @@ router.post(
 router.get(
   '/missions/:id/assembly-point',
   asyncHandler(async (req, res) => {
+    await adminService.assertMission(req.params.id);
     res.json(await assemblyPointsService.getByMission(req.params.id));
   }),
 );

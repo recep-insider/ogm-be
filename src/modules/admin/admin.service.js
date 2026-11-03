@@ -297,6 +297,17 @@ async function listVolunteers({ status, q, page = 1, pageSize = 20, pendingDelet
   };
 }
 
+// Türetilmiş görünümler (hazırlık, KKD, toplanma noktası) olmayan kayıtta da boş değer üretir; önce varlık denetlenir.
+async function assertVolunteer(userId) {
+  const user = await db('users').where({ id: userId }).whereNull('anonymized_at').first('id');
+  if (!user) throw errors.notFound('Kullanıcı bulunamadı', 'user_not_found');
+}
+
+async function assertMission(missionId) {
+  const mission = await db('missions').where({ id: missionId }).first('id');
+  if (!mission) throw errors.notFound('Görev bulunamadı', 'mission_not_found');
+}
+
 /** Gönüllü detayı (admin paneli) — PII burada döner: tcKimlik, adres, acil kişi, belgeler. */
 async function getVolunteer(userId, actor = {}) {
   // Silinme sürecindeki hesap (K3 listesi) da açılır; anonimleşmiş hesap artık kişi değildir.
@@ -569,6 +580,8 @@ async function reportsSeries({ metric, interval, from, to, region }) {
 }
 
 module.exports = {
+  assertVolunteer,
+  assertMission,
   setApplicationStatus,
   setCommissionDecision,
   listVolunteers,
