@@ -1833,7 +1833,7 @@ const notificationSendSchema = Joi.object({
  *     summary: Bildirim gönderim geçmişi (panel)
  *     security: [ { panelBearer: [] } ]
  *     responses:
- *       200: { description: 'items[] + total/page/pageSize (pushCount: sağlayıcının kabul ettiği kişi sayısı)' }
+ *       200: { description: 'items[] + total/page/pageSize (pushCount: sağlayıcının kabul ettiği kişi sayısı; openCount: bildirime dokunup uygulamayı açan tekil gönüllü, K5)' }
  */
 router.post(
   '/notifications',

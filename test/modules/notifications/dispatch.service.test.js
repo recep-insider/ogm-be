@@ -3,7 +3,7 @@
 // backend §4 — kanal kategoriden türer, operatör seçmez; acil sınıfı SMS + push ve
 // tercih bypass'lı, diğer her şey push.
 
-const mockState = { users: [], prefs: null, participants: [], inserts: {}, readiness: {}, mission: null };
+const mockState = { users: [], prefs: null, participants: [], inserts: {}, updates: {}, readiness: {}, mission: null, order: [] };
 
 jest.mock('../../../src/config/db', () => {
   const makeChain = (table) => {
@@ -46,8 +46,14 @@ jest.mock('../../../src/config/db', () => {
         return undefined;
       }),
       insert: jest.fn(async (row) => {
+        mockState.order.push(`insert:${table}`);
         mockState.inserts[table] = [...(mockState.inserts[table] || []), row];
         return [1];
+      }),
+      update: jest.fn(async (row) => {
+        mockState.order.push(`update:${table}`);
+        mockState.updates[table] = [...(mockState.updates[table] || []), row];
+        return 1;
       }),
       then: (resolve, reject) => Promise.resolve(isUsers ? scopedUsers() : []).then(resolve, reject),
     };
@@ -73,6 +79,8 @@ beforeEach(() => {
   mockState.users = [{ id: 'u1', phone: '+905321112233' }];
   mockState.participants = [{ id: 'u2', deleted_at: null }];
   mockState.inserts = {};
+  mockState.updates = {};
+  mockState.order = [];
   mockState.mission = { id: 'm1', title: 'Marmaris Yangını', lat: null, lng: null };
   mockState.readiness = {
     u1: { kisiDurumu: 'hazir', zincir: { komisyon: 'approved', eksikAdimlar: [] } },
@@ -182,7 +190,18 @@ describe('hedef kitle', () => {
   it('gönderim denetim izine yazılır', async () => {
     await service.send({ category: 'bilgi', title: 'Duyuru', body: 'x', audience: 'tumu' }, {});
     expect(mockState.inserts.notification_log).toHaveLength(1);
-    expect(mockState.inserts.notification_log[0]).toMatchObject({ category: 'bilgi', push_count: 1 });
+    expect(mockState.inserts.notification_log[0]).toMatchObject({ category: 'bilgi', push_count: 0 });
+    expect(mockState.updates.notification_log[0]).toMatchObject({ push_count: 1 });
+  });
+
+  it('kayıt gönderimden önce yazılır; push verisi notificationId taşır (K5)', async () => {
+    await service.send({ category: 'bilgi', title: 'Duyuru', body: 'x', audience: 'tumu' }, {});
+
+    const { id } = mockState.inserts.notification_log[0];
+    expect(sendPushToUser).toHaveBeenCalledWith('u1', expect.objectContaining({
+      data: expect.objectContaining({ notificationId: id }),
+    }));
+    expect(mockState.order).toEqual(['insert:notification_log', 'update:notification_log']);
   });
 });
 
@@ -276,7 +295,7 @@ describe('pushCount yalnız sağlayıcının kabul ettiği teslimi sayar', () =>
 
     expect(result.recipients).toBe(2);
     expect(result.pushCount).toBe(1);
-    expect(mockState.inserts.notification_log[0]).toMatchObject({ push_count: 1 });
+    expect(mockState.updates.notification_log[0]).toMatchObject({ push_count: 1 });
     // Zaman çizelgesi hedef kitleyi denetim izinden okur.
     expect(writeAudit).toHaveBeenCalledWith(expect.objectContaining({
       action: 'notifications.send',

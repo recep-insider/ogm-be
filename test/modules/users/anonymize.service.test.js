@@ -136,6 +136,7 @@ function seed() {
     devices: [{ id: 'd1', user_id: 'u1', fcm_token: 'tok' }, { id: 'd2', user_id: 'u2', fcm_token: 'tok2' }],
     refresh_tokens: [{ id: 'r1', user_id: 'u1', ip: '1.1.1.1', user_agent: 'iOS' }],
     notification_preferences: [{ user_id: 'u1', base_lat: 36.8, base_lng: 28.2 }],
+    notification_opens: [{ notification_id: 'n1', user_id: 'u1' }, { notification_id: 'n1', user_id: 'u2' }],
     mission_participants: [{ id: 'mp1', user_id: 'u1', mission_id: 'm1', status: 'tamamladi' }],
   });
 }
@@ -197,6 +198,7 @@ describe('anonymizeDue — kapsam', () => {
     expect(db.rows('devices').map((d) => d.id)).toEqual(['d2']);
     expect(db.rows('refresh_tokens')).toHaveLength(0);
     expect(db.rows('notification_preferences')).toHaveLength(0);
+    expect(db.rows('notification_opens').map((o) => o.user_id)).toEqual(['u2']);
     expect(row('mission_participants', 'mp1')).toMatchObject({ user_id: 'u1', status: 'tamamladi' });
   });
 

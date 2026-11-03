@@ -122,6 +122,7 @@ async function anonymizeUser(userId, now = new Date()) {
     await byUser('devices').delete();
     await byUser('refresh_tokens').delete();
     await byUser('notification_preferences').delete();
+    await byUser('notification_opens').delete();
   });
 }
 

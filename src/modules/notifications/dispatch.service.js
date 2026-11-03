@@ -144,6 +144,25 @@ async function send(input, actor = {}) {
   }
   if (region) targetDoc.region = region;
 
+  // Kayıt gönderimden ÖNCE yazılır: push verisindeki notificationId'yi mobil açılışta geri
+  // bildirir (K5) ve gönderim yarıda kalsa da denetim izi kalır. Sayılar sonra güncellenir.
+  const id = uuidv4();
+  const sentAt = new Date();
+  await db('notification_log').insert({
+    id,
+    category: input.category,
+    title: input.title,
+    body: input.body,
+    mission_id: input.missionId || null,
+    target: JSON.stringify(targetDoc),
+    push_count: 0,
+    sms_count: 0,
+    sent_by: actor.name || 'Operatör',
+    sent_at: sentAt,
+    created_at: sentAt,
+    updated_at: sentAt,
+  });
+
   let pushCount = 0;
   let smsCount = 0;
   for (const userId of targets) {
@@ -152,7 +171,7 @@ async function send(input, actor = {}) {
       topic: channel.topic,
       title: input.title,
       body: input.body,
-      data: { type: 'operator_notification', category: input.category, missionId: input.missionId },
+      data: { type: 'operator_notification', category: input.category, missionId: input.missionId, notificationId: id },
     });
     // Yalnız sağlayıcının kabul ettiği teslim sayılır: cihazsız, tercihle atlanan,
     // hatalı ve mock gönderim "gönderildi" değildir.
@@ -173,22 +192,9 @@ async function send(input, actor = {}) {
     }
   }
 
-  const id = uuidv4();
-  const sentAt = new Date();
-  await db('notification_log').insert({
-    id,
-    category: input.category,
-    title: input.title,
-    body: input.body,
-    mission_id: input.missionId || null,
-    target: JSON.stringify(targetDoc),
-    push_count: pushCount,
-    sms_count: smsCount,
-    sent_by: actor.name || 'Operatör',
-    sent_at: sentAt,
-    created_at: sentAt,
-    updated_at: sentAt,
-  });
+  await db('notification_log')
+    .where({ id })
+    .update({ push_count: pushCount, sms_count: smsCount, updated_at: new Date() });
 
   await writeAudit({
     userId: actor.userId || null,
@@ -218,6 +224,10 @@ async function history({ page = 1, pageSize = 20 } = {}) {
   const [{ total }] = await base.clone().count({ total: 'id' });
   const rows = await base
     .clone()
+    .select(
+      'notification_log.*',
+      db.raw('(select count(*) from notification_opens o where o.notification_id = notification_log.id) as open_count'),
+    )
     .orderBy([
       { column: 'sent_at', order: 'desc' },
       { column: 'id', order: 'desc' },
@@ -236,6 +246,8 @@ async function history({ page = 1, pageSize = 20 } = {}) {
       target: typeof r.target === 'string' ? JSON.parse(r.target) : r.target,
       pushCount: r.push_count,
       smsCount: r.sms_count,
+      // K5: bildirime dokunup uygulamayı açan tekil gönüllü sayısı.
+      openCount: Number(r.open_count || 0),
       sentBy: r.sent_by,
       sentAt: toIso(r.sent_at),
     })),

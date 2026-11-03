@@ -1137,6 +1137,16 @@ edilsin mi?" diye sorar. "Devam" → `POST /auth/restore`; "Vazgeç" → hiçbir
 
 ---
 
+### 12.3 POST /notifications/{id}/opened
+- **Ne zaman:** gönüllü panelden gönderilen bir bildirime dokunup uygulamayı açtığında (soğuk açılış dahil), K5.
+- **Auth:** Evet
+- **`id`:** push verisindeki `notificationId` (`type: "operator_notification"` bildirimlerinde gelir).
+- **Success Response (204):** Body yok. Aynı kişinin tekrar açması sayılmaz, hata da vermez.
+- **Error cases:** `400 validation_error` (uuid değil), `404 notification_not_found`
+- **Notlar:** Panel bildirim listesindeki okunma sayısı (`openCount`) bu kayıtlardan gelir.
+
+---
+
 ## 13. Blog
 
 2 endpoint.
