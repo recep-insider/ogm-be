@@ -8,8 +8,8 @@
 // BAĞIMSIZ kurulacak — teşkilat sınırları mülki sınırlarla örtüşmüyor.
 //
 // Kapsam olay, ihbar, gönüllü (ikamet ili) ve SOS (basıldığı yer) kayıtlarını il
-// alanından süzer; ili bilinmeyen kayıt yalnız "all"da görünür. Bildirim hedef
-// kitlesi bölgeyle daraltılmaz.
+// alanından süzer; ili bilinmeyen kayıt yalnız "all"da görünür. Elle gönderilen
+// bildirim, bölge seçildiyse yalnız o bölgedeki gönüllülere gider (K8).
 
 const REGIONS = [
   {

@@ -1788,6 +1788,8 @@ const notificationSendSchema = Joi.object({
     .optional(),
   // Genel gönderim: Hazır / Eğitim Bekleyenler / Tüm Gönüllüler.
   audience: Joi.string().valid('hazir', 'egitim_bekleyen', 'tumu').optional(),
+  // K8: bildirim yalnız seçili bölgeye gider; yoksa ya da `all` ise Tüm Bölgeler.
+  region: Joi.string().valid(...REGION_KEYS, 'all').optional(),
 })
   .oxor('missionId', 'audience')
   // Yarıçap/mesafe alanı bilinçli olarak YOK: admin mesafe girmez (§4).
@@ -1801,10 +1803,14 @@ const notificationSendSchema = Joi.object({
  *     summary: Bildirim gönder (panel)
  *     description: >-
  *       Kanal KATEGORİDEN TÜRER, operatör seçmez: SMS yalnızca `acil` sınıfına gider,
- *       diğer her şey push. `acil` kapatılamaz ve gönüllünün bildirim tercihini bypass
+ *       diğer her şey push. `acil` kapatılamaz ve gönüllünün konu tercihini bypass
  *       eder. Yarıçap admin'de girilmez. Olay bazlı gönderimde segment seçimi Hazır,
  *       Çağrıldı, Yolda, Sahada; genel gönderimde Hazır, Eğitim Bekleyenler, Tüm
- *       Gönüllüler. Gönderim denetim izine yazılır. `recipients` hedef kitledeki kişi
+ *       Gönüllüler. Olaya bağlı gönderimde (Acil dahil) Hazır gönüllüler yalnız mesafe
+ *       tercihi olayı kapsıyorsa alır; olaya katılmış olanlar (Çağrıldı, Yolda, Sahada)
+ *       mesafeden bağımsız alır (K6). `region` verilirse Hazır ve genel kitle yalnız o
+ *       bölgedeki gönüllülerdir; verilmezse ya da `all` ise Tüm Bölgeler (K8).
+ *       Gönderim denetim izine yazılır. `recipients` hedef kitledeki kişi
  *       sayısıdır; `pushCount` push'u sağlayıcının KABUL ETTİĞİ kişi sayısıdır (cihazı
  *       olmayan, tercihini kapatan ve hata alan sayılmaz; mock sağlayıcıda 0).
  *     security: [ { panelBearer: [] } ]
