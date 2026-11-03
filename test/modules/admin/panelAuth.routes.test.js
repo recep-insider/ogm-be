@@ -22,6 +22,10 @@ const { signAccessToken, signPanelAccessToken } = require('../../../src/shared/j
 const adminService = require('../../../src/modules/admin/admin.service');
 const missionsService = require('../../../src/modules/missions/missions.service');
 const app = require('../../../src/app');
+// Tek sunucu: supertest'in istek başına açıp kapattığı geçici sunucu node 26'da ara sıra ECONNRESET
+// veriyordu (BUG-096).
+const server = app.listen(0);
+afterAll(() => new Promise((done) => server.close(done)));
 
 const PASSWORD = 'dogru-sifre-123';
 
@@ -60,11 +64,11 @@ function cookieValue(setCookie) {
 }
 
 function login(body = { email: 'ayse@ogm.gov.tr', password: PASSWORD }) {
-  return request(app).post('/v1/admin/auth/login').send(body);
+  return request(server).post('/v1/admin/auth/login').send(body);
 }
 
 function adminPing(headers = {}) {
-  return request(app).get('/v1/admin/regions').set(headers);
+  return request(server).get('/v1/admin/regions').set(headers);
 }
 
 let originalNodeEnv;
@@ -221,7 +225,7 @@ describe('POST /v1/admin/auth/refresh', () => {
   }
 
   const refresh = (token) => {
-    const req = request(app).post('/v1/admin/auth/refresh');
+    const req = request(server).post('/v1/admin/auth/refresh');
     return token ? req.set('Cookie', `diger=1; ogm_panel_rt=${encodeURIComponent(token)}`) : req;
   };
 
@@ -254,7 +258,7 @@ describe('POST /v1/admin/auth/refresh', () => {
   });
 
   it('çözülemeyen çerez değeri 500 değil 401 refresh_invalid döner', async () => {
-    const res = await request(app).post('/v1/admin/auth/refresh').set('Cookie', 'ogm_panel_rt=%E0%A4%A');
+    const res = await request(server).post('/v1/admin/auth/refresh').set('Cookie', 'ogm_panel_rt=%E0%A4%A');
 
     expect(res.status).toBe(401);
     expect(res.body.error.code).toBe('refresh_invalid');
@@ -294,7 +298,7 @@ describe('POST /v1/admin/auth/refresh', () => {
   it('şifre değişimiyle kapanan token 401 refresh_invalid döner, korunan oturumu düşürmez', async () => {
     const first = await loggedInCookie();
     const kept = await login();
-    const changed = await request(app)
+    const changed = await request(server)
       .put('/v1/admin/auth/password')
       .set('Authorization', `Bearer ${kept.body.accessToken}`)
       .set('Cookie', `ogm_panel_rt=${cookieValue(refreshCookie(kept))}`)
@@ -310,7 +314,7 @@ describe('POST /v1/admin/auth/refresh', () => {
 
   it('çıkışla kapanan token 401 refresh_invalid döner', async () => {
     const token = await loggedInCookie();
-    await request(app).post('/v1/admin/auth/logout').set('Cookie', `ogm_panel_rt=${token}`);
+    await request(server).post('/v1/admin/auth/logout').set('Cookie', `ogm_panel_rt=${token}`);
 
     expect((await refresh(token)).body.error.code).toBe('refresh_invalid');
   });
@@ -331,7 +335,7 @@ describe('POST /v1/admin/auth/logout', () => {
     const token = cookieValue(refreshCookie(await login()));
     const other = cookieValue(refreshCookie(await login()));
 
-    const res = await request(app).post('/v1/admin/auth/logout').set('Cookie', `ogm_panel_rt=${token}`);
+    const res = await request(server).post('/v1/admin/auth/logout').set('Cookie', `ogm_panel_rt=${token}`);
     expect(res.status).toBe(204);
     expect(refreshCookie(res)).toMatch(/Path=\/v1\/admin\/auth/);
     const [loggedOut, otherSession] = db.rows('panel_refresh_tokens');
@@ -340,15 +344,15 @@ describe('POST /v1/admin/auth/logout', () => {
     expect(otherSession.token_hash).toBe(sha256(other));
     expect(otherSession.revoked_at).toBeInstanceOf(Date);
 
-    expect((await request(app).post('/v1/admin/auth/logout').set('Cookie', `ogm_panel_rt=${token}`)).status).toBe(204);
-    expect((await request(app).post('/v1/admin/auth/logout')).status).toBe(204);
+    expect((await request(server).post('/v1/admin/auth/logout').set('Cookie', `ogm_panel_rt=${token}`)).status).toBe(204);
+    expect((await request(server).post('/v1/admin/auth/logout')).status).toBe(204);
   });
 });
 
 describe('GET /v1/admin/auth/me', () => {
   it('panel kullanıcısının profilini döner', async () => {
     const { accessToken } = (await login()).body;
-    const res = await request(app).get('/v1/admin/auth/me').set('Authorization', `Bearer ${accessToken}`);
+    const res = await request(server).get('/v1/admin/auth/me').set('Authorization', `Bearer ${accessToken}`);
 
     expect(res.status).toBe(200);
     expect(res.body).toEqual({
@@ -365,9 +369,9 @@ describe('GET /v1/admin/auth/me', () => {
   });
 
   it('token yoksa ya da mobil token ise 401', async () => {
-    expect((await request(app).get('/v1/admin/auth/me')).status).toBe(401);
+    expect((await request(server).get('/v1/admin/auth/me')).status).toBe(401);
     const mobile = signAccessToken({ sub: 'u-active', role: 'admin' });
-    expect((await request(app).get('/v1/admin/auth/me').set('Authorization', `Bearer ${mobile}`)).status).toBe(401);
+    expect((await request(server).get('/v1/admin/auth/me').set('Authorization', `Bearer ${mobile}`)).status).toBe(401);
   });
 });
 
@@ -378,7 +382,7 @@ describe('PUT /v1/admin/auth/password', () => {
   }
 
   const change = ({ accessToken, cookie }, body) =>
-    request(app)
+    request(server)
       .put('/v1/admin/auth/password')
       .set('Authorization', `Bearer ${accessToken}`)
       .set('Cookie', `ogm_panel_rt=${cookie}`)
@@ -405,7 +409,7 @@ describe('PUT /v1/admin/auth/password', () => {
     const first = await session();
     await session();
 
-    const res = await request(app)
+    const res = await request(server)
       .put('/v1/admin/auth/password')
       .set('Authorization', `Bearer ${first.accessToken}`)
       .send({ currentPassword: PASSWORD, newPassword: 'yeni-sifre-456' });
@@ -467,7 +471,7 @@ describe('requireAdmin — panel token', () => {
     const res = await adminPing({ Authorization: `Bearer ${accessToken}` });
     expect(res.status).toBe(403);
     expect(res.body.error.code).toBe('password_change_required');
-    expect((await request(app).get('/v1/admin/auth/me').set('Authorization', `Bearer ${accessToken}`)).status).toBe(200);
+    expect((await request(server).get('/v1/admin/auth/me').set('Authorization', `Bearer ${accessToken}`)).status).toBe(200);
   });
 
   it('role claim\'li mobil access token\'ı reddeder', async () => {
@@ -489,14 +493,14 @@ describe('requireAdmin — panel token', () => {
   it('requireOfficer (QR okutma) aktif panel token\'ını kabul eder, mobil token\'ı reddeder', async () => {
     const { accessToken } = (await login()).body;
     const scan = (token) =>
-      request(app).post('/v1/missions/active/m1/scan').set('Authorization', `Bearer ${token}`).send({});
+      request(server).post('/v1/missions/active/m1/scan').set('Authorization', `Bearer ${token}`).send({});
 
     expect((await scan(accessToken)).status).toBe(400);
     expect((await scan(signAccessToken({ sub: 'u-active', role: 'officer' }))).status).toBe(401);
   });
 
   it('requireOfficer saha amiri anahtarını kabul eder, başka anahtarı reddeder', async () => {
-    const scan = (key) => request(app).post('/v1/missions/active/m1/scan').set('x-api-key', key).send({});
+    const scan = (key) => request(server).post('/v1/missions/active/m1/scan').set('x-api-key', key).send({});
     expect((await scan('test-officer-key')).status).toBe(400);
     expect((await scan('eski-admin-anahtari')).status).toBe(403);
   });
@@ -504,14 +508,14 @@ describe('requireAdmin — panel token', () => {
   it('requireOfficer anahtar tanımsızken boş ya da eksik x-api-key\'i reddeder', async () => {
     env.admin.officerApiKey = '';
     const url = '/v1/missions/active/m1/scan';
-    expect((await request(app).post(url).set('x-api-key', '').send({})).status).toBe(403);
-    expect((await request(app).post(url).send({})).status).toBe(403);
+    expect((await request(server).post(url).set('x-api-key', '').send({})).status).toBe(403);
+    expect((await request(server).post(url).send({})).status).toBe(403);
   });
 
   it('yetki rolü token\'dan değil veritabanından okunur', async () => {
     const token = signPanelAccessToken({ sub: 'u-active', role: 'super_admin' });
     db.rows('panel_users')[0].role = 'admin';
-    const res = await request(app).get('/v1/admin/auth/me').set('Authorization', `Bearer ${token}`);
+    const res = await request(server).get('/v1/admin/auth/me').set('Authorization', `Bearer ${token}`);
     expect(res.body.role).toBe('admin');
   });
 });
@@ -523,7 +527,7 @@ describe('admin işlem bağlamı (actorFrom)', () => {
     const spy = jest.spyOn(adminService, 'getVolunteer').mockResolvedValue({ user: null, application: null });
     const { accessToken } = (await login()).body;
 
-    const res = await request(app)
+    const res = await request(server)
       .get('/v1/admin/volunteers/v1')
       .set('Authorization', `Bearer ${accessToken}`)
       .set('x-operator-name', 'Baska');
@@ -536,7 +540,7 @@ describe('admin işlem bağlamı (actorFrom)', () => {
     const spy = jest.spyOn(missionsService, 'scan').mockResolvedValue({ ok: true });
     const { accessToken } = (await login()).body;
 
-    const res = await request(app)
+    const res = await request(server)
       .post('/v1/missions/active/m1/scan')
       .set('Authorization', `Bearer ${accessToken}`)
       .send({ userId: 'v1' });
