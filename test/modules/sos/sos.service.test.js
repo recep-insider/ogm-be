@@ -14,6 +14,7 @@ const mockState = {
   whereCalls: [],
   whereInCalls: [],
   orderByCalls: [],
+  forUpdateTables: [],
   leftJoinCalls: [],
   selectCalls: [],
   adminRows: [],
@@ -27,7 +28,10 @@ jest.mock('../../../src/config/db', () => {
         return c;
       }),
       join: jest.fn(() => c),
-      forUpdate: jest.fn(() => c),
+      forUpdate: jest.fn(() => {
+        mockState.forUpdateTables.push(table);
+        return c;
+      }),
       leftJoin: jest.fn((...args) => {
         mockState.leftJoinCalls.push(args);
         return c;
@@ -113,6 +117,7 @@ describe('sos.service.create', () => {
     mockState.whereCalls = [];
     mockState.whereInCalls = [];
     mockState.orderByCalls = [];
+    mockState.forUpdateTables = [];
     jest.clearAllMocks();
     reverseGeocode.mockResolvedValue({ il: null, ilce: null });
   });
@@ -149,6 +154,8 @@ describe('sos.service.create', () => {
     expect(mockUpdates).toHaveLength(0);
     expect(mockHistory).toEqual([expect.objectContaining({ sos_id: 'eski', event: 'SOS tekrar gönderildi', by_kind: 'mobil' })]);
     expect(writeAudit).toHaveBeenCalledWith(expect.objectContaining({ action: 'sos.repeat', entityId: 'eski' }));
+    // Açık çağrı kilitlenerek okunur; aynı anda kapatılan çağrıya tekrar basış yazılmaz.
+    expect(mockState.forUpdateTables).toEqual(['users', 'sos_reports']);
   });
 
   test('konumsuz açık çağrıya tekrar basışta gelen konum eklenir ve il/ilçe çözülür', async () => {

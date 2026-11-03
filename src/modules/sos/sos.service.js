@@ -75,7 +75,9 @@ async function create({ userId, body, ip, userAgent }) {
   const coords = body.coordinates;
   const open = await db.transaction(async (trx) => {
     await trx('users').where({ id: userId }).forUpdate().first('id');
-    const active = await trx('sos_reports').where({ user_id: userId, status: 'active' }).orderBy('created_at', 'desc').first();
+    // Satır da kilitlenir: aynı anda operatör kapattıysa ya da gönüllü iptal ettiyse tekrar basış kapanmış
+    // çağrıya yazılmaz.
+    const active = await trx('sos_reports').where({ user_id: userId, status: 'active' }).orderBy('created_at', 'desc').forUpdate().first();
     if (active) {
       const locationAdded = coords != null && active.lat == null;
       if (locationAdded) {

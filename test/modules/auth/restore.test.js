@@ -172,3 +172,19 @@ describe('POST /auth/restore — restoreFlow', () => {
     expect(() => verifyAccessToken(restoreToken)).toThrow();
   });
 });
+
+describe('verify-otp — oturum silmenin yanıtı gecikirse (BUG-024)', () => {
+  it('komut Redis\'e gittiyse giriş tamamlanır, kişi kodu kaybetmez', async () => {
+    db.reset({ users: [pendingUser({ is_active: true, deleted_at: null })], refresh_tokens: [], applications: [] });
+    jest.useFakeTimers();
+    const del = jest.spyOn(redis, 'del').mockImplementationOnce(() => new Promise(() => {}));
+    try {
+      const pending = verify();
+      await jest.advanceTimersByTimeAsync(1000);
+      await expect(pending).resolves.toMatchObject({ ok: true, isExisting: true, accessToken: expect.any(String) });
+    } finally {
+      del.mockRestore();
+      jest.useRealTimers();
+    }
+  });
+});

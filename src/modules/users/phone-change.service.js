@@ -2,7 +2,7 @@
 
 const { v4: uuidv4 } = require('uuid');
 const { redis: rawRedis } = require('../../config/redis');
-const { guardedClient } = require('../../shared/redis-guard');
+const { guardedClient, delVerifiedSession } = require('../../shared/redis-guard');
 
 const redis = guardedClient(rawRedis);
 const { db } = require('../../config/db');
@@ -72,7 +72,7 @@ async function commit({ userId, sessionId, code, ip, userAgent }) {
     throw errors.make(400, 'invalid_otp', 'Geçersiz doğrulama kodu. Lütfen tekrar deneyin.');
   }
 
-  await redis.del(`${PREFIX}${sessionId}`);
+  await delVerifiedSession(redis, `${PREFIX}${sessionId}`);
 
   // Kod gönderildikten sonra numara başka hesaba geçmiş olabilir; benzersiz index yakalar.
   try {
