@@ -344,7 +344,8 @@ async function adminAddHistory(sosId, body, actor = {}) {
   const event = action ? action.event : (body.note || '').trim();
   if (!event) throw errors.validation('Aksiyon veya not zorunlu', { field: 'action|note' });
 
-  const by = body.by || actor.name || 'Operatör';
+  // İşlemi yapan oturumdaki panel kullanıcısıdır; istemcinin gönderdiği ad kullanılmaz.
+  const by = actor.name || 'Operatör';
   const nextStatus = action?.status;
 
   // Durum okunup yazılırken satır kilitlenir: aynı anda gelen iki "müdahale edildi" ya da

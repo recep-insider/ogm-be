@@ -84,7 +84,8 @@ describe('sos.adminAddHistory', () => {
   });
 
   it('"müdahale edildi" aksiyonu geçmişi ve durumu TEK çağrıda günceller', async () => {
-    const result = await service.adminAddHistory('s1', { action: 'responded', by: 'Operatör A' }, {});
+    // BUG-060: "işlemi yapan" oturumdaki kullanıcıdır; gövdedeki by yok sayılır.
+    const result = await service.adminAddHistory('s1', { action: 'responded', by: 'Sahte Ad' }, { name: 'Operatör A' });
 
     expect(result.status).toBe('responded');
     expect(mockState.updates[0]).toMatchObject({ status: 'responded' });

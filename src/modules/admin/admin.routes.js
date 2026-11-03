@@ -500,7 +500,6 @@ const sosQuerySchema = Joi.object({
 const sosHistorySchema = Joi.object({
   action: Joi.string().valid('responded').optional(),
   note: Joi.string().trim().max(300).optional(),
-  by: Joi.string().trim().max(120).optional(),
 }).or('action', 'note');
 
 /**
@@ -553,8 +552,7 @@ router.get(
  *             type: object
  *             properties:
  *               action: { type: string, enum: [responded] }
- *               note: { type: string, maxLength: 300 }
- *               by: { type: string, description: 'Kaydı düşen operatör/görevli adı' }
+ *               note: { type: string, maxLength: 300, description: 'Kaydı düşen oturumdaki panel kullanıcısıdır (BUG-060)' }
  *     responses:
  *       200: { description: '{ok, sosId, status, history[], responseSeconds}' }
  *       404: { description: sos_not_found }
