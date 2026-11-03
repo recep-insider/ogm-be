@@ -50,8 +50,10 @@ async function init({ userId, newPhone, ip, userAgent }) {
 }
 
 async function commit({ userId, sessionId, code, ip, userAgent }) {
+  // Yanlış ya da süresi dolmuş kod oturum hatası (401) değildir; 401 mobilde token yenileyip aynı
+  // kodu tekrar göndertiyor ve her yanlış deneme iki hak yiyordu (BUG-038). Girişteki kodlarla aynı.
   const raw = await redis.get(`${PREFIX}${sessionId}`);
-  if (!raw) throw errors.unauthorized('Doğrulama kodu hatalı');
+  if (!raw) throw errors.gone('Doğrulama kodunun süresi doldu', undefined, 'otp_expired');
   const session = JSON.parse(raw);
   if (session.userId !== userId) throw errors.forbidden('Oturum sahibi farklı');
 
@@ -65,7 +67,7 @@ async function commit({ userId, sessionId, code, ip, userAgent }) {
   const ok = await verifyOtp(code, session.codeHash);
   if (!ok) {
     await redis.set(`${PREFIX}${sessionId}`, JSON.stringify(session), 'KEEPTTL');
-    throw errors.unauthorized('Doğrulama kodu hatalı');
+    throw errors.make(400, 'invalid_otp', 'Geçersiz doğrulama kodu. Lütfen tekrar deneyin.');
   }
 
   await redis.del(`${PREFIX}${sessionId}`);

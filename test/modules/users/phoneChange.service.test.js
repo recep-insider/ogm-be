@@ -58,3 +58,26 @@ describe('phone-change.init', () => {
     expect(redis.store.size).toBe(0);
   });
 });
+
+describe('phone-change.commit — hata kodları (BUG-038)', () => {
+  const commit = (code) => service.commit({ userId: 'u1', sessionId: 's1', code, ip: '1.1.1.1', userAgent: 'jest' });
+  const putSession = () => redis.store.set('otp:phone-change:s1', {
+    value: JSON.stringify({ userId: 'u1', newPhone: NEW_PHONE, codeHash: 'hash:123456', attempts: 0 }),
+    expiresAt: null,
+  });
+
+  it('yanlış kod 401 değil 400 invalid_otp (mobil oturum yenileyip ikinci hak harcamasın)', async () => {
+    putSession();
+    await expect(commit('000000')).rejects.toMatchObject({ status: 400, code: 'invalid_otp' });
+  });
+
+  it('süresi dolmuş ya da bilinmeyen oturum 410 otp_expired', async () => {
+    await expect(commit('123456')).rejects.toMatchObject({ status: 410, code: 'otp_expired' });
+  });
+
+  it('doğru kod telefonu değiştirir', async () => {
+    putSession();
+    await expect(commit('123456')).resolves.toBeTruthy();
+    expect(db.rows('users')[0].phone).toBe(NEW_PHONE);
+  });
+});

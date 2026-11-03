@@ -315,6 +315,8 @@ router.post(
  *                 ok: { type: boolean }
  *                 phone: { type: string }
  *       401: { $ref: '#/components/responses/Unauthorized' }
+ *       400: { description: 'invalid_otp — kod yanlış (oturum hatası değil; token yenilenmez)' }
+ *       410: { description: 'otp_expired — kodun ya da oturumun süresi doldu; yeni kod istenir' }
  *       429: { $ref: '#/components/responses/RateLimited' }
  */
 router.post(
