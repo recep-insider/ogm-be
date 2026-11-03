@@ -406,6 +406,7 @@ edilsin mi?" diye sorar. "Devam" → `POST /auth/restore`; "Vazgeç" → hiçbir
   - `400 validation_error` (details: alan bazlı hata listesi)
   - `409 already_applied` — bu kullanıcı zaten başvuru yapmış
   - `409 account_pending_deletion` — TC ya da telefon silinme sürecindeki (30 günü dolmamış) bir hesaba ait; kişi telefonla giriş yapıp silmeyi iptal edebilir (K28)
+  - `409 account_deletion_finalizing` — hesabın 30 günü doldu, anonimleştirme bekleniyor (en geç bir saat); iptal artık mümkün değil, kişi kısa süre sonra yeniden kayıt olabilir ("Hesabınız siliniyor; kısa süre sonra yeniden kayıt olabilirsiniz.")
   - `413 file_too_large`
   - `415 unsupported_media_type`
 - **TS tipleri:** `OnboardingData`, `OnboardingCompleteResponse`, `CompleteOnboardingArgs` (`types.ts:157-189`, `onboarding.ts:15-19`)

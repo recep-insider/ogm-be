@@ -12,7 +12,7 @@ const { sendOtp, assertOtpDeliverable, maskPhone } = require('../../shared/sms-p
 const { writeAudit } = require('../../shared/audit');
 const { toDateOnly } = require('../../shared/dates');
 const { getApplicationStatus } = require('../users/users.service');
-const { ANONYMIZE_AFTER_DAYS } = require('../users/anonymize.service');
+const { restorableSince } = require('../users/anonymize.service');
 const {
   signAccessToken,
   signRefreshToken,
@@ -29,11 +29,6 @@ const PREFIX = 'otp:phone:';
 const RATE_PHONE_PREFIX = 'rl:otp:phone:';
 const RATE_IP_PREFIX = 'rl:otp:ip:';
 const BAN_PREFIX = 'ban:phone:';
-
-// Silmeden 30 gün geçen hesap anonimleştirme sırasındadır: artık geri açılmaz.
-function restorableSince() {
-  return new Date(Date.now() - ANONYMIZE_AFTER_DAYS * 86400 * 1000);
-}
 
 function sessionKey(sessionId) {
   return `${PREFIX}${sessionId}`;
@@ -226,9 +221,25 @@ async function restoreFlow({ restoreToken, ip, userAgent }) {
     throw errors.make(503, 'restore_unavailable', 'Hesap şu an açılamıyor; birkaç saniye sonra tekrar deneyin.');
   }
 
+  // Hesap açılamazsa (arada anonimleşti, DB hatası) kaldırılan erişim engeli geri yazılır:
+  // silinmiş hesabın eski access token'ları yeniden işe yaramasın.
+  const reblock = async () => {
+    try {
+      await redis.set(userBlockKey(payload.sub), '1', 'EX', accessTokenSeconds());
+    } catch (err) {
+      logger.warn('Silinen hesabın erişim engeli geri yazılamadı', { userId: payload.sub, error: err.message });
+    }
+  };
   const now = new Date();
-  const restored = await pending().update({ is_active: true, deleted_at: null, updated_at: now });
+  let restored;
+  try {
+    restored = await pending().update({ is_active: true, deleted_at: null, updated_at: now });
+  } catch (err) {
+    await reblock();
+    throw err;
+  }
   if (!restored) {
+    await reblock();
     throw errors.unauthorized('Silme talebi iptal edilemedi; lütfen tekrar giriş yapın.', 'restore_invalid');
   }
 

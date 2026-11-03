@@ -20,6 +20,16 @@ const LOCK_TTL_SEC = 60 * 60;
 // Kilit yalnız sahibince bırakılır: süresi dolup başka süreç aldıysa ona dokunulmaz.
 const RELEASE_LOCK = "if redis.call('get', KEYS[1]) == ARGV[1] then return redis.call('del', KEYS[1]) end return 0";
 
+// Silmeden bu andan sonra silinen hesap hâlâ geri alınabilir (K28); öncesi anonimleştirme sırasındadır.
+function restorableSince(now = new Date()) {
+  return new Date(now.getTime() - ANONYMIZE_AFTER_DAYS * 86400 * 1000);
+}
+
+/** Silinme sürecinde ve geri alınabilir mi: silinmiş, 30 günü dolmamış, anonimleşmemiş. */
+function isPendingDeletion(row, now = new Date()) {
+  return !!row?.deleted_at && !row.anonymized_at && new Date(row.deleted_at) > restorableSince(now);
+}
+
 const USER_PII = {
   tc_kimlik: null,
   ad: null,
@@ -179,4 +189,13 @@ function startSchedule() {
   return setInterval(tick, INTERVAL_MS).unref();
 }
 
-module.exports = { anonymizeUser, anonymizeDue, runExclusive, startSchedule, ANONYMIZE_AFTER_DAYS, LOCK_KEY };
+module.exports = {
+  anonymizeUser,
+  anonymizeDue,
+  runExclusive,
+  startSchedule,
+  restorableSince,
+  isPendingDeletion,
+  ANONYMIZE_AFTER_DAYS,
+  LOCK_KEY,
+};

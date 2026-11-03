@@ -135,6 +135,23 @@ describe('POST /auth/restore — restoreFlow', () => {
     await expect(restoreFlow({ restoreToken })).rejects.toMatchObject({ status: 401, code: 'restore_invalid' });
     expect(db.rows('users')[0]).toMatchObject({ is_active: false, deleted_at: DELETED_AT });
     expect(db.rows('refresh_tokens')).toHaveLength(0);
+    expect(await redis.get(userBlockKey('u1'))).toBe('1');
+    del.mockRestore();
+  });
+
+  it('hesap güncellemesi hata verirse kaldırılan erişim engeli geri yazılır', async () => {
+    const { restoreToken } = await verify();
+    await redis.set(userBlockKey('u1'), '1', 'EX', 900);
+    const realDel = redis.del.bind(redis);
+    const del = jest.spyOn(redis, 'del').mockImplementationOnce(async (key) => {
+      const out = await realDel(key);
+      // Engel kalktıktan sonra DB yazımı düşer.
+      Object.defineProperty(db.rows('users')[0], 'deleted_at', { get() { throw new Error('db down'); } });
+      return out;
+    });
+
+    await expect(restoreFlow({ restoreToken })).rejects.toThrow('db down');
+    expect(await redis.get(userBlockKey('u1'))).toBe('1');
     del.mockRestore();
   });
 
