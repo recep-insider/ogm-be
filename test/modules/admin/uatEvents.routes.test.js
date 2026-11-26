@@ -116,6 +116,39 @@ describe('POST /v1/admin/uat-events', () => {
     expect(mockState.events).toEqual([]);
   });
 
+  it('rejects a body without sessionId', async () => {
+    const res = await post({ events: [EVENT] });
+
+    expect(res.status).toBe(400);
+    expect(res.body.error.code).toBe('validation_error');
+    expect(mockState.events).toEqual([]);
+  });
+
+  it('rejects an empty events list', async () => {
+    const res = await post({ sessionId: 's1', events: [] });
+
+    expect(res.status).toBe(400);
+    expect(res.body.error.code).toBe('validation_error');
+  });
+
+  it('rejects inventory keys beyond 300 items', async () => {
+    const keys = Array.from({ length: 301 }, (_, i) => `input|Alan ${i}`);
+
+    const res = await post({ sessionId: 's1', events: [{ seq: 0, at: EVENT.at, type: 'inventory', detail: { keys } }] });
+
+    expect(res.status).toBe(400);
+    expect(mockState.events).toEqual([]);
+  });
+
+  it('rejects an inventory key longer than 160 characters', async () => {
+    const keys = [`input|${'a'.repeat(155)}`];
+
+    const res = await post({ sessionId: 's1', events: [{ seq: 0, at: EVENT.at, type: 'inventory', detail: { keys } }] });
+
+    expect(res.status).toBe(400);
+    expect(mockState.events).toEqual([]);
+  });
+
   it('ignores a duplicate session_id+seq', async () => {
     const body = { sessionId: 's1', events: [EVENT, { ...EVENT, seq: 1 }] };
 

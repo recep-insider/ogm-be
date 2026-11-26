@@ -140,6 +140,16 @@ describe('export-uat-events', () => {
     expect(rows).toHaveLength(3);
   });
 
+  it('actions report also lists observed calls that are not write operations', () => {
+    const failedRead = { ...FIXTURE[4], seq: 9, target: 'GET /admin/missions/:id', detail: { status: 500, code: 'internal_error', ms: 80 } };
+    const rows = report('actions', [failedRead], ['POST /admin/missions']);
+
+    expect(rows.slice(1).map((r) => r.slice(0, 6).join(';'))).toEqual([
+      'POST;/admin/missions;Denenmedi;0;0;0',
+      'GET;/admin/missions/:id;Denendi;1;0;1',
+    ]);
+  });
+
   it('people report attributes events by panel user', () => {
     const rows = report('people', FIXTURE);
 
@@ -174,6 +184,28 @@ describe('export-uat-events', () => {
     ]);
 
     expect(rows[1][9]).toBe('1');
+  });
+
+  it('toCsv guards +, tab and CR leading characters', () => {
+    expect(toCsv([['+1', '\tx', '\rx']])).toBe(`${BOM}'+1;'\tx;"'\rx"\n`);
+  });
+
+  it('raw report leaves null and empty detail values out', () => {
+    const rows = report('raw', [
+      { ...A, seq: 0, client_ts: at(0), type: 'api', target: 'GET /admin/missions', detail: { status: 200, code: null, ms: 40, level: '' } },
+    ]);
+
+    expect(rows[1][9]).toBe('status=200, ms=40');
+  });
+
+  it('pages report counts an out-of-order client clock as zero active time', () => {
+    const rows = report('pages', [
+      { ...A, seq: 0, client_ts: at(0), type: 'page_view', detail: null },
+      { ...A, seq: 1, client_ts: at(3), type: 'click', target: 'button|Kaydet', detail: null },
+      { ...A, seq: 2, client_ts: at(1), type: 'click', target: 'button|Kaydet', detail: null },
+    ]);
+
+    expect(rows[1][4]).toBe('3,0');
   });
 
   it('raw report shows the id of an unknown panel user', () => {
