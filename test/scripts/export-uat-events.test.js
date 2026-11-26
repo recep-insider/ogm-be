@@ -1,5 +1,7 @@
 'use strict';
 
+const path = require('path');
+const { spawnSync } = require('child_process');
 const {
   toCsv,
   apiTemplate,
@@ -151,5 +153,15 @@ describe('export-uat-events', () => {
     expect(rows).toHaveLength(3);
     expect(rowOf(rows, 3, 'Başlık girin.')).toEqual(['yangin', DIALOG, 'Hata metni', 'Başlık girin.', '2', '2', '2026-11-26 12:03:00', '2026-11-26 12:12:00']);
     expect(rowOf(rows, 3, 'boom').slice(2, 6)).toEqual(['JS hatası', 'boom', '1', '1']);
+  });
+
+  it('unknown report exits with usage', () => {
+    const res = spawnSync(process.execPath, [path.join(__dirname, '../../scripts/export-uat-events.js'), 'nope'], {
+      encoding: 'utf8',
+    });
+
+    expect(res.status).toBe(1);
+    expect(res.stderr).toContain('raw|pages|fields|actions|people|messages');
+    expect(res.stdout).toBe('');
   });
 });

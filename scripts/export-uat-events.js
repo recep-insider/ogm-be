@@ -1,6 +1,11 @@
 #!/usr/bin/env node
 'use strict';
 
+// UAT etkileşim olaylarından Excel'de açılan CSV raporu üretir; bilgisayara indirmek için scripts/uat-rapor.sh.
+//
+// Kullanım (sunucuda; npm run değil node, npm'in başlık satırı CSV'ye karışır):
+//   docker compose exec -T backend node scripts/export-uat-events.js <raw|pages|fields|actions|people|messages>
+
 const BOM = String.fromCharCode(0xfeff);
 const IDLE_CAP_MS = 5 * 60 * 1000;
 const ACTIVITY = ['session_start', 'page_view', 'click', 'field_focus', 'field_change'];
@@ -291,6 +296,37 @@ function buildReport(name, { events, users = [], writeOps = [] }) {
     writeOps,
   };
   return [HEADERS[name], ...REPORTS[name](input)].map((row) => row.map((v) => (v == null ? '' : String(v))));
+}
+
+async function main() {
+  // stdout yalnız CSV taşır; kütüphanelerin yazdığı her satır stderr'e gider.
+  console.log = console.error;
+  const names = Object.keys(REPORTS);
+  const name = process.argv[2];
+  if (!names.includes(name)) {
+    console.error(`Kullanım: node scripts/export-uat-events.js <${names.join('|')}>`);
+    process.exitCode = 1;
+    return;
+  }
+  const { db } = require('../src/config/db');
+  // docs/ imaja girmez (SIM-1131); işlem listesi spec'ten çalışma anında üretilir.
+  const { buildSpec } = require('../src/config/swagger');
+  try {
+    const [events, users] = await Promise.all([
+      db('uat_events').select('*').orderBy(['session_id', 'seq']),
+      db('panel_users').select('id', 'name', 'email', 'role'),
+    ]);
+    process.stdout.write(toCsv(buildReport(name, { events, users, writeOps: writeOperations(buildSpec()) })));
+  } finally {
+    await db.destroy();
+  }
+}
+
+if (require.main === module) {
+  main().catch((err) => {
+    console.error('UAT raporu üretilemedi:', err.message);
+    process.exitCode = 1;
+  });
 }
 
 module.exports = { toCsv, apiTemplate, specTemplate, writeOperations, buildReport };
