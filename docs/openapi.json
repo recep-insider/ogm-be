@@ -4963,6 +4963,112 @@
         }
       }
     },
+    "/admin/uat-events": {
+      "post": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "UAT etkileşim olaylarını toplu kaydet (panel)",
+        "description": "Kullanıcı token'dan alınır. Aynı sessionId+seq ikinci kez gelirse yok sayılır. Alan değerleri gönderilmez; detail yalnız izinli anahtarları taşır.",
+        "security": [
+          {
+            "panelBearer": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "sessionId",
+                  "events"
+                ],
+                "properties": {
+                  "sessionId": {
+                    "type": "string",
+                    "maxLength": 36
+                  },
+                  "events": {
+                    "type": "array",
+                    "minItems": 1,
+                    "maxItems": 200,
+                    "items": {
+                      "type": "object",
+                      "required": [
+                        "seq",
+                        "at",
+                        "type"
+                      ],
+                      "properties": {
+                        "seq": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "at": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "description": "İstemci zamanı (ms)"
+                        },
+                        "type": {
+                          "type": "string",
+                          "enum": [
+                            "session_start",
+                            "page_view",
+                            "click",
+                            "field_focus",
+                            "field_change",
+                            "api",
+                            "message",
+                            "js_error",
+                            "inventory",
+                            "lost"
+                          ]
+                        },
+                        "page": {
+                          "type": "string",
+                          "maxLength": 120,
+                          "nullable": true
+                        },
+                        "context": {
+                          "type": "string",
+                          "maxLength": 120,
+                          "nullable": true
+                        },
+                        "target": {
+                          "type": "string",
+                          "maxLength": 255,
+                          "nullable": true
+                        },
+                        "detail": {
+                          "type": "object",
+                          "nullable": true
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": {
+            "description": "Kaydedildi"
+          },
+          "400": {
+            "description": "validation_error"
+          },
+          "401": {
+            "description": "unauthorized (süresi dolmuş token)"
+          },
+          "403": {
+            "description": "forbidden (token yok) | password_change_required"
+          }
+        }
+      }
+    },
     "/auth/edevlet/initiate": {
       "post": {
         "tags": [
