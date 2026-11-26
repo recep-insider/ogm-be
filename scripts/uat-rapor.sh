@@ -22,11 +22,13 @@ export SSHPASS
 SSH_OPTS=(-o StrictHostKeyChecking=accept-new -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -p "${SSH_PORT:-22}")
 
 mkdir -p "$OUT"
-for pair in raw:ham pages:sayfalar fields:alanlar actions:islemler people:kisiler messages:mesajlar; do
-  # npm run değil node: npm'in başlık satırı CSV'ye karışır.
+for pair in html:rapor.html screens:ekranlar.csv raw:ham.csv pages:sayfalar.csv fields:alanlar.csv \
+  actions:islemler.csv people:kisiler.csv messages:mesajlar.csv; do
+  # npm run değil node: npm'in başlık satırı rapora karışır.
   sshpass -e ssh "${SSH_OPTS[@]}" "$TARGET" \
     "cd $DEPLOY_DIR && docker compose exec -T backend node scripts/export-uat-events.js ${pair%%:*}" \
-    > "$OUT/${pair#*:}.csv"
+    > "$OUT/${pair#*:}"
 done
 
 echo "Raporlar: $OUT"
+if command -v open >/dev/null; then open "$OUT/rapor.html"; fi
