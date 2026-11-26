@@ -4,7 +4,10 @@
 // UAT etkileşim olaylarından Excel'de açılan CSV raporu üretir; bilgisayara indirmek için scripts/uat-rapor.sh.
 //
 // Kullanım (sunucuda; npm run değil node, npm'in başlık satırı CSV'ye karışır):
-//   docker compose exec -T backend node scripts/export-uat-events.js <raw|pages|fields|actions|people|messages>
+//   docker compose exec -T backend node scripts/export-uat-events.js <raw|pages|fields|actions|people|messages|screens|html>
+// html, bütün raporları tek sayfada gösteren rapor.html'i üretir.
+
+const SCREENS = require('./uat-screens');
 
 const BOM = String.fromCharCode(0xfeff);
 const IDLE_CAP_MS = 5 * 60 * 1000;
@@ -57,11 +60,21 @@ const HEADERS = {
   fields: ['Sayfa', 'Bölüm', 'Tür', 'Ad', 'Durum', 'Dokunma', 'Kişi', 'Kişiler', 'İlk', 'Son'],
   actions: ['Yöntem', 'Yol', 'Durum', 'Deneme', 'Başarılı', 'Hatalı', 'Hata kodları', 'Ort. süre (ms)', 'Kişi'],
   people: [
-    'Kullanıcı', 'E-posta', 'Rol', 'Oturum', 'Aktif süre (dk)', 'Sayfa', 'Dokunulan alan', 'İşlem', 'Hatalı işlem',
+    'Kullanıcı', 'E-posta', 'Rol', 'Oturum', 'Aktif süre (dk)', 'Sayfa', 'Açılan ekran', 'Dokunulan alan', 'İşlem', 'Hatalı işlem',
     'Hata mesajı', 'JS hatası', 'İlk', 'Son',
   ],
   messages: ['Sayfa', 'Bölüm', 'Seviye', 'Metin', 'Adet', 'Kişi', 'İlk', 'Son'],
+  screens: ['Bölüm', 'Tür', 'Ad', 'Adres', 'Durum', 'Kişi', 'Kişiler', 'Oturum', 'İlk', 'Son'],
 };
+const SCREEN_KINDS = { page: 'Sayfa', tab: 'Sekme', dialog: 'Dialog' };
+// Raporda teknik yol (yangin/ihbar) yerine panelde görünen ad (Yangın Yönetimi › Gelen İhbarlar) yazılır.
+const PAGE_LABELS = new Map(
+  SCREENS.filter((s) => s.kind === 'page').flatMap((s) =>
+    s.pages.map((p) => [p, s.name === s.area ? s.name : `${s.area} › ${s.name}`])),
+);
+const pageLabel = (page) => PAGE_LABELS.get(page) ?? page;
+// Yönlendirmeyle gelen takma yollar (icerik, bildirim) raporlar gruplamadan önce ekranın asıl yoluna çevrilir.
+const CANONICAL_PAGE = new Map(SCREENS.filter((s) => s.kind === 'page').flatMap((s) => s.pages.map((p) => [p, s.path])));
 
 function cell(value) {
   let s = value == null ? '' : String(value);
@@ -168,7 +181,7 @@ function rawReport({ events, userById }) {
           .join(', ');
     return [
       time(e.ts), user.name ?? e.panel_user_id, user.role, String(e.session_id).slice(0, 8), e.seq,
-      EVENT_LABELS[e.type] ?? e.type, e.page, e.context, e.target, detail,
+      EVENT_LABELS[e.type] ?? e.type, pageLabel(e.page), e.context, e.target, detail,
     ];
   });
 }
@@ -177,13 +190,13 @@ function pagesReport({ events }) {
   const spans = activeSpans(events);
   const fields = fieldRows(events).filter((f) => DENOMINATOR.includes(f.kind));
   return [...groupBy(events, (e) => e.page)]
-    .sort(([a], [b]) => cmp(a, b))
+    .sort(([a], [b]) => cmp(pageLabel(a), pageLabel(b)))
     .map(([page, list]) => {
       const pageFields = fields.filter((f) => f.page === page);
       const touched = pageFields.filter((f) => f.touches.length).length;
       const views = list.filter((e) => e.type === 'page_view');
       return [
-        page,
+        pageLabel(page),
         distinct(list, (e) => e.panel_user_id),
         distinct(list, (e) => e.session_id),
         views.length,
@@ -201,7 +214,7 @@ function fieldsReport({ events, userById }) {
   return fieldRows(events)
     .sort(
       (a, b) =>
-        cmp(a.page, b.page) ||
+        cmp(pageLabel(a.page), pageLabel(b.page)) ||
         cmp(a.context, b.context) ||
         Math.sign(a.touches.length) - Math.sign(b.touches.length) ||
         cmp(a.name, b.name),
@@ -209,7 +222,7 @@ function fieldsReport({ events, userById }) {
     .map((f) => {
       const people = [...new Set(f.touches.map((e) => e.panel_user_id))];
       return [
-        f.page, f.context, KIND_LABELS[f.kind] ?? f.kind, f.name, f.touches.length ? 'Dokunuldu' : 'Dokunulmadı',
+        pageLabel(f.page), f.context, KIND_LABELS[f.kind] ?? f.kind, f.name, f.touches.length ? 'Dokunuldu' : 'Dokunulmadı',
         f.touches.length, people.length, people.map((id) => userById.get(id)?.name ?? id).join(', '), ...range(f.touches),
       ];
     });
@@ -247,6 +260,7 @@ function peopleReport({ events, userById }) {
         distinct(list, (e) => e.session_id),
         activeMinutes(spans, (e) => e.panel_user_id === id),
         distinct(list.filter((e) => e.type === 'page_view'), (e) => e.page),
+        openedScreens(list),
         distinct(touchedFields, (e) => keyOf(e.page, e.context, e.target)),
         api.length,
         api.filter((e) => e.detail.code).length,
@@ -268,12 +282,42 @@ function messagesReport({ events }) {
     .map((list) => {
       const [e] = list;
       return [
-        e.page, e.context, LEVEL_LABELS[levelOf(e)] ?? levelOf(e), e.target, list.length,
+        pageLabel(e.page), e.context, LEVEL_LABELS[levelOf(e)] ?? levelOf(e), e.target, list.length,
         distinct(list, (x) => x.panel_user_id), ...range(list),
       ];
     })
     .sort((a, b) => cmp(a[0], b[0]) || cmp(a[1], b[1]) || b[4] - a[4]);
 }
+
+// Sekme adı rozetle gelir ("Gönüllüler #"); "Eğitimler" "Eğitimlerim"i eşlememeli.
+const named = (text, name) => text === name || text.startsWith(`${name} `);
+
+// Sayfada görülen her olay sayfanın açıldığını gösterir: giriş ekranına page_view yazılmaz, yalnız alan ve tıklama olayları.
+function screenEvents(screen, events) {
+  if (screen.kind === 'page') return events.filter((e) => screen.pages.includes(e.page));
+  if (screen.kind === 'dialog') return events.filter((e) => named(e.context, `Dialog: ${screen.name}`));
+  return events.filter(
+    (e) =>
+      e.page === screen.path &&
+      ((e.type === 'click' && named(e.target || '', `tab|${screen.name}`)) ||
+        named(e.context, `Sekme: ${screen.name}`) ||
+        screen.isDefault),
+  );
+}
+
+function screensReport({ events, userById }) {
+  return SCREENS.map((screen) => {
+    const list = screenEvents(screen, events);
+    const people = [...new Set(list.map((e) => e.panel_user_id))];
+    return [
+      screen.area, SCREEN_KINDS[screen.kind], screen.name, screen.path && `/panel/${screen.path}`,
+      list.length ? 'Açıldı' : 'Açılmadı', people.length,
+      people.map((id) => userById.get(id)?.name ?? id).join(', '), distinct(list, (e) => e.session_id), ...range(list),
+    ];
+  });
+}
+
+const openedScreens = (events) => `${SCREENS.filter((s) => screenEvents(s, events).length).length} / ${SCREENS.length}`;
 
 const REPORTS = {
   raw: rawReport,
@@ -282,6 +326,7 @@ const REPORTS = {
   actions: actionsReport,
   people: peopleReport,
   messages: messagesReport,
+  screens: screensReport,
 };
 
 function buildReport(name, { events, users = [], writeOps = [] }) {
@@ -290,7 +335,7 @@ function buildReport(name, { events, users = [], writeOps = [] }) {
       ...e,
       seq: Number(e.seq),
       ts: Number(e.client_ts),
-      page: e.page || '',
+      page: CANONICAL_PAGE.get(e.page || '') ?? (e.page || ''),
       context: e.context || '',
       detail: (typeof e.detail === 'string' ? JSON.parse(e.detail) : e.detail) || {},
     })),
@@ -300,10 +345,70 @@ function buildReport(name, { events, users = [], writeOps = [] }) {
   return [HEADERS[name], ...REPORTS[name](input)].map((row) => row.map((v) => (v == null ? '' : String(v))));
 }
 
+const ENTITIES = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
+const esc = (value) => String(value ?? '').replace(/[&<>"']/g, (c) => ENTITIES[c]);
+
+function htmlTable(head, rows, rowClass = () => '') {
+  const cells = (row, tag) => row.map((c) => `<${tag}>${esc(c)}</${tag}>`).join('');
+  return `<table><thead><tr>${cells(head, 'th')}</tr></thead><tbody>${rows
+    .map((row) => `<tr class="${rowClass(row)}">${cells(row, 'td')}</tr>`)
+    .join('')}</tbody></table>`;
+}
+
+// İlk kolona göre gruplar; ekranlarda da alanlarda da durum kolonu 4'tür (grup kolonu düşünce 3).
+function groupedTables([head, ...rows], done) {
+  return [...groupBy(rows, (row) => row[0])]
+    .map(([key, list]) => {
+      const count = list.filter((row) => row[4] === done).length;
+      const body = htmlTable(head.slice(1), list.map((row) => row.slice(1)), (row) => (row[3] === done ? '' : 'no'));
+      return `<h3>${esc(key || '—')} <span class="muted">${count} / ${list.length}</span></h3>${body}`;
+    })
+    .join('');
+}
+
+const HTML_STYLE = `body{font:14px/1.45 -apple-system,system-ui,sans-serif;margin:32px auto;max-width:1200px;color:#1f2937;padding:0 16px}
+h1{margin:0 0 4px}h2{margin:36px 0 10px;border-bottom:2px solid #e5e7eb;padding-bottom:6px}h3{margin:22px 0 6px;color:#374151}
+.muted{color:#6b7280;font-weight:400}.cards{display:flex;gap:12px;flex-wrap:wrap;margin:18px 0}
+.card{border:1px solid #e5e7eb;border-radius:10px;padding:12px 16px;min-width:150px}.card b{font-size:24px;display:block}
+table{border-collapse:collapse;width:100%;margin:6px 0}th,td{border-bottom:1px solid #eef0f3;padding:6px 8px;text-align:left;vertical-align:top}
+th{background:#f9fafb;font-weight:600}tr.no td{color:#9ca3af}tr.err td{background:#fef2f2}summary{cursor:pointer;font-weight:600}`;
+
+function renderHtml(reports, generatedAt) {
+  const body = (name) => reports[name].slice(1);
+  const [screens, actions, fields] = [body('screens'), body('actions'), body('fields')];
+  const card = (value, label) => `<div class="card"><b>${esc(value)}</b>${esc(label)}</div>`;
+  const tried = actions.filter((a) => a[2] === 'Denendi');
+  const errorLevels = ['Uyarı', 'Hata metni', 'JS hatası'];
+  const section = (title, note, content) => `<h2>${esc(title)}</h2>${note ? `<p class="muted">${esc(note)}</p>` : ''}${content}`;
+  return [
+    `<!doctype html><html lang="tr"><head><meta charset="utf-8"><title>UAT raporu</title><style>${HTML_STYLE}</style></head><body>`,
+    `<h1>UAT test raporu</h1><div class="muted">Oluşturulma: ${esc(generatedAt)}</div><div class="cards">`,
+    card(`${screens.filter((s) => s[4] === 'Açıldı').length} / ${screens.length}`, 'açılan ekran (sayfa, sekme, dialog)'),
+    card(`${tried.length} / ${actions.length}`, 'denenen işlem'),
+    card(fields.filter((f) => f[4] === 'Dokunuldu').length, 'dokunulan alan ve buton'),
+    card(actions.reduce((n, a) => n + Number(a[5] || 0), 0), 'hatalı işlem'),
+    card(body('people').length, 'test eden kişi'),
+    '</div>',
+    section('Ekranlar', 'Panelin bütün sayfa, sekme ve dialogları; gri satırlar hiç açılmayanlar.', groupedTables(reports.screens, 'Açıldı')),
+    section('Kişiler', '', htmlTable(reports.people[0], body('people'))),
+    section('Sayfalar', 'Alan kapsamı: ekranda görülen form alanı ve sekmelerden kaçına dokunuldu.', htmlTable(reports.pages[0], body('pages'))),
+    section('Alanlar ve butonlar', 'Gri satırlar ekranda görülüp hiç dokunulmayanlar.', groupedTables(reports.fields, 'Dokunuldu')),
+    section(
+      'İşlemler',
+      `Panelin yapabildiği yazma işlemleri; ${actions.length - tried.length} tanesi hiç denenmedi.`,
+      htmlTable(reports.actions[0], [...tried, ...actions.filter((a) => a[2] !== 'Denendi')], (a) =>
+        Number(a[5]) ? 'err' : a[2] === 'Denendi' ? '' : 'no'),
+    ),
+    section('Mesajlar ve hatalar', '', htmlTable(reports.messages[0], body('messages'), (m) => (errorLevels.includes(m[2]) ? 'err' : ''))),
+    section('Olay akışı', '', `<details><summary>${body('raw').length} olayı göster</summary>${htmlTable(reports.raw[0], body('raw'))}</details>`),
+    '</body></html>\n',
+  ].join('');
+}
+
 async function main() {
-  // stdout yalnız CSV taşır; kütüphanelerin yazdığı her satır stderr'e gider.
+  // stdout yalnız raporu taşır; kütüphanelerin yazdığı her satır stderr'e gider.
   console.log = console.error;
-  const names = Object.keys(REPORTS);
+  const names = [...Object.keys(REPORTS), 'html'];
   const name = process.argv[2];
   if (!names.includes(name)) {
     console.error(`Kullanım: node scripts/export-uat-events.js <${names.join('|')}>`);
@@ -318,7 +423,12 @@ async function main() {
       db('uat_events').select('*').orderBy(['session_id', 'seq']),
       db('panel_users').select('id', 'name', 'email', 'role'),
     ]);
-    process.stdout.write(toCsv(buildReport(name, { events, users, writeOps: writeOperations(buildSpec()) })));
+    const input = { events, users, writeOps: writeOperations(buildSpec()) };
+    process.stdout.write(
+      name === 'html'
+        ? renderHtml(Object.fromEntries(Object.keys(REPORTS).map((n) => [n, buildReport(n, input)])), time(Date.now()))
+        : toCsv(buildReport(name, input)),
+    );
   } finally {
     await db.destroy();
   }
@@ -331,4 +441,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { toCsv, specTemplate, writeOperations, buildReport };
+module.exports = { toCsv, specTemplate, writeOperations, buildReport, renderHtml };
