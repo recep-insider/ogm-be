@@ -1,5 +1,7 @@
 'use strict';
 
+const fs = require('fs');
+const os = require('os');
 const path = require('path');
 const { spawnSync } = require('child_process');
 const {
@@ -163,5 +165,82 @@ describe('export-uat-events', () => {
     expect(res.status).toBe(1);
     expect(res.stderr).toContain('raw|pages|fields|actions|people|messages');
     expect(res.stdout).toBe('');
+  });
+
+  it('people report does not count status messages as errors', () => {
+    const rows = report('people', [
+      { ...A, seq: 0, client_ts: at(0), type: 'message', target: 'Kaydedildi.', detail: { level: 'status' } },
+      { ...A, seq: 1, client_ts: at(1), type: 'message', target: 'Başlık girin.', detail: { level: 'error' } },
+    ]);
+
+    expect(rows[1][9]).toBe('1');
+  });
+
+  it('raw report shows the id of an unknown panel user', () => {
+    const rows = report('raw', [{ ...A, panel_user_id: 'u9', seq: 0, client_ts: at(0), type: 'page_view', detail: null }]);
+
+    expect(rows[1][1]).toBe('u9');
+  });
+
+  describe('CLI', () => {
+    const ROOT = path.join(__dirname, '../..');
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'uat-export-'));
+    afterAll(() => fs.rmSync(tmp, { recursive: true, force: true }));
+
+    const runCli = (name, { events = [], fail = false } = {}) => {
+      const preload = path.join(tmp, `${name}-${fail}.js`);
+      fs.writeFileSync(
+        preload,
+        `'use strict';
+const path = require('path');
+const stub = (rel, exports) => {
+  const id = require.resolve(path.join(${JSON.stringify(ROOT)}, rel));
+  require.cache[id] = { id, filename: id, loaded: true, exports };
+};
+const tables = ${JSON.stringify({ uat_events: events, panel_users: USERS })};
+const db = (table) => ({
+  select: (...cols) => {
+    console.log('select', table, cols.join(','));
+    const rows = ${fail} ? Promise.reject(new Error('connect ECONNREFUSED')) : Promise.resolve(tables[table]);
+    return Object.assign(rows, {
+      orderBy: (order) => {
+        console.log('orderBy', table, order.join(','));
+        return rows;
+      },
+    });
+  },
+});
+db.destroy = async () => process.stderr.write('db destroyed\\n');
+stub('src/config/db', { db });
+stub('src/config/swagger', { buildSpec: () => ({ paths: {} }) });
+`,
+      );
+      return spawnSync(process.execPath, ['--require', preload, path.join(ROOT, 'scripts/export-uat-events.js'), name], {
+        encoding: 'utf8',
+      });
+    };
+
+    it('writes only the CSV to stdout and closes the db', () => {
+      const res = runCli('raw', { events: [FIXTURE[1]] });
+
+      expect(res.status).toBe(0);
+      expect(res.stdout).toBe(
+        `${BOM}Zaman;Kullanıcı;Rol;Oturum;Sıra;Olay;Sayfa;Bölüm;Hedef;Ayrıntı\n`
+          + '2026-11-26 12:00:00;Ayşe Demir;admin;aaaaaaaa;1;Sayfa açıldı;yangin;;;query=durum=active\n',
+      );
+      expect(res.stderr).toContain('select uat_events *');
+      expect(res.stderr).toContain('orderBy uat_events session_id,seq');
+      expect(res.stderr).toContain('select panel_users id,name,email,role');
+      expect(res.stderr).toContain('db destroyed');
+    });
+
+    it('closes the db and exits 1 when the query fails', () => {
+      const res = runCli('raw', { fail: true });
+
+      expect(res.status).toBe(1);
+      expect(res.stdout).toBe('');
+      expect(res.stderr).toContain('UAT raporu üretilemedi: connect ECONNREFUSED');
+      expect(res.stderr).toContain('db destroyed');
+    });
   });
 });

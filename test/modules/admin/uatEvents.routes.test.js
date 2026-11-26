@@ -81,6 +81,17 @@ describe('POST /v1/admin/uat-events', () => {
     expect(row.detail).toBe('{"code":"x"}');
   });
 
+  it('stores missing page, context, target and detail as null', async () => {
+    const res = await post({ sessionId: 's1', events: [{ seq: 0, at: EVENT.at, type: 'page_view' }] });
+
+    expect(res.status).toBe(204);
+    const [row] = mockState.events;
+    expect(row.page).toBeNull();
+    expect(row.context).toBeNull();
+    expect(row.target).toBeNull();
+    expect(row.detail).toBeNull();
+  });
+
   it('rejects an unknown type', async () => {
     const res = await post({ sessionId: 's1', events: [{ ...EVENT, type: 'keypress' }] });
 

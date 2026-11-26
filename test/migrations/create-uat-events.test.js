@@ -59,6 +59,20 @@ describe('20261126120000_create_uat_events', () => {
     expect(cols).toContainEqual(['unique', ['session_id', 'seq']]);
   });
 
+  it('up kolon boyutlarını, boş geçilebilirliği ve indexleri kurar', async () => {
+    const { knex, ops } = makeKnex();
+
+    await migration.up(knex);
+
+    const [, , cols] = ops.find(([op, name]) => op === 'createTable' && name === 'uat_events');
+    expect(cols).toContainEqual(['string', 'session_id', 36, ['notNullable']]);
+    expect(cols).toContainEqual(['string', 'type', 16, ['notNullable']]);
+    expect(cols).toContainEqual(['json', 'detail', ['nullable']]);
+    expect(cols).toContainEqual(['timestamp', 'created_at', ['notNullable'], ['defaultTo', 'NOW()']]);
+    expect(cols).toContainEqual(['index', ['panel_user_id']]);
+    expect(cols).toContainEqual(['index', ['type']]);
+  });
+
   it('down tabloyu kaldırır', async () => {
     const { knex, ops } = makeKnex();
 
