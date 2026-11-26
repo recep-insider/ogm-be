@@ -304,6 +304,42 @@ describe('export-uat-events', () => {
     expect(html).not.toContain('<img src=x');
   });
 
+  describe('renderHtml', () => {
+    const NAMES = ['raw', 'pages', 'fields', 'actions', 'people', 'messages', 'screens'];
+    const html = (events, writeOps = []) => {
+      const input = { events, users: USERS, writeOps };
+      return renderHtml(Object.fromEntries(NAMES.map((n) => [n, buildReport(n, input)])), '2026-11-26 13:00:00');
+    };
+
+    it('groups screens by area with the opened count and greys out screens nobody opened', () => {
+      const out = html([{ ...A, seq: 0, client_ts: at(0), type: 'page_view', detail: null }]);
+      const fireScreens = SCREENS.filter((s) => s.area === 'Yangın Yönetimi').length;
+
+      expect(out).toContain(`<h3>Yangın Yönetimi <span class="muted">1 / ${fireScreens}</span></h3>`);
+      expect(out).toContain('<tr class=""><td>Sayfa</td><td>Olay Kayıtları</td><td>/panel/yangin</td><td>Açıldı</td>');
+      expect(out).toContain('<tr class="no"><td>Sayfa</td><td>Gelen İhbarlar</td><td>/panel/yangin/ihbar</td><td>Açılmadı</td>');
+    });
+
+    it('summary cards count opened screens, tried and failed operations and testers', () => {
+      const S = { ...B, page: 'sos' };
+      const out = html(
+        [
+          { ...A, seq: 0, client_ts: at(0), type: 'page_view', detail: null },
+          { ...A, seq: 1, client_ts: at(1), type: 'api', target: 'POST /admin/missions', detail: { status: 400, code: 'validation_error', ms: 50 } },
+          { ...A, seq: 2, client_ts: at(2), type: 'api', target: 'POST /admin/missions', detail: { status: 400, code: 'validation_error', ms: 50 } },
+          { ...S, seq: 0, client_ts: at(3), type: 'page_view', detail: null },
+          { ...S, seq: 1, client_ts: at(4), type: 'api', target: 'PUT /admin/fire-reports/:id', detail: { status: 409, code: 'conflict', ms: 50 } },
+        ],
+        ['POST /admin/missions', 'PUT /admin/fire-reports/:id', 'DELETE /admin/fire-reports/:id'],
+      );
+
+      expect(out).toContain(`<div class="card"><b>2 / ${SCREENS.length}</b>açılan ekran (sayfa, sekme, dialog)</div>`);
+      expect(out).toContain('<div class="card"><b>2 / 3</b>denenen işlem</div>');
+      expect(out).toContain('<div class="card"><b>3</b>hatalı işlem</div>');
+      expect(out).toContain('<div class="card"><b>2</b>test eden kişi</div>');
+    });
+  });
+
   describe('CLI', () => {
     const ROOT = path.join(__dirname, '../..');
     const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'uat-export-'));
