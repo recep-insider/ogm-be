@@ -22,13 +22,20 @@ export SSHPASS
 SSH_OPTS=(-o StrictHostKeyChecking=accept-new -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -p "${SSH_PORT:-22}")
 
 mkdir -p "$OUT"
-for pair in html:rapor.html screens:ekranlar.csv raw:ham.csv pages:sayfalar.csv fields:alanlar.csv \
-  actions:islemler.csv people:kisiler.csv messages:mesajlar.csv; do
+failed=0
+# html sonda: yeni sürüm deploy edilmeden çalıştırılırsa yalnız o rapor eksik kalır.
+for pair in screens:ekranlar.csv raw:ham.csv pages:sayfalar.csv fields:alanlar.csv actions:islemler.csv \
+  people:kisiler.csv messages:mesajlar.csv html:rapor.html; do
   # npm run değil node: npm'in başlık satırı rapora karışır.
-  sshpass -e ssh "${SSH_OPTS[@]}" "$TARGET" \
+  if ! sshpass -e ssh "${SSH_OPTS[@]}" "$TARGET" \
     "cd $DEPLOY_DIR && docker compose exec -T backend node scripts/export-uat-events.js ${pair%%:*}" \
-    > "$OUT/${pair#*:}"
+    > "$OUT/${pair#*:}"; then
+    echo "${pair#*:} alınamadı." >&2
+    rm -f "$OUT/${pair#*:}"
+    failed=1
+  fi
 done
 
 echo "Raporlar: $OUT"
-if command -v open >/dev/null; then open "$OUT/rapor.html"; fi
+if [ "$(uname)" = Darwin ] && [ -s "$OUT/rapor.html" ]; then open "$OUT/rapor.html"; fi
+exit "$failed"

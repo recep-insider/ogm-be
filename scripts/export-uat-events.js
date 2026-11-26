@@ -73,6 +73,8 @@ const PAGE_LABELS = new Map(
     s.pages.map((p) => [p, s.name === s.area ? s.name : `${s.area} › ${s.name}`])),
 );
 const pageLabel = (page) => PAGE_LABELS.get(page) ?? page;
+// Yönlendirmeyle gelen takma yollar (icerik, bildirim) raporlar gruplamadan önce ekranın asıl yoluna çevrilir.
+const CANONICAL_PAGE = new Map(SCREENS.filter((s) => s.kind === 'page').flatMap((s) => s.pages.map((p) => [p, s.path])));
 
 function cell(value) {
   let s = value == null ? '' : String(value);
@@ -293,7 +295,7 @@ const named = (text, name) => text === name || text.startsWith(`${name} `);
 // Sayfada görülen her olay sayfanın açıldığını gösterir: giriş ekranına page_view yazılmaz, yalnız alan ve tıklama olayları.
 function screenEvents(screen, events) {
   if (screen.kind === 'page') return events.filter((e) => screen.pages.includes(e.page));
-  if (screen.kind === 'dialog') return events.filter((e) => e.context === `Dialog: ${screen.name}`);
+  if (screen.kind === 'dialog') return events.filter((e) => named(e.context, `Dialog: ${screen.name}`));
   return events.filter(
     (e) =>
       e.page === screen.path &&
@@ -333,7 +335,7 @@ function buildReport(name, { events, users = [], writeOps = [] }) {
       ...e,
       seq: Number(e.seq),
       ts: Number(e.client_ts),
-      page: e.page || '',
+      page: CANONICAL_PAGE.get(e.page || '') ?? (e.page || ''),
       context: e.context || '',
       detail: (typeof e.detail === 'string' ? JSON.parse(e.detail) : e.detail) || {},
     })),

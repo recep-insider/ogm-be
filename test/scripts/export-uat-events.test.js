@@ -269,6 +269,29 @@ describe('export-uat-events', () => {
       expect(status(rows, 'Blog Yazıları')).toBe('Açıldı');
     });
 
+    it('merges redirect alias routes into their screen before grouping', () => {
+      const blog = { ...A, page: 'icerik/blog' };
+      const alias = { ...A, page: 'icerik' };
+      const events = [
+        { ...alias, seq: 0, client_ts: at(0), type: 'page_view', detail: null },
+        { ...alias, seq: 1, client_ts: at(1), type: 'field_focus', target: 'input|Ara', detail: null },
+        { ...blog, seq: 2, client_ts: at(2), type: 'page_view', detail: null },
+        { ...blog, seq: 3, client_ts: at(3), type: 'inventory', detail: { keys: ['input|Ara'] } },
+      ];
+      const label = 'İçerik Yönetimi › Blog Yazıları';
+
+      const pages = report('pages', events).filter((r) => r[0] === label);
+      expect(pages).toHaveLength(1);
+      expect(pages[0][3]).toBe('2');
+      expect(report('fields', events).slice(1).map((r) => [r[0], r[3], r[4]])).toEqual([[label, 'Ara', 'Dokunuldu']]);
+    });
+
+    it('matches a dialog title that carries extra text after the inventoried name', () => {
+      const rows = report('screens', [{ ...A, seq: 0, client_ts: at(0), type: 'click', context: 'Dialog: Olay Düzenle #', target: 'button|İptal', detail: null }]);
+
+      expect(status(rows, 'Olay Düzenle')).toBe('Açıldı');
+    });
+
     it('counts the login screen as opened from its field and click events', () => {
       const login = { ...A, page: 'giris', session_id: '' };
       const rows = report('screens', [{ ...login, seq: 0, client_ts: at(0), type: 'field_focus', target: 'input|E-posta', detail: null }]);
