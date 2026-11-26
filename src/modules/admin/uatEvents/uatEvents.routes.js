@@ -38,7 +38,7 @@ const bodySchema = Joi.object({
   events: Joi.array()
     .items(
       Joi.object({
-        seq: Joi.number().integer().min(0).required(),
+        seq: Joi.number().integer().min(0).max(4294967295).required(),
         at: Joi.number().integer().min(0).required(),
         type: Joi.string().valid(...TYPES).required(),
         page: str(120),

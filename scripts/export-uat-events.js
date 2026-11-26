@@ -16,6 +16,7 @@ const EXTRA_WRITE_OPS = ['POST /missions/active/:id/scan'];
 const EXCLUDED = [
   'POST /admin/auth/refresh',
   'POST /admin/auth/logout',
+  'POST /admin/auth/request',
   'POST /admin/uat-events',
   'PUT /admin/users/:id/application',
   'POST /admin/missions/:id/call',
@@ -63,7 +64,9 @@ const HEADERS = {
 };
 
 function cell(value) {
-  const s = value == null ? '' : String(value);
+  let s = value == null ? '' : String(value);
+  // Excel =, +, -, @ ile başlayan hücreyi formül sayar.
+  if (/^[=+\-@\t\r]/.test(s)) s = `'${s}`;
   return /[;"\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
 }
 
@@ -71,7 +74,6 @@ function toCsv(rows) {
   return BOM + rows.map((row) => `${row.map(cell).join(';')}\n`).join('');
 }
 
-const apiTemplate = (path) => path.split('/').map((p) => (/\d/.test(p) ? ':id' : p)).join('/');
 const specTemplate = (path) => path.replace(/\{[^}]+\}/g, ':id');
 
 function writeOperations(spec) {
@@ -187,7 +189,7 @@ function pagesReport({ events }) {
         views.length,
         activeMinutes(spans, (e) => e.page === page),
         list.filter((e) => TOUCH.includes(e.type)).length,
-        `${touched}/${pageFields.length}`,
+        `${touched} / ${pageFields.length}`,
         pageFields.length ? Math.round((100 * touched) / pageFields.length) : '',
         tally(views.map((e) => e.detail.query).filter(Boolean)),
         ...range(list),
@@ -329,4 +331,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { toCsv, apiTemplate, specTemplate, writeOperations, buildReport };
+module.exports = { toCsv, specTemplate, writeOperations, buildReport };

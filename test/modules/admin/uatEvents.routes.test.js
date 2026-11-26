@@ -100,6 +100,13 @@ describe('POST /v1/admin/uat-events', () => {
     expect(mockState.events).toEqual([]);
   });
 
+  it('rejects a seq that does not fit the unsigned int column', async () => {
+    const res = await post({ sessionId: 's1', events: [{ ...EVENT, seq: 4294967296 }] });
+
+    expect(res.status).toBe(400);
+    expect(mockState.events).toEqual([]);
+  });
+
   it('rejects more than 200 events', async () => {
     const events = Array.from({ length: 201 }, (_, seq) => ({ ...EVENT, seq }));
 

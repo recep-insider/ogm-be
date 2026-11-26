@@ -6,7 +6,6 @@ const path = require('path');
 const { spawnSync } = require('child_process');
 const {
   toCsv,
-  apiTemplate,
   specTemplate,
   writeOperations,
   buildReport,
@@ -47,10 +46,10 @@ describe('export-uat-events', () => {
   it('toCsv quotes separators and adds BOM', () => {
     expect(toCsv([['a;b', 'c"d']])).toBe(`${BOM}"a;b";"c""d"\n`);
     expect(toCsv([['x\ny', 'Çığ', 3]])).toBe(`${BOM}"x\ny";Çığ;3\n`);
+    expect(toCsv([['=1+1', '-x', '@a', 'ok']])).toBe(`${BOM}'=1+1;'-x;'@a;ok\n`);
   });
 
   it('templates hide ids', () => {
-    expect(apiTemplate('/admin/missions/3f2a9c1e-0b1d-4c55-9a77-12ab34cd56ef/photos/77')).toBe('/admin/missions/:id/photos/:id');
     expect(specTemplate('/admin/trainings/saha/applications/{applicationId}')).toBe('/admin/trainings/saha/applications/:id');
   });
 
@@ -61,6 +60,7 @@ describe('export-uat-events', () => {
         '/admin/fire-reports/{id}': { get: {}, put: {}, delete: {} },
         '/admin/auth/refresh': { post: {} },
         '/admin/auth/logout': { post: {} },
+        '/admin/auth/request': { post: {} },
         '/admin/uat-events': { post: {} },
         '/admin/missions/{id}/call': { post: {} },
         '/admin/users/{id}/application': { put: {} },
@@ -108,13 +108,13 @@ describe('export-uat-events', () => {
       { ...A, seq: 2, client_ts: at(60), type: 'click', target: 'button|Kaydet', detail: null },
     ]);
 
-    expect(rows[1]).toEqual(['yangin', '1', '1', '1', '6,0', '2', '0/0', '', '', '2026-11-26 12:00:00', '2026-11-26 13:00:00']);
+    expect(rows[1]).toEqual(['yangin', '1', '1', '1', '6,0', '2', '0 / 0', '', '', '2026-11-26 12:00:00', '2026-11-26 13:00:00']);
   });
 
   it('pages report counts people, sessions and filters', () => {
     const row = rowOf(report('pages', FIXTURE), 0, 'yangin');
 
-    expect(row.slice(1, 9)).toEqual(['2', '2', '2', '4,0', '3', '1/2', '50', 'durum=active×2']);
+    expect(row.slice(1, 9)).toEqual(['2', '2', '2', '4,0', '3', '1 / 2', '50', 'durum=active×2']);
   });
 
   it('fields report lists untouched inventory controls', () => {
@@ -127,7 +127,7 @@ describe('export-uat-events', () => {
       ['ayarlar', '', 'Metin alanı', 'Telefon', 'Dokunulmadı', '0', '0', '', '', ''],
       ['ayarlar', '', 'Metin alanı', 'E-posta', 'Dokunuldu', '1', '1', 'Ayşe Demir', '2026-11-26 12:01:00', '2026-11-26 12:01:00'],
     ]);
-    expect(report('pages', events)[1].slice(6, 8)).toEqual(['1/2', '50']);
+    expect(report('pages', events)[1].slice(6, 8)).toEqual(['1 / 2', '50']);
   });
 
   it('actions report lists never-tried write operations', () => {
