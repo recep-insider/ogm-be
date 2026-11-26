@@ -361,6 +361,43 @@ describe('export-uat-events', () => {
       expect(out).toContain('<div class="card"><b>3</b>hatalı işlem</div>');
       expect(out).toContain('<div class="card"><b>2</b>test eden kişi</div>');
     });
+
+    it('lists tried operations before untried ones and marks failed and untried rows', () => {
+      const out = html(
+        [
+          { ...A, seq: 0, client_ts: at(0), type: 'api', target: 'POST /admin/missions', detail: { status: 400, code: 'validation_error', ms: 50 } },
+          { ...A, seq: 1, client_ts: at(1), type: 'api', target: 'PUT /admin/fire-reports/:id', detail: { status: 200, ms: 40 } },
+        ],
+        ['DELETE /admin/fire-reports/:id', 'POST /admin/missions', 'PUT /admin/fire-reports/:id'],
+      );
+      const failed = out.indexOf('<tr class="err"><td>POST</td><td>/admin/missions</td>');
+      const succeeded = out.indexOf('<tr class=""><td>PUT</td><td>/admin/fire-reports/:id</td>');
+      const untried = out.indexOf('<tr class="no"><td>DELETE</td><td>/admin/fire-reports/:id</td>');
+
+      expect(failed).toBeGreaterThan(-1);
+      expect(succeeded).toBeGreaterThan(-1);
+      expect(untried).toBeGreaterThan(Math.max(failed, succeeded));
+      expect(out).toContain('<p class="muted">Panelin yapabildiği yazma işlemleri; 1 tanesi hiç denenmedi.</p>');
+    });
+
+    it('counts touched fields and greys out fields seen on screen but never touched', () => {
+      const out = html([
+        { ...A, page: 'ayarlar', seq: 0, client_ts: at(0), type: 'inventory', detail: { keys: ['input|E-posta', 'input|Telefon'] } },
+        { ...A, page: 'ayarlar', seq: 1, client_ts: at(1), type: 'field_focus', target: 'input|E-posta', detail: null },
+      ]);
+
+      expect(out).toContain('<div class="card"><b>1</b>dokunulan alan ve buton</div>');
+      expect(out).toContain('<h3>ayarlar <span class="muted">1 / 2</span></h3>');
+      expect(out).toContain('<tr class="no"><td></td><td>Metin alanı</td><td>Telefon</td><td>Dokunulmadı</td>');
+      expect(out).toContain('<tr class=""><td></td><td>Metin alanı</td><td>E-posta</td><td>Dokunuldu</td>');
+    });
+
+    it('escapes ampersands and quotes in recorded text', () => {
+      const out = html([{ ...A, seq: 0, client_ts: at(0), type: 'message', target: `Tom & "Jerry" 'x'`, detail: { level: 'alert' } }]);
+
+      expect(out).toContain('<td>Tom &amp; &quot;Jerry&quot; &#39;x&#39;</td>');
+      expect(out).not.toContain(`Tom & "Jerry" 'x'`);
+    });
   });
 
   describe('CLI', () => {
